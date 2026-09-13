@@ -1,0 +1,31 @@
+# Lingua 分析后端依赖
+# Python >= 3.10
+
+# ---- 日语: MeCab 分词----
+fugashi==1.5.2
+
+# ---- 英语 / 西班牙语 / 法语 / 德语 / 韩语: spaCy ----
+spacy==3.8.7
+click<8.2
+
+# 各语言的小模型 (sm): 
+en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+es_core_news_sm @ https://github.com/explosion/spacy-models/releases/download/es_core_news_sm-3.8.0/es_core_news_sm-3.8.0-py3-none-any.whl
+fr_core_news_sm @ https://github.com/explosion/spacy-models/releases/download/fr_core_news_sm-3.8.0/fr_core_news_sm-3.8.0-py3-none-any.whl
+de_core_news_sm @ https://github.com/explosion/spacy-models/releases/download/de_core_news_sm-3.8.0/de_core_news_sm-3.8.0-py3-none-any.whl
+ko_core_news_sm @ https://github.com/explosion/spacy-models/releases/download/ko_core_news_sm-3.8.0/ko_core_news_sm-3.8.0-py3-none-any.whl
+
+# 词典: 
+unidic==1.1.0
+
+# ---- 注音层 (read):  ----
+
+# 英语: CMUdict 查表 + 神经网络补未登录词
+g2p-en==2.1.0
+
+# 韩语: 표준 발음법 (한국어 -> 한구거).
+hangulpy==1.4.2
+
+# 西班牙语 / 法语 / 德语
+phonemizer==3.3.0
+espeakng-loader==0.2.4

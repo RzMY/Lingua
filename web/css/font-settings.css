@@ -1,0 +1,80 @@
+.font-pane .rows { padding: 0; background: transparent; border-radius: 0; }
+.font-pane .row { flex-wrap: wrap; }
+.font-pane .row-label b, .font-pane .sec-t { letter-spacing: 0; }
+.font-pane .row-label { min-width: 90px; }
+.font-pane .stepper { margin-left: auto; }
+.font-pane .step-v { font-size: 16px; }
+.font-pane .step-b { touch-action: manipulation; }
+.font-pane .field-acts { flex-wrap: wrap; }
+.font-pane .btn { border-radius: 8px; }
+.font-languages .segs {
+  width: 100%;
+  max-width: 100%;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  border-radius: 8px;
+}
+.font-languages .seg {
+  flex: 1 0 auto;
+  min-width: 0;
+  padding: 7px 6px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.font-preview {
+  --lh-read: calc(var(--fs-read) * 4 / 3);
+  --lh-text: calc(var(--fs-text) * 34 / 25);
+  --lh-roman: calc(var(--fs-roman) * 30 / 23);
+  --lh-tr: calc(var(--fs-tr) * 52 / 33);
+  --font-read: "Charis SIL", "Doulos SIL", "Gentium Plus", "Segoe UI",
+               "Lucida Sans Unicode", var(--font-text);
+  height: 95px;
+  min-height: 60px;
+  max-height: 34vh;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 18px 4px;
+  margin-bottom: 8px;
+  border-block: 1px solid var(--line);
+  letter-spacing: 0;
+}
+.font-preview-words { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px 3px; }
+.font-preview[data-space="1"] .font-preview-words { column-gap: 9px; }
+.font-preview-word {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: var(--lh-read) var(--lh-text) var(--lh-roman);
+  justify-items: center;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0 3px;
+  overflow: hidden;
+}
+.font-preview-word > span { white-space: nowrap; }
+.font-preview-read {
+  grid-row: 1;
+  font: 500 var(--fs-read)/var(--lh-read) var(--font-read);
+  color: var(--ink-3);
+}
+.font-preview-text {
+  grid-row: 2;
+  font: 600 var(--fs-text)/var(--lh-text) var(--font-text);
+}
+.font-preview-roman {
+  grid-row: 3;
+  font: 500 var(--fs-roman)/var(--lh-roman) var(--font-roman);
+  color: var(--ink-3);
+}
+.font-preview-punct { padding: 0; margin-left: -3px; }
+.font-preview-tr {
+  margin: 14px 0 0;
+  font-size: var(--fs-tr);
+  line-height: var(--lh-tr);
+  overflow-wrap: anywhere;
+  color: var(--ink-2);
+}
+
+@media (max-width: 480px) {
+  .font-preview { height: 130px; }
+}

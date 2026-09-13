@@ -1,0 +1,28 @@
+# 大文件 / 私有素材
+dic/
+files/
+img/
+
+# 生成产物与缓存
+web/data/
+.cache/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# 本地密钥
+.env
+.env.docker
+
+# 归档
+archive/
+
+# llm
+.claude/
+
+# docs
+docs/*
+
+# test
+tools/
+audio-check.html

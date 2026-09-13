@@ -1,0 +1,294 @@
+/* ==========================================================================
+   player.css — 底部播放器卡片 / 进度条 / 工具行 / 讲解面板
+   ========================================================================== */
+
+.player {
+  flex: none;
+  margin: 4px 10px calc(10px + var(--safe-b));
+  padding: 12px 14px 10px;
+  border-radius: 26px;
+  background: var(--card);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ---------------------------------------------------------------- 进度条 */
+
+/*  照 img/播放页面.png: 时间贴在进度条两端, 一行放下。 */
+.p-seek { display: flex; align-items: center; gap: 10px; padding: 0 2px 2px; }
+.p-t {
+  flex: none;
+  min-width: 34px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+}
+.p-seek .p-t:last-child { text-align: right; }
+
+.seek {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  padding: 10px 5px;
+  touch-action: none;
+  cursor: pointer;
+}
+.seek-hit { position: relative; height: 5px; }
+
+.seek-rail {
+  position: absolute;
+  inset: 0;
+  border-radius: 99px;
+  background: color-mix(in oklab, var(--ink) 13%, transparent);
+  overflow: hidden;
+}
+.seek-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+  will-change: transform;
+}
+
+/*  位移写在 translate 上, 缩放写在 scale 上: 两个独立属性各管一件事, 互不干扰
+    (合成器同样只走 GPU)。写成 transform: translateX() 会被下面的 scale 放大, 见 engine.js。 */
+.seek-thumb {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 17px;
+  height: 17px;
+  margin: -8.5px 0 0 -8.5px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 1px 4px rgba(20, 30, 10, .28);
+  translate: 0;
+  will-change: translate, scale;
+  transition: scale .16s var(--ease);
+}
+.seek.is-drag .seek-thumb { scale: 1.3; }
+
+/* ---------------------------------------------------------------- 工具行 */
+
+.tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.tool {
+  flex: 1 1 0;
+  min-width: 0;
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  padding: 7px 2px 6px;
+  border-radius: 15px;
+  color: var(--ink-2);
+  position: relative;
+}
+.tool::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--ink);
+  opacity: 0;
+  transform: scale(.9);
+  transition: opacity .18s, transform .18s var(--ease);
+}
+.tool:active::before { opacity: .06; transform: scale(1); }
+.tool[aria-pressed="true"] { color: var(--accent-2); }
+.tool[aria-pressed="true"]::before { opacity: .1; transform: scale(1); background: var(--accent); }
+
+.tool-t {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.ic-pause { display: none; }
+.is-playing .ic-play { display: none; }
+.is-playing .ic-pause { display: block; }
+
+.cta {
+  flex: none;
+  width: 52px;
+  height: 52px;
+  margin-left: 4px;
+  display: grid;
+  place-items: center;
+  border-radius: 17px;
+  background: var(--cta);
+  color: var(--cta-ink);
+  box-shadow: 0 2px 10px color-mix(in oklab, var(--cta) 55%, transparent);
+  transition: transform .18s var(--ease), box-shadow .18s;
+}
+.cta .ic { width: 25px; height: 25px; stroke-width: 2; }
+.cta:active { transform: scale(.94); }
+.cta[aria-pressed="true"] { animation: cta-pulse 2.4s ease-in-out infinite; }
+
+@keyframes cta-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+}
+
+.hint {
+  margin: 8px 4px 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent-2);
+  text-align: center;
+  min-height: 16px;
+}
+
+/* ---------------------------------------------------------------- 讲解面板 */
+
+.panel {
+  flex: none;
+  margin: 0 10px 6px;
+  max-height: min(40vh, 320px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 22px;
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.panel-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px 7px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.panel-title { flex: 1; font-size: 13px; font-weight: 700; }
+.panel-sub {
+  margin-left: 8px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.panel-body {
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 2px 14px 10px;
+}
+
+.gw {
+  display: grid;
+  grid-template-columns: minmax(0, auto) 1fr;
+  column-gap: 12px;
+  align-items: baseline;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+  cursor: pointer;
+  border-radius: 8px;
+}
+.gw:first-child { border-top: 0; }
+.gw.is-cur { background: color-mix(in oklab, var(--accent) 12%, transparent); }
+
+.gw-l { min-width: 0; }
+.gw-text {
+  font-family: var(--font-text);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.gw-read { display: block; font-family: var(--font-read); font-size: 11px; color: var(--ink-3); line-height: 1.3; }
+.gw-roman { font-family: var(--font-roman); font-size: 11.5px; color: var(--ink-4); }
+.gw-r { min-width: 0; text-align: right; }
+.gw-pos {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-2);
+  background: color-mix(in oklab, var(--pc, var(--ink-4)) 40%, transparent);
+}
+.gw-meta { display: block; margin-top: 3px; font-size: 11px; color: var(--ink-3); }
+
+.legend { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 0 10px; }
+.legend .gw-pos { font-size: 11.5px; }
+
+/* ---------------------------------------------------------------- 上传转录 (需求 3) */
+
+.setup {
+  position: relative;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 18px 18px calc(28px + var(--safe-b));
+}
+.setup-h { margin-bottom: 16px; }
+.setup-h b { display: block; font-size: 19px; font-weight: 800; margin-bottom: 8px; }
+.setup-h span {
+  display: block;
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--ink-3);
+}
+.setup-file {
+  margin: 14px 2px 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+.setup-bar {
+  height: 4px;
+  margin: 4px 2px 12px;
+  border-radius: 2px;
+  background: var(--line-2);
+  overflow: hidden;
+}
+.setup-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform .2s linear;
+  will-change: transform;
+}
+
+/*  分析是一次同步请求 (没有作业轮询), 拿不到进度百分比, 所以用一条来回跑的
+    不确定进度条表示「还在算」。 */
+.setup-bar.is-busy > i {
+  width: 34%;
+  transform: none;
+  transition: none;
+  animation: setup-slide 1.15s var(--ease) infinite;
+}
+
+@keyframes setup-slide {
+  0%   { margin-left: -34%; }
+  100% { margin-left: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .setup-bar.is-busy > i { animation-duration: 2.4s; }
+}
+.setup-log {
+  max-height: 42vh;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--card);
+  font: 400 12px/1.65 var(--font-roman);
+  color: var(--ink-2);
+  white-space: pre-wrap;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}

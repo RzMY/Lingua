@@ -1,0 +1,313 @@
+/* ==========================================================================
+   home.css — 首页 / 设置
+   ==========================================================================
+   两个视图各自是一个独立的滚动容器, 切换只改 [hidden], 各自的 scrollTop 交给
+   浏览器保留。所有按下反馈只用 transform / opacity, 不碰布局属性。
+   ========================================================================== */
+
+.home {
+  position: fixed;
+  inset: 0;
+  max-width: var(--maxw);
+  margin: 0 auto;
+  background: var(--bg);
+  overflow: hidden;
+}
+@media (min-width: 760px) {
+  .home { box-shadow: 0 0 0 1px var(--line); }
+}
+
+.page {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 8px 18px calc(124px + var(--safe-b));
+}
+
+.page-t { margin: 18px 0 10px; text-align: center; font-size: 27px; font-weight: 800; letter-spacing: -.02em; }
+
+/* ---------------------------------------------------------------- 首页头部 */
+
+/*  照 img/主页.PNG: 搜索与加号在右上角一行, 大字 logo 独占一行。         */
+
+.hero { padding: 6px 0 2px; }
+.hero-acts { display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
+.wordmark {
+  margin: 2px 0 0;
+  font-family: var(--font-ui);
+  font-weight: 800;
+  font-size: clamp(36px, 13vw, 56px);
+  line-height: 1.06;
+  letter-spacing: -.035em;
+  overflow-wrap: anywhere;
+}
+.hero-a {
+  flex: none;
+  width: 42px; height: 42px;
+  display: grid; place-items: center;
+  border-radius: 14px;
+  color: var(--ink-2);
+  transition: transform .16s var(--ease);
+}
+.hero-a:active { transform: scale(.92); }
+.hero-a[aria-pressed="true"] { background: var(--card); color: var(--accent); }
+
+.hero-add {
+  flex: none;
+  width: 46px; height: 46px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: var(--cta);
+  color: var(--cta-ink);
+  transition: transform .18s var(--ease);
+}
+.hero-add .ic { width: 24px; height: 24px; }
+.hero-add:active { transform: scale(.92); }
+
+.finder {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 10px;
+  padding: 0 12px;
+  background: var(--sheet);
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+}
+.finder > .ic { flex: none; color: var(--ink-4); }
+.finder input {
+  border: 0;
+  border-radius: 0;
+  background: none;
+  padding: 11px 0;
+}
+.finder input:focus { outline: none; }
+.finder-x {
+  flex: none;
+  width: 30px; height: 30px;
+  display: grid; place-items: center;
+  color: var(--ink-3);
+}
+
+/* ---------------------------------------------------------------- 列表 */
+
+.day {
+  margin: 22px 2px 10px;
+  font: 700 14.5px/1 var(--font-ui);
+  letter-spacing: .01em;
+  color: var(--accent);
+}
+.list > .day:first-child { margin-top: 16px; }
+
+/* 存储不可用时的警示条 (隐私模式 / file:// 打开): 数据只在内存里, 刷新就丢. */
+.warn {
+  margin: 16px 2px 4px;
+  padding: 11px 13px;
+  border-radius: 14px;
+  background: color-mix(in oklab, #c8552f 14%, var(--card));
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
+/*  照 img/主页.PNG: 外面一圈浅绿托底, 里面一张奶白面板, 左上头像,
+    右侧一枚淡淡的水印, 底部时长 + 两行标题。                          */
+
+.card {
+  position: relative;
+  background: var(--card);
+  border-radius: var(--radius-card);
+  padding: 9px;
+  margin-bottom: 14px;
+}
+.card-in {
+  position: relative;
+  overflow: hidden;
+  background: var(--sheet);
+  border-radius: calc(var(--radius-card) - 9px);
+  padding: 13px 14px 14px;
+}
+.card-top { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 34px; }
+.card-wm {
+  position: absolute;
+  right: 6px; top: 50%;
+  width: 96px; height: 96px;
+  transform: translateY(-46%);
+  color: var(--ink);
+  opacity: .07;
+  stroke-width: 1.5;
+}
+
+/* 整卡可点: 铺一层透明按钮, 「…」按钮抬到它上面 */
+.card-hit {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+}
+.card-hit::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--ink);
+  opacity: 0;
+  transition: opacity .16s;
+}
+.card-hit:active::before { opacity: .05; }
+.card-err {
+  margin: 8px 4px 2px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: #8f2c20;
+}
+html[data-theme="dark"] .card-err { color: #f0bfb6; }
+.blank .field-acts { justify-content: center; margin-top: 16px; }
+
+.art {
+  position: relative;
+  flex: none;
+  width: 46px; height: 46px;
+  border-radius: 50%;
+  background: var(--card-2);
+  display: grid; place-items: center;
+  color: var(--ink-2);
+}
+.art .ic { width: 22px; height: 22px; }
+
+.card-b { position: relative; }
+.card-meta { display: flex; align-items: center; gap: 7px; margin-bottom: 4px; }
+.dur { font: 700 13px/1 var(--font-roman); letter-spacing: .02em; color: var(--accent); }
+.card-t {
+  font-size: 16.5px;
+  font-weight: 700;
+  line-height: 1.38;
+  letter-spacing: -.004em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.card-a {
+  position: relative;
+  z-index: 2;
+  flex: none;
+  margin: -4px -4px 0 auto;
+  width: 34px; height: 34px;
+  display: grid; place-items: center;
+  border-radius: 11px;
+  color: var(--ink-3);
+}
+
+.badge {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 7px;
+  border-radius: 7px;
+  background: var(--bg-soft);
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.badge.is-run { background: var(--accent-soft); color: var(--accent-2); }
+.badge.is-warn { background: #f7e7c9; color: #7f5c25; }
+.badge.is-bad { background: #f6dcd7; color: #8f2c20; }
+html[data-theme="dark"] .badge.is-warn { background: #453a1c; color: #e8ce97; }
+html[data-theme="dark"] .badge.is-bad { background: #4a231d; color: #f0bfb6; }
+
+/* 上传进度: 只动 transform, 不动宽度 */
+.card-bar {
+  margin: 9px 2px 1px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line-2);
+  overflow: hidden;
+}
+.card-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform .2s linear;
+  will-change: transform;
+}
+
+/* ---------------------------------------------------------------- 底部导航 */
+
+.nav {
+  position: fixed;
+  left: 50%;
+  bottom: calc(14px + var(--safe-b));
+  z-index: 21;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  border-radius: 999px;
+  background: var(--sheet);
+  border: 1px solid var(--line);
+  box-shadow: 0 10px 30px rgba(16, 20, 10, .14);
+}
+.nav-i {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 76px;
+  padding: 5px 0 4px;
+  border-radius: 999px;
+  color: var(--ink-3);
+}
+.nav-ic {
+  width: 42px; height: 30px;
+  display: grid; place-items: center;
+  border-radius: 12px;
+  transition: background .18s linear, color .18s linear;
+}
+.nav-t { font-size: 11px; font-weight: 600; }
+.nav-i.is-on { color: var(--ink); }
+.nav-i.is-on .nav-ic { background: var(--cta); color: var(--cta-ink); }
+
+/* ---------------------------------------------------------------- 空状态 / 设置 */
+
+.blank { padding: 44px 20px; text-align: center; color: var(--ink-3); }
+.blank-ic {
+  width: 62px; height: 62px;
+  margin: 0 auto 14px;
+  display: grid; place-items: center;
+  border-radius: 20px;
+  background: var(--card);
+  color: var(--accent);
+}
+.blank-ic .ic { width: 28px; height: 28px; }
+.blank b { display: block; font-size: 16px; color: var(--ink); margin-bottom: 6px; }
+.blank p { margin: 0 auto; max-width: 300px; font-size: 13.5px; line-height: 1.65; }
+
+.set { padding-bottom: 8px; }
+
+/* 设置里的子页 (大模型 / 提示词 / 数据) 直接铺在浮层里 */
+.pane { padding: 2px 0 8px; }
+.pane .field:last-child { margin-bottom: 8px; }
+/* 连通性自检的结果条 (只在点过「测试连接」后出现) */
+.pane-note {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 13px;
+  background: var(--bg-soft);
+  font-size: 12.5px;
+  line-height: 1.66;
+  color: var(--ink-2);
+}
+.vars { display: flex; flex-wrap: wrap; gap: 6px; margin: -2px 0 10px; }
+.vars > span {
+  font: 500 11.5px/1 var(--font-roman);
+  padding: 5px 7px;
+  border-radius: 7px;
+  background: var(--card);
+  color: var(--ink-2);
+}

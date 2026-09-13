@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-read="1" data-roman="1" data-tr="0" data-pos="1" data-space="0">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1">
+<meta name="theme-color" content="#f2f2ea">
+<meta name="color-scheme" content="light dark">
+<title>Lingua</title>
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/font-settings.css">
+<link rel="stylesheet" href="css/reader.css">
+<link rel="stylesheet" href="css/player.css">
+<link rel="stylesheet" href="css/llm.css">
+</head>
+<body>
+<svg class="sprite" aria-hidden="true" focusable="false"><defs>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+  <symbol id="i-cc" viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="4"/><path d="M10 10.2a2.6 2.6 0 100 3.6M17 10.2a2.6 2.6 0 100 3.6"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21v-6"/><path d="M8.5 3h7l-1 6.2 2.8 2.4a1 1 0 01-.65 1.75H6.35a1 1 0 01-.65-1.75L8.5 9.2z"/></symbol>
+  <symbol id="i-explain" viewBox="0 0 24 24"><path d="M20.5 12.4c0 4-3.8 7.1-8.5 7.1-1 0-2-.14-2.9-.4L4.2 21l1.1-3.7A6.9 6.9 0 013.5 12.4c0-3.9 3.8-7.1 8.5-7.1s8.5 3.2 8.5 7.1z"/><path d="M9 12.3h.01M12 12.3h.01M15 12.3h.01"/></symbol>
+  <symbol id="i-repeat" viewBox="0 0 24 24"><path d="M17 3.5l2.8 2.8L17 9.1"/><path d="M19.5 6.3H8.6A4.6 4.6 0 004 10.9v.6"/><path d="M7 20.5l-2.8-2.8L7 14.9"/><path d="M4.5 17.7h10.9a4.6 4.6 0 004.6-4.6v-.6"/></symbol>
+  <symbol id="i-repeat1" viewBox="0 0 24 24"><path d="M17 3.5l2.8 2.8L17 9.1"/><path d="M19.5 6.3H8.6A4.6 4.6 0 004 10.9v.6"/><path d="M7 20.5l-2.8-2.8L7 14.9"/><path d="M4.5 17.7h10.9a4.6 4.6 0 004.6-4.6v-.6"/><path d="M11 10.4l1.6-1v5.2" stroke-width="1.7"/></symbol>
+  <symbol id="i-speed" viewBox="0 0 24 24"><path d="M3.6 17.4a9 9 0 1116.8 0z"/><path d="M12 14.6l4-4.6"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 4.8l11 7.2-11 7.2z" stroke-linejoin="round"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 5v14M15 5v14" stroke-width="2.4"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2.6" width="6" height="10.4" rx="3"/><path d="M5.5 11.4a6.5 6.5 0 0013 0"/><path d="M12 17.9V21"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.8l4.2 4.2L19 7.4"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.4"/><path d="M15.8 15.8l4.4 4.4"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5.4v13.2M5.4 12h13.2" stroke-width="2.2"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5.4 12h13.2" stroke-width="2.2"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 10.6l8-6.2 8 6.2V19a2 2 0 01-2 2H6a2 2 0 01-2-2z"/><path d="M9.6 21v-6.1h4.8V21"/></symbol>
+  <symbol id="i-cast" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1.9"/><path d="M8.4 15.6a5.1 5.1 0 010-7.2M15.6 8.4a5.1 5.1 0 010 7.2"/><path d="M5.6 18.4a9.1 9.1 0 010-12.8M18.4 5.6a9.1 9.1 0 010 12.8"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><path d="M10.1 5.37L10.26 2.15L13.74 2.15L13.9 5.37L15.35 5.97L17.74 3.81L20.19 6.26L18.03 8.65L18.63 10.1L21.85 10.26L21.85 13.74L18.63 13.9L18.03 15.35L20.19 17.74L17.74 20.19L15.35 18.03L13.9 18.63L13.74 21.85L10.26 21.85L10.1 18.63L8.65 18.03L6.26 20.19L3.81 17.74L5.97 15.35L5.37 13.9L2.15 13.74L2.15 10.26L5.37 10.1L5.97 8.65L3.81 6.26L6.26 3.81L8.65 5.97Z"/><circle cx="12" cy="12" r="3.2"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9.6 5.6L16 12l-6.4 6.4"/></symbol>
+  <symbol id="i-chev-d" viewBox="0 0 24 24"><path d="M5.6 9.6L12 16l6.4-6.4"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.6 7h14.8"/><path d="M9.6 7V4.7h4.8V7"/><path d="M6.6 7l.9 12.1a1.6 1.6 0 001.6 1.5h5.8a1.6 1.6 0 001.6-1.5L17.4 7"/><path d="M10.4 10.6v6.6M13.6 10.6v6.6"/></symbol>
+  <symbol id="i-pen" viewBox="0 0 24 24"><path d="M4.6 19.4h4l10-10a2.1 2.1 0 00-3-3l-10 10z"/><path d="M14.1 6.6l3 3"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4.9"/><path d="M7.8 9.1L12 4.9l4.2 4.2"/><path d="M4.6 15.4v3.1a2 2 0 002 2h10.8a2 2 0 002-2v-3.1"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><path d="M13.4 3.4H7.4a2 2 0 00-2 2v13.2a2 2 0 002 2h9.2a2 2 0 002-2V8.5z"/><path d="M13.4 3.4v5.1h5.2"/><path d="M8.8 13.2h6.4M8.8 16.6h4.4"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11.4" height="11.4" rx="2.8"/><path d="M15 6.4V6a2.4 2.4 0 00-2.4-2.4H6A2.4 2.4 0 003.6 6v6.6A2.4 2.4 0 006 15h.4"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20.2 12a8.2 8.2 0 11-2.9-6.2"/><path d="M20.4 4.1v4.5h-4.5"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M21.4 2.6L11 13"/><path d="M21.4 2.6l-6.8 18.8L11 13L2.6 9.4z"/></symbol>
+  <symbol id="i-dots" viewBox="0 0 24 24"><path d="M6 12h.01M12 12h.01M18 12h.01" stroke-width="2.6"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.9 12S6.5 6.5 12 6.5 21.1 12 21.1 12 17.5 17.5 12 17.5 2.9 12 2.9 12z"/><circle cx="12" cy="12" r="2.6"/></symbol>
+  <symbol id="i-lang" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M3.6 9.6h16.8M3.6 14.4h16.8"/><path d="M12 3.4c2.2 2.4 3.3 5.3 3.3 8.6s-1.1 6.2-3.3 8.6c-2.2-2.4-3.3-5.3-3.3-8.6S9.8 5.8 12 3.4z"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M10.4 2.8l1.8 4.4 4.4 1.8-4.4 1.8-1.8 4.4-1.8-4.4-4.4-1.8 4.4-1.8z"/><path d="M17.6 14.6l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M12 11v5.4M12 7.9h.01"/></symbol>
+  <symbol id="i-tune" viewBox="0 0 24 24"><path d="M4 7.4h5M13 7.4h7M4 16.6h7M15 16.6h5"/><circle cx="11" cy="7.4" r="2.2"/><circle cx="13" cy="16.6" r="2.2"/></symbol>
+  <symbol id="i-wave" viewBox="0 0 24 24"><path d="M3 12v.01M7 8.2v7.6M10.6 5.4v13.2M14.2 8.2v7.6M17.8 10.2v3.6M21.4 12v.01" stroke-width="2"/></symbol>
+</defs></svg>
+
+<div class="app" id="app">
+  <header class="topbar">
+    <button class="tb-btn" id="btnBack" aria-label="返回首页"><svg class="ic"><use href="#i-back"/></svg></button>
+    <h1 class="tb-title" id="trackTitle">Lingua</h1>
+    <button class="tb-btn" id="btnFiles" aria-label="补充文件" title="补充音频与字幕" hidden><svg class="ic"><use href="#i-upload"/></svg></button>
+    <button class="tb-btn" id="btnDisplay" aria-label="音频配置" aria-haspopup="dialog"><svg class="ic"><use href="#i-cc"/></svg></button>
+  </header>
+
+  <main class="reader" id="scroller" tabindex="-1">
+    <div class="reader-vp" id="viewport"></div>
+    <div class="reader-state" id="readerState" hidden></div>
+    <div class="setup" id="setup" hidden></div>
+  </main>
+
+  <section class="panel" id="explainPanel" hidden aria-label="逐词拆解">
+    <div class="panel-head">
+      <div class="panel-title">逐词拆解<span class="panel-sub" id="explainSub"></span></div>
+      <button class="tb-btn tb-btn-sm" id="btnExplainClose" aria-label="关闭拆解"><svg class="ic"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="panel-body" id="explainBody"></div>
+  </section>
+
+  <footer class="player" id="player">
+    <div class="p-seek">
+      <span class="p-t" id="timeNow">0:00</span>
+      <div class="seek" id="seek" role="slider" tabindex="0" aria-label="播放进度"
+           aria-valuemin="0" aria-valuemax="0" aria-valuenow="0">
+        <div class="seek-hit">
+          <div class="seek-rail"><div class="seek-fill" id="seekFill"></div></div>
+          <div class="seek-thumb" id="seekThumb"></div>
+        </div>
+      </div>
+      <span class="p-t" id="timeTotal">0:00</span>
+    </div>
+    <div class="tools">
+      <button class="tool" id="btnPin" data-on="1" aria-pressed="true">
+        <svg class="ic"><use href="#i-pin"/></svg><span class="tool-t">固定</span></button>
+      <button class="tool" id="btnExplain" aria-pressed="false">
+        <svg class="ic"><use href="#i-explain"/></svg><span class="tool-t">讲解</span></button>
+      <button class="tool" id="btnRepeat" aria-pressed="false">
+        <svg class="ic"><use href="#i-repeat"/></svg><span class="tool-t">重复</span></button>
+      <button class="tool" id="btnSpeed" aria-haspopup="menu">
+        <svg class="ic"><use href="#i-speed"/></svg><span class="tool-t" id="speedText">速度</span></button>
+      <button class="tool" id="btnPlay" aria-label="播放">
+        <svg class="ic ic-play"><use href="#i-play"/></svg>
+        <svg class="ic ic-pause"><use href="#i-pause"/></svg>
+        <span class="tool-t" id="playText">播放</span></button>
+      <!-- 跟读功能后续单独开发, 暂时隐藏 -->
+      <button class="cta" id="btnShadow" hidden aria-pressed="false" aria-label="跟读练习">
+        <svg class="ic"><use href="#i-mic"/></svg></button>
+    </div>
+    <div class="hint" id="hint" hidden></div>
+  </footer>
+</div>
+
+<audio id="audio" preload="metadata" crossorigin="anonymous"></audio>
+<div class="probe" id="probe" aria-hidden="true"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+# Explicit allowlist: never send local secrets, dictionaries, media or archives.
+**
+!Dockerfile
+!requirements.txt
+!docker/
+!docker/requirements.txt
+!docker/healthcheck.py
+!pipeline/
+!pipeline/**
+!web/
+!web/**
+**/__pycache__/
+**/*.py[cod]
+web/data/
+web/audio-check.html
+web/assets/audio-probe.wav

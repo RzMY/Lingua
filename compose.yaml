@@ -1,0 +1,20 @@
+services:
+  lingua:
+    image: ${LINGUA_IMAGE:-ghcr.io/rzmy/lingua:latest}
+    build:
+      context: .
+    ports:
+      - "${LINGUA_BIND:-127.0.0.1}:${LINGUA_PORT:-5173}:5173"
+    environment:
+      LINGUA_HOST: 0.0.0.0
+      LINGUA_PORT: "5173"
+      LINGUA_API_TOKEN: ${LINGUA_API_TOKEN:?Set LINGUA_API_TOKEN in .env.docker}
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      # phonemizer copies libespeak-ng.so to a temporary directory before dlopen.
+      - /tmp:exec,size=128m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true

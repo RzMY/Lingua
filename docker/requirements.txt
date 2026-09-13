@@ -1,0 +1,6 @@
+-r ../requirements.txt
+
+# Portable dictionary; a custom UniDic can be mounted at runtime.
+unidic-lite==1.0.8
+# g2p-en imports the legacy tagger; NLTK 3.9 also uses the *_eng data.
+nltk==3.9.1

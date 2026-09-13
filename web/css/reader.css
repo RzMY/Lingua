@@ -1,0 +1,259 @@
+/* ==========================================================================
+   reader.css — 阅读区: 虚拟列表容器 / 句子卡片 / 四层单词组件 / 词性配色
+   动画只用 transform + opacity, 不碰任何触发重排的属性。
+   ========================================================================== */
+
+.reader {
+  position: relative;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 max(10px, calc((100% - var(--maxw)) / 2));
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+.reader::-webkit-scrollbar { width: 8px; }
+.reader::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 4px; }
+.reader::-webkit-scrollbar-track { background: transparent; }
+
+/* 虚拟列表的撑高容器: 子节点全部绝对定位 + translateY */
+.reader-vp {
+  position: relative;
+  width: 100%;
+}
+
+.reader-state {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  text-align: center;
+  color: var(--ink-3);
+  font-size: 14px;
+  padding: 24px;
+}
+
+/* ---------------------------------------------------------------- 句子卡片 */
+
+.s {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  padding: var(--s-pad-y) var(--s-pad-x);
+  isolation: isolate;
+  contain: layout style;
+}
+
+/* 高亮底板: 独立图层, 只做 opacity 过渡 */
+.s::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: var(--radius-card);
+  background: var(--card);
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+.s.is-active::before { opacity: 1; }
+
+.s-words {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  column-gap: var(--gap-col);
+  row-gap: var(--gap-row);
+}
+
+.s-tr {
+  margin: var(--s-gap) 0 0;
+  font-size: var(--fs-tr);
+  line-height: var(--lh-tr);
+  color: var(--ink-2);
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+.s-tr:empty { display: none; }
+html[data-tr="0"] .s-tr { display: none; }
+
+/* ---------------------------------------------------------------- 四层单词 */
+
+/*  行1 注音 · 行2 原文 · 行3 记号条 · 行4 转写
+
+    **四行的高度全是固定长度**, 与内容无关 —— 这条不变式撑着两件事:
+    (1) 同一视觉行内所有单词的原文天然落在同一条线上, 哪个词有注音、哪个词没有
+        都不影响 (chip 的总高恒等于四行之和);
+    (2) 虚拟列表能在不测量 DOM 的情况下精确算出句子高度。
+    所以这里引用的四个变量在 base.css 里是 @property 注册过的: 就算哪天名字写错,
+    也只是那一个变量回落到初始值, 不会让整条 grid-template-rows 失效。
+
+    「注音」「转写」两层对每门语言的含义不同 (日语=假名/罗马音, 韩语=发音/罗马字,
+    英法德西=音标/原形), 但结构完全一样 —— 哪层有内容由 track.json 决定。       */
+.w {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-rows:
+    var(--lh-read)
+    var(--lh-text)
+    calc(var(--h-bar) + var(--gap-bar))
+    var(--lh-roman);
+  justify-items: center;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0 var(--chip-px);
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.w-read {
+  grid-row: 1;
+  font-size: calc(var(--fs-read) * var(--fit-read, 1));
+  line-height: var(--lh-read);
+  font-family: var(--font-read);
+  font-weight: 500;
+  color: var(--ink-3);
+  letter-spacing: 0;
+}
+
+.w-text {
+  grid-row: 2;
+  position: relative;
+  font-family: var(--font-text);
+  font-size: calc(var(--fs-text) * var(--fit-text, 1));
+  line-height: var(--lh-text);
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--ink);
+  transition: transform .2s var(--ease), color .16s linear;
+}
+
+/* 圆角底色 (只在当前句显示) */
+.w-text::before {
+  content: "";
+  position: absolute;
+  inset: 1px -4px 0;
+  z-index: -1;
+  border-radius: var(--radius-chip);
+  background: color-mix(in oklab, var(--pc) var(--chip-a), transparent);
+  opacity: 0;
+  transform: scale(.9);
+  transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+.s.is-active .w-text::before { opacity: 1; transform: scale(1); }
+
+/* 当前单词的描边环: 包住原文与记号条 (行2 + 行3) */
+.w::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--lh-read) - 1px);
+  bottom: calc(var(--lh-roman) - 3px);
+  border: 2px solid var(--ring);
+  border-radius: calc(var(--radius-chip) + 3px);
+  opacity: 0;
+  transform: scale(.94);
+  transition: opacity .16s linear, transform .18s var(--ease);
+  pointer-events: none;
+}
+.w.is-cur::after { opacity: 1; transform: scale(1); }
+.w.is-cur .w-text { transform: translateY(-1px); }
+
+.w-bar {
+  grid-row: 3;
+  align-self: end;
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  height: var(--h-bar);
+  border-radius: 99px;
+  background: color-mix(in oklab, var(--pc) var(--bar-a), transparent);
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+.s.is-active .w-bar { opacity: 1; }
+
+/* 卡拉OK 扫过效果: 唯一的逐帧动画, 纯 transform.
+   已唱过的部分是词性本色, 未唱的是同色浅底, 于是进度自己就是配色的一部分。 */
+.w-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--pc);
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+}
+.w.is-done .w-fill { transform: scaleX(1); }
+.w.is-cur .w-fill { will-change: transform; }
+
+.w-roman {
+  grid-row: 4;
+  font-family: var(--font-roman);
+  font-size: calc(var(--fs-roman) * var(--fit-roman, 1));
+  line-height: var(--lh-roman);
+  font-weight: 500;
+  color: var(--ink-4);
+  letter-spacing: 0;
+}
+
+@media (hover: hover) {
+  .w:hover .w-text { color: var(--accent-2); }
+}
+
+/* 标点: 不参与高亮, 但仍可点击定位 */
+.w.p-punct { --pc: transparent; }
+.w.p-punct .w-bar { visibility: hidden; }
+.w.p-punct .w-text::before,
+.w.p-punct::after { display: none; }
+
+/* 无词级时间戳的句子: 隐藏记号条, 只做整句高亮 */
+.s.no-wt .w-bar { visibility: hidden; }
+
+/* ---------------------------------------------------------------- 词性配色 */
+
+/*  每个词性只声明一个色相 --pc; 底色由 color-mix 按主题调透明度得出,
+    这样浅色/深色主题共用一套配色, 也方便自定义。
+    底色刻意压得很淡 (照 img/播放页面.png): 记号条才是词性的主色,
+    圆角底只负责把一个词圈出来, 太重会盖掉正文。                    */
+:root { --chip-a: 19%; --pc: var(--ink-4); }
+html[data-theme="dark"] { --chip-a: 22%; }
+
+.p-noun     { --pc: #f0cf4b; }
+.p-propn    { --pc: #e6ad3c; }
+.p-num      { --pc: #efbe63; }
+.p-pron     { --pc: #5ec4cb; }
+.p-verb     { --pc: #8bce62; }
+.p-adj      { --pc: #f5a05c; }
+.p-adjn     { --pc: #b492e6; }
+.p-adv      { --pc: #86ade9; }
+.p-adnom    { --pc: #7ba6dd; }
+.p-det      { --pc: #b0bcd6; }
+.p-conj     { --pc: #a6b3c3; }
+.p-interj   { --pc: #ee8b79; }
+.p-particle { --pc: #6fd2d7; }
+.p-prep     { --pc: #59c1d8; }
+.p-aux      { --pc: #f292b3; }
+.p-prefix   { --pc: #c3cbb1; }
+.p-suffix   { --pc: #c3cbb1; }
+.p-fill     { --pc: #c6c8bf; }
+.p-other    { --pc: #c6c8bf; }
+
+/* 关闭词性上色: 统一成中性色, 仍保留卡拉OK 进度 */
+html[data-pos="0"] .w { --pc: var(--ink-4) !important; }
+
+/* ---------------------------------------------------------------- 显示层开关 */
+
+html[data-read="0"] { --lh-read: 0px; }
+html[data-read="0"] .w-read { display: none; }
+html[data-roman="0"] { --lh-roman: 0px; }
+html[data-roman="0"] .w-roman { display: none; }
+
+/* 窄屏只收紧内边距, 用户选择的 px 字号保持不变. */
+@media (max-width: 380px) {
+  :root { --s-pad-x: 13px; }
+}

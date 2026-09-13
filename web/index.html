@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1">
+<meta name="theme-color" content="#f2f2ea">
+<meta name="color-scheme" content="light dark">
+<title>Lingua</title>
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/home.css">
+<link rel="stylesheet" href="css/font-settings.css">
+</head>
+<body>
+<svg class="sprite" aria-hidden="true" focusable="false"><defs>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+  <symbol id="i-cc" viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="4"/><path d="M10 10.2a2.6 2.6 0 100 3.6M17 10.2a2.6 2.6 0 100 3.6"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 4.8l11 7.2-11 7.2z" stroke-linejoin="round"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.8l4.2 4.2L19 7.4"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.4"/><path d="M15.8 15.8l4.4 4.4"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5.4v13.2M5.4 12h13.2" stroke-width="2.2"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5.4 12h13.2" stroke-width="2.2"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 10.6l8-6.2 8 6.2V19a2 2 0 01-2 2H6a2 2 0 01-2-2z"/><path d="M9.6 21v-6.1h4.8V21"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><path d="M10.1 5.37L10.26 2.15L13.74 2.15L13.9 5.37L15.35 5.97L17.74 3.81L20.19 6.26L18.03 8.65L18.63 10.1L21.85 10.26L21.85 13.74L18.63 13.9L18.03 15.35L20.19 17.74L17.74 20.19L15.35 18.03L13.9 18.63L13.74 21.85L10.26 21.85L10.1 18.63L8.65 18.03L6.26 20.19L3.81 17.74L5.97 15.35L5.37 13.9L2.15 13.74L2.15 10.26L5.37 10.1L5.97 8.65L3.81 6.26L6.26 3.81L8.65 5.97Z"/><circle cx="12" cy="12" r="3.2"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9.6 5.6L16 12l-6.4 6.4"/></symbol>
+  <symbol id="i-chev-d" viewBox="0 0 24 24"><path d="M5.6 9.6L12 16l6.4-6.4"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.6 7h14.8"/><path d="M9.6 7V4.7h4.8V7"/><path d="M6.6 7l.9 12.1a1.6 1.6 0 001.6 1.5h5.8a1.6 1.6 0 001.6-1.5L17.4 7"/><path d="M10.4 10.6v6.6M13.6 10.6v6.6"/></symbol>
+  <symbol id="i-pen" viewBox="0 0 24 24"><path d="M4.6 19.4h4l10-10a2.1 2.1 0 00-3-3l-10 10z"/><path d="M14.1 6.6l3 3"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4.9"/><path d="M7.8 9.1L12 4.9l4.2 4.2"/><path d="M4.6 15.4v3.1a2 2 0 002 2h10.8a2 2 0 002-2v-3.1"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><path d="M13.4 3.4H7.4a2 2 0 00-2 2v13.2a2 2 0 002 2h9.2a2 2 0 002-2V8.5z"/><path d="M13.4 3.4v5.1h5.2"/><path d="M8.8 13.2h6.4M8.8 16.6h4.4"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11.4" height="11.4" rx="2.8"/><path d="M15 6.4V6a2.4 2.4 0 00-2.4-2.4H6A2.4 2.4 0 003.6 6v6.6A2.4 2.4 0 006 15h.4"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20.2 12a8.2 8.2 0 11-2.9-6.2"/><path d="M20.4 4.1v4.5h-4.5"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M21.4 2.6L11 13"/><path d="M21.4 2.6l-6.8 18.8L11 13L2.6 9.4z"/></symbol>
+  <symbol id="i-dots" viewBox="0 0 24 24"><path d="M6 12h.01M12 12h.01M18 12h.01" stroke-width="2.6"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.9 12S6.5 6.5 12 6.5 21.1 12 21.1 12 17.5 17.5 12 17.5 2.9 12 2.9 12z"/><circle cx="12" cy="12" r="2.6"/></symbol>
+  <symbol id="i-lang" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M3.6 9.6h16.8M3.6 14.4h16.8"/><path d="M12 3.4c2.2 2.4 3.3 5.3 3.3 8.6s-1.1 6.2-3.3 8.6c-2.2-2.4-3.3-5.3-3.3-8.6S9.8 5.8 12 3.4z"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M10.4 2.8l1.8 4.4 4.4 1.8-4.4 1.8-1.8 4.4-1.8-4.4-4.4-1.8 4.4-1.8z"/><path d="M17.6 14.6l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M12 11v5.4M12 7.9h.01"/></symbol>
+  <symbol id="i-tune" viewBox="0 0 24 24"><path d="M4 7.4h5M13 7.4h7M4 16.6h7M15 16.6h5"/><circle cx="11" cy="7.4" r="2.2"/><circle cx="13" cy="16.6" r="2.2"/></symbol>
+  <symbol id="i-wave" viewBox="0 0 24 24"><path d="M3 12v.01M7 8.2v7.6M10.6 5.4v13.2M14.2 8.2v7.6M17.8 10.2v3.6M21.4 12v.01" stroke-width="2"/></symbol>
+</defs></svg>
+
+<div class="home" id="home">
+  <section class="page" id="viewHome" aria-label="首页">
+    <div class="hero">
+      <div class="hero-acts">
+        <button class="hero-a" id="btnSearch" aria-label="搜索" aria-pressed="false">
+          <svg class="ic"><use href="#i-search"/></svg></button>
+        <button class="hero-add" id="btnAdd" aria-label="导入音频">
+          <svg class="ic"><use href="#i-plus"/></svg></button>
+      </div>
+      <h1 class="wordmark">Lingua</h1>
+    </div>
+    <div class="finder" id="finder" hidden>
+      <svg class="ic ic-sm"><use href="#i-search"/></svg>
+      <input id="q" type="text" placeholder="搜索音频…" autocomplete="off" spellcheck="false" aria-label="搜索音频">
+      <button class="finder-x" id="btnSearchX" aria-label="清空搜索">
+        <svg class="ic ic-sm"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="list" id="trackList"></div>
+    <div class="blank" id="homeBlank" hidden></div>
+  </section>
+
+  <section class="page" id="viewSet" hidden aria-label="设置">
+    <h1 class="page-t">设置</h1>
+    <div class="set" id="setBody"></div>
+  </section>
+
+  <nav class="nav" aria-label="主导航">
+    <button class="nav-i is-on" data-go="viewHome" aria-current="page">
+      <span class="nav-ic"><svg class="ic"><use href="#i-home"/></svg></span><span class="nav-t">首页</span></button>
+    <button class="nav-i" data-go="viewSet">
+      <span class="nav-ic"><svg class="ic"><use href="#i-gear"/></svg></span><span class="nav-t">设置</span></button>
+  </nav>
+</div>
+
+<input id="fileAudio" type="file" accept="audio/*,video/*,.wav,.mp3,.m4a,.flac,.ogg,.opus" multiple hidden>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script type="module" src="js/home.js"></script>
+</body>
+</html>

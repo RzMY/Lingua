@@ -1,0 +1,302 @@
+/* ==========================================================================
+   llm.css — 单词卡片 (需求 5) / 句子讲解对话框 (需求 6) / markdown 渲染
+   ==========================================================================
+   两个浮层的进出场只用 transform + opacity; 等待动画也只动 opacity 和 translateY,
+   不碰宽高等触发重排的属性。
+   ========================================================================== */
+
+/* ---------------------------------------------------------------- 单词卡片 */
+
+.wc-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 44;
+  background: rgba(16, 20, 10, .40);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur) var(--ease);
+  -webkit-backdrop-filter: blur(1.5px);
+  backdrop-filter: blur(1.5px);
+}
+.wc-scrim.is-open { opacity: 1; pointer-events: auto; }
+
+/*  照 img/卡片.PNG: 卡片是一块淡蓝底, 和阅读区的绿系拉开层次;
+    词性小标签落在左下角, 和操作按钮同一行。                        */
+.wcard {
+  --wc-bg: #dfeaf8;
+  --wc-ink: #3a5675;
+  --wc-mute: #6a86a4;
+  --wc-chip: rgba(255, 255, 255, .78);
+  position: fixed;
+  left: 50%; top: 50%;
+  z-index: 45;
+  width: min(calc(100vw - 32px), 390px);
+  max-height: min(80vh, 640px);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  -webkit-overflow-scrolling: touch;
+  padding: 20px 20px 15px;
+  border-radius: 26px;
+  background: var(--wc-bg);
+  box-shadow: 0 20px 60px rgba(16, 20, 10, .26);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(.94);
+  transition: transform var(--dur) var(--ease), opacity .18s linear;
+  will-change: transform;
+}
+html[data-theme="dark"] .wcard {
+  --wc-bg: #1b2733;
+  --wc-ink: #c6d8ea;
+  --wc-mute: #93a9c0;
+  --wc-chip: rgba(255, 255, 255, .09);
+}
+.wcard.is-open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
+
+.wc-top { margin-bottom: 14px; }
+.wc-word {
+  font: 700 29px/1.28 var(--font-text);
+  letter-spacing: .01em;
+  overflow-wrap: anywhere;
+}
+.wc-read {
+  margin-left: 9px;
+  /* 与阅读区的注音层同一套字体栈: 拉丁语言这里是 IPA 音标, 系统字体不一定有那些字符 */
+  font: 500 14px/1 var(--font-read);
+  color: var(--wc-mute);
+  white-space: nowrap;
+}
+.wc-roman {
+  margin-top: 4px;
+  font: 500 13.5px/1.3 var(--font-roman);
+  letter-spacing: .02em;
+  color: var(--wc-mute);
+}
+.wc-pos {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 108px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--wc-chip);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wc-pos::before {
+  content: "";
+  flex: none;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--pc, var(--wc-mute));
+}
+
+.wc-gloss { margin: 0 0 9px; font-size: 18px; font-weight: 700; line-height: 1.45; }
+.wc-note p {
+  margin: 0 0 9px;
+  font-size: 14px;
+  line-height: 1.76;
+  color: var(--wc-ink);
+}
+.wc-note p:last-child { margin-bottom: 0; }
+.wc-err { color: #8f2c20; }
+html[data-theme="dark"] .wc-err { color: #f0bfb6; }
+
+.wc-forms { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 2px; }
+.wc-form {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  background: var(--wc-chip);
+}
+.wc-form b { font: 600 13.5px/1.25 var(--font-text); }
+.wc-form i { font-style: normal; font-size: 12px; color: var(--wc-mute); }
+
+.wc-meta {
+  margin-top: 11px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--wc-mute);
+}
+
+.wc-acts {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 15px;
+}
+.wc-a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--wc-ink);
+  transition: transform .16s var(--ease), opacity .16s linear;
+}
+.wc-a-ic { width: 36px; padding: 0; justify-content: center; }
+.wc-a:active { transform: scale(.96); }
+.wc-a-main {
+  margin-left: auto;
+  padding: 0 16px;
+  background: var(--cta);
+  color: var(--cta-ink);
+}
+.wcard.is-load .wc-a:not(.wc-a-main) { opacity: .4; pointer-events: none; }
+.wcard.is-load .wc-pos { opacity: .5; }
+
+/* 骨架屏: 只闪 opacity */
+.wc-sk { display: grid; gap: 9px; padding: 3px 0 4px; }
+.sk {
+  display: block;
+  height: 13px;
+  border-radius: 7px;
+  background: color-mix(in oklab, var(--wc-mute) 30%, transparent);
+  animation: sk 1.1s ease-in-out infinite alternate;
+}
+.sk-1 { width: 88%; }
+.sk-2 { width: 97%; animation-delay: .12s; }
+.sk-3 { width: 58%; animation-delay: .24s; }
+@keyframes sk { from { opacity: .95; } to { opacity: .38; } }
+
+/* ---------------------------------------------------------------- 讲解对话框 */
+
+/* 需求 6: 大约 2/3 屏 */
+.sheet-chat { height: 68vh; max-height: 68vh; }
+.sheet-chat .sheet-body { padding-bottom: 6px; }
+
+.chat-log { display: flex; flex-direction: column; gap: 13px; padding: 2px 0 6px; }
+
+.bub-row { display: flex; min-width: 0; }
+.bub-row.is-me { justify-content: flex-end; }
+.bub {
+  min-width: 0;
+  max-width: 86%;
+  padding: 10px 13px;
+  border-radius: 18px;
+  font-size: 14.5px;
+  line-height: 1.72;
+}
+.bub-me {
+  background: var(--accent-soft);
+  color: var(--ink);
+  border-bottom-right-radius: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* 助手气泡不画底色: 讲解内容长, 直接铺在浮层上更好读 (对齐设计稿) */
+.bub-bot { max-width: 100%; width: 100%; padding: 2px 0 0; background: none; }
+
+.bub-acts { display: flex; gap: 2px; margin-top: 5px; }
+.bub-a {
+  width: 30px; height: 30px;
+  display: grid; place-items: center;
+  border-radius: 10px;
+  color: var(--ink-4);
+  transition: transform .16s var(--ease);
+}
+.bub-a:active { transform: scale(.9); }
+
+.bub.is-wait { display: inline-flex; gap: 5px; align-items: center; padding: 10px 2px; }
+.dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--ink-4);
+  animation: dot 1s ease-in-out infinite;
+}
+.dot:nth-child(2) { animation-delay: .15s; }
+.dot:nth-child(3) { animation-delay: .3s; }
+@keyframes dot {
+  0%, 100% { opacity: .28; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-3px); }
+}
+
+.chat-foot { display: block; }
+.chat-in {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 4px 4px 4px 14px;
+  border-radius: 24px;
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+}
+.chat-in textarea {
+  flex: 1;
+  min-width: 0;
+  max-height: 132px;
+  padding: 9px 0;
+  border: 0;
+  background: none;
+  resize: none;
+  overflow-y: auto;
+  font: 400 14.5px/1.5 var(--font-ui);
+  color: var(--ink);
+}
+.chat-in textarea:focus { outline: none; }
+.chat-send {
+  flex: none;
+  width: 40px; height: 40px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: var(--cta);
+  color: var(--cta-ink);
+  transition: transform .16s var(--ease), opacity .16s linear;
+}
+.chat-send:active { transform: scale(.92); }
+.chat-send[disabled] { opacity: .45; }
+
+/* ---------------------------------------------------------------- markdown */
+
+.bub-md { font-size: 14.5px; line-height: 1.76; overflow-wrap: anywhere; }
+.bub-md > :first-child { margin-top: 0; }
+.bub-md > :last-child { margin-bottom: 0; }
+.bub-md p { margin: 0 0 10px; }
+.bub-md h2, .bub-md h3, .bub-md h4, .bub-md h5 {
+  margin: 16px 0 8px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--accent);
+}
+.bub-md h2 { font-size: 15.5px; }
+.bub-md h3 { font-size: 15px; }
+.bub-md h4, .bub-md h5 { font-size: 14.5px; color: var(--ink-2); }
+.bub-md ul, .bub-md ol { margin: 0 0 10px; padding-left: 20px; }
+.bub-md li { margin-bottom: 5px; }
+/* 序号跟着小标题一起用橄榄绿 (照 img/详解.PNG) */
+.bub-md ol > li::marker { color: var(--accent); font-weight: 700; }
+.bub-md ul > li::marker { color: var(--ink-4); }
+.bub-md strong { font-weight: 700; color: var(--ink); font-family: var(--font-text); }
+.bub-md em { font-style: normal; color: var(--ink-3); }
+.bub-md code {
+  font: 500 12.5px/1.5 var(--font-roman);
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: var(--card-2);
+}
+.bub-md pre {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-radius: 13px;
+  background: var(--card);
+  overflow-x: auto;
+}
+.bub-md pre code { padding: 0; background: none; font-size: 12.5px; }
+.bub-md blockquote {
+  margin: 0 0 10px;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--accent-soft);
+  color: var(--ink-2);
+}
+.bub-md hr { border: 0; border-top: 1px solid var(--line); margin: 13px 0; }
+.bub-md a { color: var(--accent-2); }
