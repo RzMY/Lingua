@@ -1,7 +1,7 @@
 /* ==========================================================================
-   home.css — 首页 / 设置
+   home.css — 首页 / 工作台 / 设置
    ==========================================================================
-   两个视图各自是一个独立的滚动容器, 切换只改 [hidden], 各自的 scrollTop 交给
+   各视图各自是一个独立的滚动容器, 切换只改 [hidden], 各自的 scrollTop 交给
    浏览器保留。所有按下反馈只用 transform / opacity, 不碰布局属性。
    ========================================================================== */
 
@@ -287,6 +287,95 @@ html[data-theme="dark"] .badge.is-bad { background: #4a231d; color: #f0bfb6; }
 .blank p { margin: 0 auto; max-width: 300px; font-size: 13.5px; line-height: 1.65; }
 
 .set { padding-bottom: 8px; }
+
+.workbench-card { background: var(--sheet); border: 1px solid var(--line); border-radius: 24px; padding: 20px; margin-bottom: 16px; box-shadow: 0 3px 12px rgba(16, 20, 10, .025); }
+.workbench-heading { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+.workbench-heading .sec-t { margin: 0; padding: 0; font-size: 16px; color: var(--ink); letter-spacing: -.02em; }
+.workbench-step { flex: none; display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid var(--line-2); border-radius: 10px; color: var(--accent); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.workbench-card .pane-note { padding: 0; margin: 0 0 16px; background: transparent; color: var(--ink-3); line-height: 1.7; }
+.workbench-card .field-hint { font-size: 12px; line-height: 1.7; }
+.workbench-card .field-acts { margin-bottom: 0; }
+.workbench-card .field-acts:has(> :not([hidden])) { margin-top: 12px; }
+.workbench-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.workbench-actions .btn { min-width: 0; min-height: 44px; justify-content: center; padding: 10px 8px; font-size: 13px; border-radius: 13px; }
+.workbench-extract-actions { grid-template-columns: 6fr 7fr 5fr; gap: 6px; }
+.workbench-extract-actions .btn { white-space: nowrap; padding-inline: 4px; font-size: clamp(10px, 2.8vw, 13px); }
+.workbench-audio { display: block; width: 100%; margin-top: 16px; }
+.workbench-file { margin: 0 0 14px; }
+.workbench-file-pick { display: flex; align-items: center; width: 100%; gap: 12px; padding: 18px 14px; text-align: left; border: 1px dashed var(--line-2); border-radius: 16px; background: var(--bg); transition: border-color .15s, background .15s; }
+.workbench-file-pick:hover:not(:disabled), .workbench-file.is-dragging .workbench-file-pick { border-color: var(--accent); background: var(--bg-soft); }
+.workbench-file-pick:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+.workbench-file.has-file .workbench-file-pick { border-style: solid; }
+.workbench-file-icon { display: grid; place-items: center; flex: none; width: 38px; height: 38px; border-radius: 12px; color: var(--accent); background: var(--sheet); border: 1px solid var(--line); }
+.workbench-file-copy { display: grid; gap: 5px; min-width: 0; flex: 1; }
+.workbench-file-copy b { font-size: 13px; line-height: 1.5; font-weight: 650; }
+.workbench-file-copy b, .workbench-target .workbench-entry-copy b,
+.workbench-track-option .workbench-entry-copy > *, .workbench-filename {
+  display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.workbench-card .pane-note:has(> .workbench-filename) { display: flex; align-items: baseline; min-width: 0; }
+.workbench-card .pane-note:has(> .workbench-filename) > :first-child { flex: none; }
+.workbench-file-copy > span { color: var(--ink-3); font-size: 11px; line-height: 1.6; }
+.workbench-file-pick > .ic { flex: none; color: var(--ink-3); }
+.workbench-options { padding-bottom: 18px; }
+.workbench-subtitle-import { border-top: 1px solid var(--line); margin-top: 20px; padding-top: 20px; }
+.workbench-card { display: flex; flex-direction: column; gap: 18px; }
+.workbench-card > .workbench-heading,
+.workbench-card > .pane-note,
+.workbench-card > .field-hint,
+.workbench-card > .field,
+.workbench-card > .workbench-file,
+.workbench-card > .workbench-audio,
+.workbench-card > .field-acts { margin: 0; }
+.workbench-card > .field-acts:has(> :not([hidden])) { margin-top: 0; }
+.workbench-card > .field-acts:not(:has(> :not([hidden]))), .workbench-card .pane-note:empty { display: none; }
+.workbench-card .field-hint { margin: 8px 0 0; }
+.workbench-entry { display: flex; align-items: center; gap: 12px; padding: 16px; border: 1px solid var(--line-2); border-radius: 16px; background: var(--bg); width: 100%; text-align: left; }
+.workbench-entry-icon { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 12px; color: var(--accent); background: var(--accent-soft, var(--bg-soft)); flex: none; }
+.workbench-entry-copy { display: grid; gap: 5px; min-width: 0; flex: 1; }
+.workbench-entry-copy b { font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.workbench-entry-copy > span { font-size: 11px; color: var(--ink-3); line-height: 1.6; overflow-wrap: anywhere; }
+.workbench-entry > .ic, .workbench-target > .ic, .workbench-track-option > .ic { flex: none; color: var(--ink-3); }
+.workbench-entry:hover, .workbench-target:hover { background: var(--bg-soft); }
+.workbench-entry:focus-visible, .workbench-target:focus-visible, .workbench-track-option:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+.workbench-source-choice { display: grid; gap: 10px; }
+.workbench-source-choice > span { color: var(--ink-3); font-size: 12px; }
+.workbench-source-choice .field-acts { margin: 0; }
+.workbench-source-choice [aria-pressed="true"] { background: var(--bg-soft); border-color: var(--accent); color: var(--accent); }
+.workbench-target-bar { display: flex; border: 1px solid var(--line-2); border-radius: 16px; background: var(--bg); margin-top: 10px; }
+.workbench-target-field > .field-label { font-size: 13px; font-weight: 600; line-height: 1.6; }
+.workbench-target { display: flex; align-items: center; gap: 10px; text-align: left; flex: 1; min-width: 0; padding: 14px; border-radius: 16px; }
+.workbench-subtitle-import { display: grid; gap: 20px; margin-top: 2px; }
+.workbench-subtitle-import > .field, .workbench-subtitle-import > .pane-note, .workbench-subtitle-import > .field-acts { margin: 0; }
+.workbench-track-list { display: grid; gap: 10px; padding-bottom: 18px; }
+.workbench-track-option { display: flex; gap: 12px; align-items: center; width: 100%; text-align: left; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); }
+.workbench-track-option[aria-pressed="true"] { border-color: var(--accent); background: var(--bg-soft); }
+.workbench-options .field { margin-bottom: 22px; }
+.workbench-card .field input, .workbench-card .field textarea { background: var(--bg); border-color: var(--line-2); }
+.workbench-card .field input:focus, .workbench-card .field textarea:focus { border-color: var(--ring); }
+.workbench-choice, .workbench-languages .row { flex-direction: column; align-items: stretch; gap: 10px; border-top: 0; padding: 0; margin-bottom: 18px; }
+.workbench-choice .row-label b, .workbench-toggle .row-label b, .workbench-languages .row-label b { font-size: 13.5px; font-weight: 600; }
+.workbench-choice .segs, .workbench-languages .segs { gap: 3px; padding: 4px; }
+.workbench-choice .seg, .workbench-languages .seg { flex: 1 0 auto; min-width: 0; padding: 8px; font-size: 12px; }
+.workbench-languages.rows { padding: 0; margin: 0; border: 0; background: transparent; }
+.workbench-toggle { margin: 0 0 18px; padding: 10px 0; background: transparent; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.workbench-custom { padding-top: 18px; margin-top: 18px; border-top: 1px solid var(--line); }
+.workbench-params { display: grid; gap: 12px; margin: 14px 0; }
+.workbench-param { min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 12px; }
+.workbench-param > .row { padding: 0 0 10px; background: transparent; }
+.workbench-param .row-label { min-width: 0; overflow-wrap: anywhere; }
+.workbench-param .row-label b { font-size: 13px; }
+.workbench-param-inputs { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 10px; }
+.workbench-param-inputs .field { min-width: 0; margin: 0; }
+.workbench-param-inputs input, .workbench-param-inputs select { width: 100%; min-width: 0; font-size: 12px; }
+.workbench-param-inputs input:disabled, .workbench-param-inputs select:disabled { opacity: .6; }
+.workbench-param-inputs > .btn { grid-column: 1 / -1; justify-self: end; }
+.workbench-error { font-size: 12px; line-height: 1.6; color: var(--ink); margin: 0 0 10px; }
+@media (max-width: 360px) {
+  .workbench-card { padding: 16px; }
+  .workbench-file-pick { gap: 8px; padding: 14px 10px; }
+  .workbench-file-icon { width: 30px; height: 34px; }
+}
 
 /* 设置里的子页 (大模型 / 提示词 / 数据) 直接铺在浮层里 */
 .pane { padding: 2px 0 8px; }

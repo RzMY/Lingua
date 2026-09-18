@@ -24,7 +24,7 @@ function fixture(id = 'lesson') {
   stores.kv.push(row(id + '|progress', { done: [0], total: 1 }));
   return { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: '2026-09-08T00:00:00.000Z',
     includesCredentials: true, stores, localStorage: {
-      [GLOBAL_KEYS[0]]: JSON.stringify({ apiKey: 'model-secret', apiToken: 'backend-secret',
+      [GLOBAL_KEYS[0]]: JSON.stringify({ apiKey: 'model-secret', apiToken: 'backend-secret', asrApiKey: 'asr-secret',
         model: 'test-model', prompts: { explain: 'Custom prompt {{src}}' }, langs: { en: { read: 0 } } }),
       [GLOBAL_KEYS[1]]: JSON.stringify({ size: 120, theme: 'dark', rate: 1.5, track: id }),
       [GLOBAL_KEYS[2]]: JSON.stringify([{ code: 'en', layers: { read: 'IPA' } }]),
@@ -167,11 +167,13 @@ test('credentials can be excluded without erasing destination secrets or mutatin
   const backup = await exportBackup({ includeCredentials: false });
   assert.ok(!JSON.stringify(backup).includes('model-secret'));
   assert.ok(!JSON.stringify(backup).includes('backend-secret'));
+  assert.ok(!JSON.stringify(backup).includes('asr-secret'));
   assert.equal(JSON.parse(localStorage.getItem(GLOBAL_KEYS[0])).apiKey, 'model-secret');
-  const plan = prepareImport(backup, empty(), { [GLOBAL_KEYS[0]]: JSON.stringify({ apiKey: 'keep-key', apiToken: 'keep-token' }) });
+  const plan = prepareImport(backup, empty(), { [GLOBAL_KEYS[0]]: JSON.stringify({ apiKey: 'keep-key', apiToken: 'keep-token', asrApiKey: 'keep-asr-key' }) });
   const cfg = JSON.parse(plan.changes.get(GLOBAL_KEYS[0]));
   assert.equal(cfg.apiKey, 'keep-key');
   assert.equal(cfg.apiToken, 'keep-token');
+  assert.equal(cfg.asrApiKey, 'keep-asr-key');
   assert.equal(cfg.model, 'test-model');
 });
 

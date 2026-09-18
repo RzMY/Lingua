@@ -62,6 +62,11 @@
     <div class="blank" id="homeBlank" hidden></div>
   </section>
 
+  <section class="page" id="viewWorkbench" hidden aria-label="工作台">
+    <h1 class="page-t">工作台</h1>
+    <div id="workbenchBody"></div>
+  </section>
+
   <section class="page" id="viewSet" hidden aria-label="设置">
     <h1 class="page-t">设置</h1>
     <div class="set" id="setBody"></div>
@@ -70,6 +75,8 @@
   <nav class="nav" aria-label="主导航">
     <button class="nav-i is-on" data-go="viewHome" aria-current="page">
       <span class="nav-ic"><svg class="ic"><use href="#i-home"/></svg></span><span class="nav-t">首页</span></button>
+    <button class="nav-i" id="navWorkbench" data-go="viewWorkbench" hidden>
+      <span class="nav-ic"><svg class="ic"><use href="#i-tune"/></svg></span><span class="nav-t">工作台</span></button>
     <button class="nav-i" data-go="viewSet">
       <span class="nav-ic"><svg class="ic"><use href="#i-gear"/></svg></span><span class="nav-t">设置</span></button>
   </nav>

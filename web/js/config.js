@@ -81,6 +81,16 @@ export const PROMPT_META = [
 ];
 
 export const DEFAULTS = {
+  experimental: 0,
+  asrBaseUrl: '',
+  asrApiKey: '',
+  asrModel: 'whisper-1',
+  asrLanguage: '',
+  asrFormat: 'verbose_json',
+  asrTimeout: 600,
+  asrPrompt: '',
+  asrWordTimestamps: false,
+  asrExtraParams: [],
   // 分析后端: 空 = 与页面同源 (python -m pipeline serve 的默认情形)
   apiBase: '',
   apiToken: '',

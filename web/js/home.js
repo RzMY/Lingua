@@ -1,7 +1,7 @@
 /**
  * 首页 —— 音频库 + 导入 + 通用设置.
  *
- * 两个视图 (首页 / 设置) 都在同一个文档里, 切换只改 `[hidden]`, 不重新加载页面;
+ * 首页 / 实验性工作台 / 设置在同一个文档里, 切换只改 `[hidden]`, 不重新加载页面;
  * 播放页是另一个文档 (`player.html?track=<id>`), 这样阅读器那套 rAF 循环、虚拟列表、
  * 字体探针都不用为首页付代价。
  *
@@ -14,7 +14,7 @@
 
 import {
   config, loadConfig, setConfig, setLangConfig, langDefaults, langName, TARGET_LANGS,
-  PROMPT_META, DEFAULT_PROMPTS, resetPrompt, DEFAULTS, LANG_DEFAULTS,
+  PROMPT_META, DEFAULT_PROMPTS, resetPrompt, DEFAULTS, LANG_DEFAULTS, onConfigChange,
 } from './config.js';
 import { initSettings, settings, setSetting } from './settings.js';
 import { openFontSheet } from './font-settings.js';
@@ -30,6 +30,7 @@ import {
 } from './rows.js';
 import { stats, clearAll, wipeTrack, isDegraded, usage } from './store.js';
 import { el, icon, toast, fmtTime, fmtSize, dayKey, debounce } from './util.js';
+import { mountWorkbench } from './workbench.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -42,7 +43,19 @@ const dom = {
   file: $('fileAudio'),
 };
 
-const VIEWS = ['viewHome', 'viewSet'];
+const VIEWS = ['viewHome', 'viewWorkbench', 'viewSet'];
+let workbench;
+let currentView = 'viewHome';
+const experimentsEnabled = () => config.experimental === 1;
+
+function syncExperiments() {
+  $('navWorkbench').hidden = !experimentsEnabled();
+  if (!experimentsEnabled()) {
+    workbench?.dispose();
+    workbench = null;
+    if (currentView === 'viewWorkbench') go('viewHome');
+  }
+}
 
 let tracks = [];
 let pending = [];        // 正在写入库的文件 (还没有 track 记录)
@@ -311,6 +324,9 @@ function cardMenu(anchor, t) {
 /* ------------------------------------------------------------------ 视图切换 */
 
 function go(id) {
+  if (!VIEWS.includes(id) || (id === 'viewWorkbench' && !experimentsEnabled())) id = 'viewHome';
+  currentView = id;
+  if (id === 'viewWorkbench' && !workbench) workbench = mountWorkbench($('workbenchBody'), { onImport: refresh });
   for (const v of VIEWS) $(v).hidden = v !== id;
   for (const b of document.querySelectorAll('.nav-i')) {
     const on = b.dataset.go === id;
@@ -320,7 +336,7 @@ function go(id) {
   }
   $('btnAdd').hidden = id !== 'viewHome';
   if (id === 'viewSet') paintSettings();
-  const tag = id === 'viewHome' ? '' : '#set';
+  const tag = id === 'viewHome' ? '' : id === 'viewWorkbench' ? '#workbench' : '#set';
   history.replaceState(null, '', location.pathname + location.search + tag);
 }
 
@@ -387,6 +403,8 @@ function paintSettings() {
     ),
     sectionTitle('系统'),
     group(
+      switchRow('实验性功能', '开启后显示工作台：视频转音频与语音转录',
+        () => experimentsEnabled(), (v) => setConfig({ experimental: v })),
       svc,
       ver,
       infoRow('存储', isDegraded() ? '仅本次会话' : 'IndexedDB'),
@@ -708,8 +726,11 @@ async function dataPane() {
 function boot() {
   loadConfig();
   initSettings(() => {});
+  syncExperiments();
+  onConfigChange((_cfg, patch) => { if ('experimental' in patch) syncExperiments(); });
   const hash = (location.hash || '').replace('#', '').toLowerCase();
-  const start = hash === 'set' || hash === 'restore' ? 'viewSet' : 'viewHome';
+  const start = hash === 'set' || hash === 'restore' ? 'viewSet'
+    : hash === 'workbench' ? 'viewWorkbench' : 'viewHome';
   go(start);
   refresh().then(() => {
     if (start === 'viewSet') paintSettings();
@@ -723,6 +744,8 @@ function boot() {
     if (!document.hidden) refresh();
   });
   addEventListener('pageshow', (e) => { if (e.persisted) refresh(); });
+  addEventListener('hashchange', () => go(location.hash === '#workbench' ? 'viewWorkbench'
+    : location.hash === '#set' ? 'viewSet' : 'viewHome'));
 }
 
 boot();

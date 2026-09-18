@@ -16,12 +16,12 @@
  */
 
 const DB_NAME = 'linguatrack';
-const DB_VER = 3;
+const DB_VER = 4;
 
 /** 大模型缓存 (键 = `trackId|…`). */
 export const CACHE_STORES = ['tr', 'word', 'chat', 'kv'];
 /** 音频库 (键 = trackId): 元数据 / 音频 / 分析结果 / 字幕原件. */
-export const LIB_STORES = ['tracks', 'audio', 'data', 'transcripts'];
+export const LIB_STORES = ['tracks', 'audio', 'audioChunks', 'data', 'transcripts'];
 export const STORES = [...CACHE_STORES, ...LIB_STORES];
 
 let dbPromise = null;
@@ -35,7 +35,7 @@ function open() {
     const req = indexedDB.open(DB_NAME, DB_VER);
     req.onupgradeneeded = () => {
       const db = req.result;
-      // 升级只新增 store: v2 加音频库, v3 加字幕原件, 保留已有记录。
+      // 升级只新增 store: v2 音频库, v3 字幕原件, v4 音频二进制分块; 保留已有记录。
       for (const name of STORES) {
         if (db.objectStoreNames.contains(name)) continue;
         const os = db.createObjectStore(name);
@@ -106,7 +106,7 @@ export async function snapshot(names) {
 }
 
 /** beforeCommit is synchronous and may return a rollback for localStorage changes. */
-export async function writeBatch(batches, { addOnly = false, persistent = false, beforeCommit } = {}) {
+export async function writeBatch(batches, { addOnly = false, persistent = false, beforeCommit, timeoutMs = 0 } = {}) {
   const names = Object.keys(batches);
   if (!names.length) throw new Error('没有指定存储区');
   let db;
@@ -131,8 +131,14 @@ export async function writeBatch(batches, { addOnly = false, persistent = false,
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(names, 'readwrite');
     let rollback, failure;
-    transaction.oncomplete = () => resolve();
+    const timer = timeoutMs ? setTimeout(() => {
+      failure = new Error('保存超时，请检查浏览器存储空间后重试');
+      try { transaction.abort(); } catch { /* A stalled connection can already be closed. */ }
+      reject(failure);
+    }, timeoutMs) : null;
+    transaction.oncomplete = () => { clearTimeout(timer); resolve(); };
     transaction.onabort = () => {
+      clearTimeout(timer);
       try { if (rollback) rollback(); } catch (err) { failure = err; }
       reject(failure || transaction.error || new Error('写入失败, 导入已取消'));
     };

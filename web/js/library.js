@@ -12,8 +12,9 @@
  * 也不再需要联网就能重听已经导入过的音频。
  */
 
-import { del, get, put, values, wipeTrackAll, writeBatch } from './store.js';
+import { del, get, put, values, wipeTrack, wipeTrackAll, writeBatch } from './store.js';
 import { dropTrackCfg } from './trackcfg.js';
+import { randomId } from './util.js';
 
 const now = () => new Date().toISOString();
 
@@ -36,7 +37,17 @@ export async function listTracks() {
 
 export const getTrack = (id) => get('tracks', id);
 export const trackData = (id) => get('data', id);
-export const audioBlob = (id) => get('audio', id);
+export async function audioBlob(id) {
+  const audio = await get('audio', id);
+  if (!audio || audio.storage !== 'chunks-v1') return audio;
+  const parts = [];
+  for (let i = 0; i < audio.count; i++) {
+    const bytes = await get('audioChunks', `${audio.prefix}|${i}`);
+    if (!(bytes instanceof ArrayBuffer)) throw new Error('音频数据不完整，请重新导入');
+    parts.push(new Blob([bytes]));
+  }
+  return new Blob(parts, { type: audio.type });
+}
 export const transcriptBlob = (id) => get('transcripts', id);
 
 /** 播放页拿到的是 blob URL; 用完记得 `URL.revokeObjectURL`. */
@@ -118,8 +129,58 @@ export async function saveAnalysis(id, track, { transcriptName = '', transcriptF
   return next;
 }
 
+/** Workbench import: commit the listening master and subtitle together, never the ASR proxy. */
+export async function createPreparedTrack(file, transcript, { title = '', lang = 'ja', duration = 0, onStage } = {}) {
+  if (!(file instanceof Blob) || !file.size || !file.name) throw new Error('缺少聆听音频');
+  if (transcript && (!(transcript instanceof Blob) || !transcript.size || !SUB_RE.test(transcript.name))) {
+    throw new Error('缺少有效的 JSON / SRT / VTT 字幕');
+  }
+  const id = await uniqueId(slugId(file.name));
+  const record = { id, title: (title || file.name.replace(/\.[^.]+$/, '')).slice(0, 200), lang,
+    status: 'new', error: '', duration, sentences: 0, words: 0, hasWordTiming: false,
+    audio: { name: file.name, size: file.size, type: file.type },
+    transcript: transcript ? { name: transcript.name, at: now(), missing: false } : null,
+    createdAt: now(), updatedAt: now() };
+  // Safari can stall preparing a compound Blob for IDB. Store small ArrayBuffers,
+  // then atomically publish the manifest + track only after every chunk commits.
+  const prefix = `${id}|${randomId()}`, chunkSize = 1024 * 1024;
+  const keys = [];
+  try {
+    for (let p = 0, i = 0; p < file.size; p += chunkSize, i++) {
+      const bytes = await file.slice(p, p + chunkSize).arrayBuffer(), key = `${prefix}|${i}`;
+      keys.push(key);
+      await writeBatch({ audioChunks: [{ key, value: bytes, track: id }] },
+        { persistent: true, addOnly: true, timeoutMs: 15000 });
+      onStage?.(`正在保存聆听音频… ${Math.round(Math.min(p + chunkSize, file.size) / file.size * 100)}%`);
+    }
+    const manifest = { storage: 'chunks-v1', prefix, count: keys.length, type: file.type, size: file.size };
+    const batches = { tracks: [{ key: id, value: record, track: id }], audio: [{ key: id, value: manifest, track: id }] };
+    if (transcript) batches.transcripts = [{ key: id, value: transcript, track: id }];
+    await writeBatch(batches, { addOnly: true, persistent: true, timeoutMs: 15000 });
+    return record;
+  } catch (err) {
+    for (const key of keys) await del('audioChunks', key);
+    throw err;
+  }
+}
+
 export const SUB_EXT = ['json', 'srt', 'vtt', 'webvtt'];
 export const SUB_RE = /\.(json|srt|vtt|webvtt)$/i;
+
+/** Save a replacement subtitle before analysis so failures can retry from the player. */
+export async function savePreparedTranscript(id, file, lang) {
+  const record = await getTrack(id);
+  if (!record) throw new Error('找不到这条音频，请重新选择');
+  if (!(file instanceof Blob) || !file.size || !SUB_RE.test(file.name)) throw new Error('请选择 JSON / SRT / VTT 字幕');
+  const next = { ...record, lang: lang || record.lang, status: 'new', error: '',
+    sentences: 0, words: 0, hasWordTiming: false, schemaVersion: 0,
+    transcript: { name: file.name, at: now(), missing: false }, updatedAt: now() };
+  await writeBatch({ tracks: [{ key: id, value: next, track: id }],
+    transcripts: [{ key: id, value: file, track: id }],
+    data: [{ key: id, value: null, track: id }] }, { persistent: true });
+  await wipeTrack(id);
+  return next;
+}
 export const AUDIO_ACCEPT = 'audio/*,.wav,.mp3,.m4a,.flac,.ogg,.opus,.aac,.mp4,.webm';
 
 export const missingFiles = (records) => records.flatMap((record) =>

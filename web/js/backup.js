@@ -202,6 +202,7 @@ export async function exportBackup({ includeCredentials = true } = {}) {
     const cfg = parseJSON(local[GLOBAL_KEYS[0]]);
     delete cfg.apiKey;
     delete cfg.apiToken;
+    delete cfg.asrApiKey;
     local[GLOBAL_KEYS[0]] = JSON.stringify(cfg);
   }
   const stores = await snapshot(BACKUP_STORES);
@@ -280,7 +281,7 @@ export function prepareImport(backup, current, local, { restoreConfig = true } =
   if (restoreConfig && !backup.includesCredentials) {
     const cfg = parseJSON(changes.get(GLOBAL_KEYS[0]) || '{}');
     const old = parseJSON(local[GLOBAL_KEYS[0]] || '{}');
-    for (const key of ['apiKey', 'apiToken']) {
+    for (const key of ['apiKey', 'apiToken', 'asrApiKey']) {
       delete cfg[key];
       if (typeof old[key] === 'string') cfg[key] = old[key];
     }

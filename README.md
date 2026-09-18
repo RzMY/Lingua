@@ -100,10 +100,7 @@ Windows PowerShell 可使用：
 ```powershell
 Copy-Item .env.example .env
 ```
-
-## 启动
-
-同时提供网站和分析 API：
+同时启动网站和分析 API：
 
 ```bash
 python -m pipeline serve --root web --open
@@ -117,11 +114,20 @@ python -m pipeline serve --root web --open
 python -m pipeline serve --no-static --host 0.0.0.0 --port 8765
 ```
 
-跨设备使用时请设置访问令牌：
+## 工作台
 
-```env
-LINGUA_API_TOKEN=替换为随机字符串
-```
+在「设置 → 系统」开启「实验性功能」后，底部导航的首页与设置之间显示工作台。
+
+#### 提取聆听音频：
+  - 普通 MP4 的 AAC/ALAC 原音轨直接分离为 M4A；
+  - 已有无损 WAV 直接复用，其他支持的格式解码为浮点 WAV，保留原采样率与声道。
+  - 提取后可直接导入该音频。
+#### 生成ASR音频：
+  - 下采样聆听音频生成 16 kHz MP3 用于转录；
+#### 转录：
+  - 点击「转录接口配置」，设置 OpenAI 兼容接口地址、API Key、模型与结果格式。可选词级时间戳与自定义参数。
+  - 输入音频可直接引用第一步的聆听原音频，也可引用第二步的 ASR 音频；
+  - 转录后可直接导入字幕。
 
 ## 字幕格式
 
@@ -196,6 +202,11 @@ LINGUA_API_TOKEN=替换为随机字符串
 ```json
 {"ok": true, "log": ["..."], "track": {"schemaVersion": 2, "sentences": []}}
 ```
+## 开源致谢
+本项目依赖并使用了以下开源组件：
+
+* **lamejs**：用于音频 MP3 编码，基于 LGPL 许可证发布。项目主页及源码请参考 [LAME 官方网站](http://lame.sourceforge.net)。
+
 ## 许可
 
 本项目使用 MIT License，详见 [LICENSE](LICENSE)。
