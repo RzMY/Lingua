@@ -1,5 +1,5 @@
 // Platform-independent update policy; native plugin owns atomic extraction and rollback.
-export const NATIVE_REVISION = 2;
+export const NATIVE_REVISION = 3;
 
 export function validateManifest(data, manifestUrl, bundleUrl) {
   const base = new URL(manifestUrl);

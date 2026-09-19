@@ -11,7 +11,41 @@ class LinguaViewController: CAPBridgeViewController {
         config.allowsInlineMediaPlayback = true
         config.allowsPictureInPictureMediaPlayback = true
         config.allowsAirPlayForMediaPlayback = true
+        // The local player already owns its full-screen canvas and subtitle overlays.
+        // WebKit's element fullscreen presents another controller and can restore stale insets.
+        config.preferences.isElementFullscreenEnabled = false
         return config
+    }
+
+    private func restoreEdgeToEdge() {
+        guard let scroll = webView?.scrollView else { return }
+        scroll.contentInsetAdjustmentBehavior = .never
+        if scroll.contentInset != .zero { scroll.contentInset = .zero }
+        if scroll.verticalScrollIndicatorInsets != .zero { scroll.verticalScrollIndicatorInsets = .zero }
+        if scroll.horizontalScrollIndicatorInsets != .zero { scroll.horizontalScrollIndicatorInsets = .zero }
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        restoreEdgeToEdge()
+    }
+
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        restoreEdgeToEdge()
+    }
+
+    // Capacitor's SystemBars plugin owns Home indicator visibility.
+    func setPresentation(immersive: Bool, dark: Bool) {
+        isStatusBarVisible = !immersive
+        statusBarStyle = dark ? .lightContent : .darkContent
+        let color: UIColor = immersive ? .black : (dark
+            ? UIColor(red: 21/255, green: 23/255, blue: 15/255, alpha: 1)
+            : UIColor(red: 242/255, green: 242/255, blue: 234/255, alpha: 1))
+        webView?.backgroundColor = color
+        webView?.scrollView.backgroundColor = color
+        setNeedsStatusBarAppearanceUpdate()
+        restoreEdgeToEdge()
     }
 
     override func capacitorDidLoad() {
@@ -22,9 +56,7 @@ class LinguaViewController: CAPBridgeViewController {
         webView?.scrollView.bounces = false
         edgesForExtendedLayout = .all
         extendedLayoutIncludesOpaqueBars = true
-        webView?.scrollView.contentInsetAdjustmentBehavior = .never
-        webView?.scrollView.contentInset = .zero
-        webView?.scrollView.scrollIndicatorInsets = .zero
+        restoreEdgeToEdge()
         webView?.isOpaque = false
         webView?.backgroundColor = UIColor(red: 242/255, green: 242/255, blue: 234/255, alpha: 1)
         webView?.scrollView.backgroundColor = webView?.backgroundColor
@@ -36,7 +68,21 @@ class LinguaViewController: CAPBridgeViewController {
 class NativeShellPlugin: CAPPlugin, CAPBridgedPlugin {
     let identifier = "NativeShellPlugin"
     let jsName = "NativeShell"
-    let pluginMethods: [CAPPluginMethod] = [CAPPluginMethod(name: "openDevelopment", returnType: CAPPluginReturnPromise)]
+    let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "openDevelopment", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setPresentation", returnType: CAPPluginReturnPromise)
+    ]
+    @objc func setPresentation(_ call: CAPPluginCall) {
+        let immersive = call.getBool("immersive") ?? false
+        let dark = call.getBool("dark") ?? false
+        DispatchQueue.main.async {
+            guard let controller = self.bridge?.viewController as? LinguaViewController else {
+                call.reject("窗口尚未就绪"); return
+            }
+            controller.setPresentation(immersive: immersive, dark: dark)
+            call.resolve()
+        }
+    }
     @objc func openDevelopment(_ call: CAPPluginCall) {
         guard let raw = call.getString("url"), let url = DevelopmentViewController.validURL(raw) else {
             call.reject("请输入 HTTP 或 HTTPS 调试地址"); return

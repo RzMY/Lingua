@@ -1,4 +1,4 @@
-import { Capacitor, CapacitorHttp, registerPlugin } from '@capacitor/core';
+import { Capacitor, CapacitorHttp, registerPlugin, SystemBars, SystemBarType } from '@capacitor/core';
 import { Preferences } from '@capacitor/preferences';
 import { CapacitorUpdater } from '@capgo/capacitor-updater';
 import { App } from '@capacitor/app';
@@ -123,15 +123,25 @@ async function check() {
   } catch (e) { setStatus(`继续使用本地版本：${e.message}`); }
 }
 async function exportFile(blob, name) {
-  // The cache file exists only for the duration of the OS share sheet.
+  // Android's chooser resolves before the receiving app finishes reading the URI.
+  // Keep unique cache files for a day; iOS reports completion after the activity finishes.
+  const directory = Directory.Cache;
+  const { files } = await Filesystem.readdir({ directory, path: 'exports' }).catch(() => ({ files: [] }));
+  for (const file of files) {
+    if (file.type === 'file' && file.mtime < Date.now() - 86400000 && !/[\\/]/.test(file.name)) {
+      await Filesystem.deleteFile({ directory, path: 'exports/' + file.name }).catch(() => {});
+    }
+  }
   const data = await new Promise((resolve, reject) => {
     const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1]);
-    reader.onerror = reject; reader.readAsDataURL(blob);
+    reader.onerror = () => reject(reader.error || Error('无法读取导出文件')); reader.readAsDataURL(blob);
   });
-  const path = 'exports/' + name.replace(/[^\p{L}\p{N}._-]/gu, '_');
+  const path = 'exports/' + crypto.randomUUID() + '-' + name.replace(/[^\p{L}\p{N}._-]/gu, '_');
   const result = await Filesystem.writeFile({ directory: Directory.Cache, path, data, recursive: true });
   try { await Share.share({ title: name, files: [result.uri] }); }
-  finally { await Filesystem.deleteFile({ directory: Directory.Cache, path }).catch(() => {}); }
+  finally {
+    if (Capacitor.getPlatform() !== 'android') await Filesystem.deleteFile({ directory, path }).catch(() => {});
+  }
 }
 async function initialize() {
   if (!Capacitor.isNativePlatform()) return;
@@ -174,7 +184,7 @@ async function initialize() {
   manager = new UpdateManager({ updater: CapacitorUpdater, fetchManifest: (selected) => fetchSourceManifest(selected, getJson), save, state, currentVersion: version });
   let marked = false;
   window.LinguaNative = {
-    target, settings, exportFile, channel: source.channel,
+    target, settings, exportFile, channel: source.channel, platform: Capacitor.getPlatform(),
     activityPip: Capacitor.getPlatform() === 'android' ? NativeMedia : null,
     async markReady() {
       if (marked) return; marked = true;
@@ -185,14 +195,45 @@ async function initialize() {
       void check();
     },
   };
+  // UIKit owns system bars; theme-color alone only changes browser chrome.
+  let pageVisible = true;
+  let presentationKey = '';
+  const syncPresentation = (force = false) => {
+    if (Capacitor.getPlatform() !== 'ios') return;
+    const root = document.documentElement;
+    const state = { immersive: pageVisible && root.classList.contains('video-immersive'), dark: root.dataset.theme === 'dark' };
+    const key = JSON.stringify(state);
+    if (!force && key === presentationKey) return;
+    presentationKey = key;
+    // CAPBridgeViewController's Home indicator override is public, not open.
+    // Use its built-in plugin instead of overriding that property in the app module.
+    void Promise.all([
+      NativeShell.setPresentation(state),
+      state.immersive ? SystemBars.hide({ bar: SystemBarType.NavigationBar })
+        : SystemBars.show({ bar: SystemBarType.NavigationBar }),
+    ]).catch((error) => {
+      presentationKey = ''; console.warn('Native presentation', error);
+    });
+  };
+  new MutationObserver(() => syncPresentation()).observe(document.documentElement,
+    { attributes: true, attributeFilter: ['class', 'data-theme'] });
+  window.addEventListener('pagehide', () => { pageVisible = false; syncPresentation(); });
+  window.addEventListener('pageshow', () => { pageVisible = true; syncPresentation(true); });
+  syncPresentation();
   await App.addListener('backButton', ({ canGoBack }) => {
     if (panel?.open) { panel.close(); return; }
+    const overlay = document.querySelector('.menu-scrim') || document.querySelector('.wc-scrim.is-open');
+    if (overlay) { overlay.click(); return; }
     const sheet = document.querySelector('.sheet.is-open .sheet-acts button[aria-label="关闭"]');
     if (sheet) { sheet.click(); return; }
+    const explain = document.getElementById('explainPanel');
+    if (explain && !explain.hidden) { document.getElementById('btnExplainClose')?.click(); return; }
+    if (!window.dispatchEvent(new CustomEvent('native-back', { cancelable: true }))) return;
     if (canGoBack) history.back(); else App.minimizeApp();
   });
   await App.addListener('appStateChange', async ({ isActive }) => {
     if (!isActive) return;
+    syncPresentation(true);
     try {
       const changed = await readSource();
       if (sourceKey(changed) !== sourceKey(source)) {

@@ -54,10 +54,11 @@
   position: absolute;
   z-index: 2;
   inset: 0 0 auto;
-  height: env(safe-area-inset-top, 0px);
+  height: var(--safe-t);
   background: #000;
   pointer-events: none;
 }
+html.native-app .has-video.is-immersive::before { display: none; }
 html.video-immersive, html.video-immersive body { background: #000; }
 .has-video.is-immersive .playback-content { position: absolute; inset: 0; display: block; }
 .has-video.is-immersive .video-stage { position: absolute; inset: 0; height: 100%; max-height: none; aspect-ratio: auto; }
@@ -68,10 +69,10 @@ html.video-immersive, html.video-immersive body { background: #000; }
   --subtitle-bottom-min: calc(4px + var(--safe-b));
   --subtitle-bottom-max: calc(100% - var(--subtitle-panel-height) - 4px);
   position: absolute;
-  left: 50%;
+  left: calc((100% + var(--safe-l) - var(--safe-r)) / 2);
   bottom: calc(var(--subtitle-bottom-min) + (var(--subtitle-bottom-max) - var(--subtitle-bottom-min)) * var(--subtitle-position));
   transform: translateX(-50%);
-  width: min(1000px, var(--subtitle-width));
+  width: min(1000px, var(--subtitle-width), calc(100% - var(--safe-l) - var(--safe-r) - 8px));
   height: var(--subtitle-panel-height);
   max-height: calc(100% - 110px);
   padding: 0 14px;
@@ -126,9 +127,9 @@ html.video-immersive, html.video-immersive body { background: #000; }
   inset: 0 0 auto;
   z-index: 3;
   width: 100%;
-  height: calc(44px + env(safe-area-inset-top, 0px));
+  height: calc(44px + var(--safe-t));
   max-width: none;
-  padding: env(safe-area-inset-top, 0px) max(8px, env(safe-area-inset-right, 0px)) 0 max(8px, env(safe-area-inset-left, 0px));
+  padding: var(--safe-t) max(8px, var(--safe-r)) 0 max(8px, var(--safe-l));
   border-radius: 0 0 20px 20px;
   overflow: hidden;
   border-bottom: 1px solid color-mix(in srgb, var(--line-2) 72%, transparent);
@@ -140,7 +141,7 @@ html.video-immersive, html.video-immersive body { background: #000; }
 .has-video.is-immersive .player {
   position: absolute;
   z-index: 3;
-  inset: auto max(14px, env(safe-area-inset-right, 0px)) calc(4px + var(--safe-b)) max(14px, env(safe-area-inset-left, 0px));
+  inset: auto max(14px, var(--safe-r)) calc(4px + var(--safe-b)) max(14px, var(--safe-l));
   margin: 0;
   padding: 0;
   border-radius: 0;
@@ -209,6 +210,11 @@ html.video-immersive, html.video-immersive body { background: #000; }
 /* Unsupported orientation-lock browsers rotate the entire page, including dialogs. */
 body { --rotated-width: 100vh; --rotated-height: 100vw; }
 body.video-rotated {
+  /* The CSS canvas turns clockwise: physical top becomes logical left. */
+  --safe-t: env(safe-area-inset-right, 0px);
+  --safe-r: env(safe-area-inset-bottom, 0px);
+  --safe-b: env(safe-area-inset-left, 0px);
+  --safe-l: env(safe-area-inset-top, 0px);
   position: fixed;
   top: 50%; left: 50%;
   width: var(--rotated-width);
@@ -512,7 +518,7 @@ body.video-rotated {
 }
 
 .video-rotate { position: absolute; right: 10px; bottom: 10px; z-index: 2; border-radius: 12px; color: var(--ink-2); background: var(--sheet); }
-.has-video.is-immersive .video-rotate { bottom: calc(35px + var(--safe-b)); right: max(10px, env(safe-area-inset-right, 0px)); }
+.has-video.is-immersive .video-rotate { bottom: calc(35px + var(--safe-b)); right: max(10px, var(--safe-r)); }
 
 /*  小窗入口: 竖屏贴在横屏按钮左边, 横屏统一走工具栏, 所以这里跟着横屏按钮一起显隐。
     画面被搬进系统小窗后, 原位只剩这块可以点回来的提示。                              */

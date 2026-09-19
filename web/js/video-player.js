@@ -3,6 +3,7 @@ import { trackCfg, setVideoCfg } from './trackcfg.js';
 import { isIOS, toast } from './util.js';
 import { setupVideoGestures } from './video-gestures.js';
 import { setupVideoPip } from './video-pip.js';
+import { nativeApp } from './native.js';
 
 export function setupVideo({ app, video, engine, toggle, onLayout, overlayOpen, openSettings }) {
   const rotate = document.getElementById('btnVideoRotate');
@@ -19,9 +20,10 @@ export function setupVideo({ app, video, engine, toggle, onLayout, overlayOpen, 
   const hint = document.getElementById('videoGestureHint');
   const themeMeta = document.querySelector('meta[name="theme-color"]');
   const landscape = window.matchMedia('(orientation: landscape)');
+  const nativeIOS = nativeApp()?.platform === 'ios';
   let forceLandscape = false, chromeTimer = 0, hintTimer = 0, orientationRequest = 0;
   let layoutSignature = '';
-  let gestures, wakeLock = null, themedImmersive = false;
+  let gestures, wakeLock = null, themedImmersive = false, wakeRequest = 0;
   const isFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
   const isImmersive = () => app.classList.contains('is-immersive');
   const hideControls = () => {
@@ -40,24 +42,41 @@ export function setupVideo({ app, video, engine, toggle, onLayout, overlayOpen, 
     hint.textContent = text; hint.hidden = !text;
     if (timeout) hintTimer = setTimeout(() => feedback(''), timeout);
   };
-  const syncStatusBar = async (immersive) => {
+  const releaseWakeLock = () => {
+    wakeRequest++;
+    wakeLock?.release?.()?.catch?.(() => {});
+    wakeLock = null;
+  };
+  const acquireWakeLock = async () => {
+    if (wakeLock || !themedImmersive || document.hidden) return;
+    const request = ++wakeRequest;
+    try {
+      const lock = await navigator.wakeLock?.request('screen');
+      if (request !== wakeRequest || !themedImmersive || document.hidden) {
+        await lock?.release?.(); return;
+      }
+      wakeLock = lock;
+      lock?.addEventListener('release', () => { if (wakeLock === lock) wakeLock = null; });
+    } catch { /* unsupported or permission denied */ }
+  };
+  const syncStatusBar = (immersive) => {
     if (immersive === themedImmersive) return;
     themedImmersive = immersive;
     document.documentElement.classList.toggle('video-immersive', immersive);
     if (immersive) {
       if (themeMeta) themeMeta.content = '#000000';
-      try { wakeLock = await navigator.wakeLock?.request('screen'); } catch { wakeLock = null; }
+      void acquireWakeLock();
     } else {
       if (themeMeta) {
         themeMeta.content = document.documentElement.dataset.theme === 'dark'
           ? '#15170f' : '#f2f2ea';
       }
-      try { await wakeLock?.release?.(); } catch { /* already released */ }
-      wakeLock = null;
+      releaseWakeLock();
     }
   };
   const syncLayout = () => {
     const active = app.classList.contains('has-video');
+    if (pip?.isActive()) forceLandscape = false;
     const rotated = active && forceLandscape && !landscape.matches;
     const signature = [active, rotated, innerWidth, innerHeight, isFullscreen()].join('|');
     if (signature !== layoutSignature) { gestures?.cancel(); layoutSignature = signature; }
@@ -66,7 +85,7 @@ export function setupVideo({ app, video, engine, toggle, onLayout, overlayOpen, 
     document.body.style.setProperty('--rotated-height', innerWidth + 'px');
     document.body.style.setProperty('--video-view-w', (rotated ? innerHeight : innerWidth) + 'px');
     document.body.style.setProperty('--video-view-h', (rotated ? innerWidth : innerHeight) + 'px');
-    const immersive = active && (landscape.matches || forceLandscape || isFullscreen());
+    const immersive = active && !pip?.isActive() && (landscape.matches || forceLandscape || isFullscreen());
     const changed = immersive !== isImmersive();
     app.classList.toggle('is-immersive', immersive);
     if (changed) app.classList.remove('controls-visible');
@@ -76,7 +95,7 @@ export function setupVideo({ app, video, engine, toggle, onLayout, overlayOpen, 
     onLayout();
   };
   async function enterFullscreen() {
-    if (isFullscreen()) return;
+    if (nativeIOS || isFullscreen()) return;
     if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
     else if (document.documentElement.webkitRequestFullscreen) document.documentElement.webkitRequestFullscreen();
   }
@@ -91,8 +110,7 @@ export function setupVideo({ app, video, engine, toggle, onLayout, overlayOpen, 
     syncLayout();
     if (landscape.matches) toast('竖起设备即可退出横屏');
   }
-  /**  进小窗前松开整页全屏和方向锁: 画面已经交给系统小窗, 播放页不该继续锁在横屏;
-       设备本身横着的时候 syncLayout 会自己保持沉浸, 所以这里不弹「竖起设备」的提示。 */
+  /** 进入小窗后松开整页全屏、方向锁和主页面沉浸状态，不弹「竖起设备」提示。 */
   async function releaseLandscape() {
     forceLandscape = false;
     orientationRequest++;
@@ -110,7 +128,9 @@ export function setupVideo({ app, video, engine, toggle, onLayout, overlayOpen, 
     syncLayout();
     try { await enterFullscreen(); } catch { /* inline landscape remains available */ }
     if (request !== orientationRequest) return;
-    try { await screen.orientation?.lock?.('landscape'); } catch { /* CSS rotation fallback */ }
+    if (!nativeIOS) {
+      try { await screen.orientation?.lock?.('landscape'); } catch { /* CSS rotation fallback */ }
+    }
     syncLayout();
   }
   const apply = () => {
@@ -144,14 +164,24 @@ export function setupVideo({ app, video, engine, toggle, onLayout, overlayOpen, 
     if (!isFullscreen()) { forceLandscape = false; try { screen.orientation?.unlock?.(); } catch { /* unsupported */ } }
     syncLayout();
   });
-  document.addEventListener('webkitfullscreenchange', syncLayout);
+  document.addEventListener('webkitfullscreenchange', () => {
+    if (!isFullscreen()) forceLandscape = false;
+    syncLayout();
+  });
   landscape.addEventListener('change', async () => {
-    if (landscape.matches && !isFullscreen()) {
+    // A real rotation takes over from the manual CSS fallback, so turning back exits it.
+    if (landscape.matches) forceLandscape = false;
+    if (landscape.matches && app.classList.contains('has-video') && !pip?.isActive() && !isFullscreen()) {
       try { await enterFullscreen(); } catch { /* iOS/PWA keeps the CSS immersive fallback */ }
     }
     syncLayout();
   });
   window.addEventListener('resize', syncLayout);
+  window.addEventListener('native-back', (event) => {
+    if (!overlayOpen() && (forceLandscape || isFullscreen())) {
+      event.preventDefault(); void leaveHorizontal();
+    }
+  });
   window.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && !overlayOpen()) {
       if (forceLandscape) leaveHorizontal();
@@ -190,6 +220,7 @@ export function setupVideo({ app, video, engine, toggle, onLayout, overlayOpen, 
       button.setAttribute('aria-label', on ? '关闭小窗' : '小窗播放');
     }
     if (pipNote) pipNote.hidden = !app.classList.contains('is-pip');
+    syncLayout();
   };
   pip = setupVideoPip({ video, stage, app, engine, releaseLandscape,
     onLayout, onStateChange: paintPip });
@@ -198,7 +229,11 @@ export function setupVideo({ app, video, engine, toggle, onLayout, overlayOpen, 
   pipNote?.addEventListener('click', () => pip.toggle());
   paintPip();
   window.addEventListener('pagehide', () => { clearTimeout(chromeTimer); clearTimeout(hintTimer); });
-  window.addEventListener('pagehide', () => { wakeLock?.release?.()?.catch?.(() => {}); wakeLock = null; });
+  window.addEventListener('pagehide', releaseWakeLock);
+  window.addEventListener('pageshow', () => { syncLayout(); void acquireWakeLock(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) releaseWakeLock(); else void acquireWakeLock();
+  });
   // Theme changes from the settings sheet must not repaint the iOS status bar light.
   new MutationObserver(() => { if (themedImmersive && themeMeta) themeMeta.content = '#000000'; })
     .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });

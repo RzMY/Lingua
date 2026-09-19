@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { normalizeSource, developmentUrl, fetchSourceManifest, sourceKey, releaseEndpoint } from '../mobile/src/channels.js';
-import { validateManifest } from '../mobile/src/update.js';
+import { NATIVE_REVISION, validateManifest } from '../mobile/src/update.js';
 
 const version = 'a'.repeat(64);
-const manifest = { schema: 1, appId: 'app.linguatrack.mobile', nativeRevision: 2,
+const manifest = { schema: 1, appId: 'app.linguatrack.mobile', nativeRevision: NATIVE_REVISION,
   version, checksum: 'b'.repeat(64), bundle: `bundle-${version}.zip`, size: 50 };
 function release(preview = false) {
   const tag = preview ? 'pre-release' : 'v1.2.0';

@@ -63,6 +63,7 @@ export function setupVideoPip({ video, stage, app, engine, releaseLandscape, onL
   if (activityPip) document.head.append(activityStyle);
   window.addEventListener('native-pip', ({ detail }) => {
     activityActive = detail.active;
+    app.classList.toggle('is-pip', activityActive);
     if (activityActive) fillCues();
     cuesOn(activityActive);
     document.documentElement.classList.toggle('native-activity-pip', activityActive);
@@ -73,7 +74,7 @@ export function setupVideoPip({ video, stage, app, engine, releaseLandscape, onL
   const documentPip = () => (typeof window.documentPictureInPicture?.requestWindow === 'function'
     ? window.documentPictureInPicture : null);
   const classicKind = () => {
-    if (typeof video.requestPictureInPicture === 'function') return 'standard';
+    if (document.pictureInPictureEnabled !== false && typeof video.requestPictureInPicture === 'function') return 'standard';
     if (typeof video.webkitSetPresentationMode === 'function'
       && (!video.webkitSupportsPresentationMode
         || video.webkitSupportsPresentationMode('picture-in-picture'))) return 'webkit';
@@ -168,7 +169,7 @@ export function setupVideoPip({ video, stage, app, engine, releaseLandscape, onL
 
   const cuesOn = (on) => {
     if (!cueTrack) return;
-    try { cueTrack.mode = on ? 'showing' : 'disabled'; } catch { /* 浏览器不认就退回无字幕 */ }
+    try { cueTrack.mode = on && trackCfg.video.subtitles ? 'showing' : 'disabled'; } catch { /* 浏览器不认就退回无字幕 */ }
   };
 
   function fillCues() {
@@ -189,6 +190,7 @@ export function setupVideoPip({ video, stage, app, engine, releaseLandscape, onL
       cueTrack.addCue(item);
       cueList.push(item);
     }
+    cuesOn(isActive());
   }
 
   // ------------------------------------------------------------ Document PiP
@@ -274,6 +276,7 @@ export function setupVideoPip({ video, stage, app, engine, releaseLandscape, onL
     if (on) fillCues();   // iOS 用户上滑回桌面会自动进 PiP, 字幕轨得这时才建
     cuesOn(on);
     app.classList.toggle('is-pip', on || !!pipWin);
+    if (on) void releaseLandscape?.();
     onStateChange?.();
   }
 

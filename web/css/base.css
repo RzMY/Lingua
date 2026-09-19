@@ -50,7 +50,10 @@
   --radius-card: 24px;
   --radius-chip: 9px;
   --maxw: 720px;
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
   --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
 
   /* 各文字层使用独立 px 字号; 固定网格行高只跟随对应层, 由 Metrics 重新度量. */
   --fs-text: 25px;
@@ -149,15 +152,15 @@ body {
 /* The native WebView covers the screen. Only controls consume safe-area insets. */
 html.native-app { background: var(--bg); }
 html.native-app .topbar {
-  height: calc(var(--topbar-h) + env(safe-area-inset-top, 0px));
-  padding-top: env(safe-area-inset-top, 0px);
-  padding-left: max(6px, env(safe-area-inset-left, 0px));
-  padding-right: max(6px, env(safe-area-inset-right, 0px));
+  height: calc(var(--topbar-h) + var(--safe-t));
+  padding-top: var(--safe-t);
+  padding-left: max(6px, var(--safe-l));
+  padding-right: max(6px, var(--safe-r));
 }
 html.native-app .page {
-  padding-top: calc(8px + env(safe-area-inset-top, 0px));
-  padding-left: max(18px, env(safe-area-inset-left, 0px));
-  padding-right: max(18px, env(safe-area-inset-right, 0px));
+  padding-top: calc(8px + var(--safe-t));
+  padding-left: max(18px, var(--safe-l));
+  padding-right: max(18px, var(--safe-r));
 }
 
 button {

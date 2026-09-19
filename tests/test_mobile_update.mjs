@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { UpdateManager, validateManifest } from '../mobile/src/update.js';
+import { NATIVE_REVISION, UpdateManager, validateManifest } from '../mobile/src/update.js';
 import { normalizeTarget } from '../mobile/src/channels.js';
 import { apiUrl } from '../web/js/api.js';
 import { config } from '../web/js/config.js';
 
 const version = 'a'.repeat(64), checksum = 'b'.repeat(64);
-const manifest = { schema: 1, appId: 'app.linguatrack.mobile', nativeRevision: 2, version,
+const manifest = { schema: 1, appId: 'app.linguatrack.mobile', nativeRevision: NATIVE_REVISION, version,
   bundle: `bundle-${version}.zip`, checksum, size: 100 };
 function fixture(overrides = {}) {
   const calls = [], saved = [];
@@ -30,7 +30,7 @@ test('target normalization accepts a site or index and rejects unsafe transports
 test('manifest binds zip URL to selected site and refuses incompatible or malformed updates', () => {
   assert.equal(validateManifest(manifest, 'https://example.org/lingua/mobile/manifest.json').url,
     `https://example.org/lingua/mobile/bundle-${version}.zip`);
-  for (const patch of [{ appId: 'other' }, { schema: 2 }, { nativeRevision: 3 }, { bundle: '../evil.zip' },
+  for (const patch of [{ appId: 'other' }, { schema: 2 }, { nativeRevision: NATIVE_REVISION - 1 }, { bundle: '../evil.zip' },
     { bundle: 'https://other.org/a.zip' }, { checksum: '' }, { version: '../bad' }, { size: 0 }, { size: 101 * 1024 * 1024 }]) {
     assert.throws(() => validateManifest({ ...manifest, ...patch }, 'https://example.org/'));
   }
