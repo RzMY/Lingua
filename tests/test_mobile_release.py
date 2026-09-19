@@ -30,7 +30,8 @@ class FakeGitHub:
         return {}
 
     def assets(self, _):
-        return [{'name': 'manifest.json', 'id': 3}, {'name': 'bundle-old.zip', 'id': 4}, {'name': 'user-notes.txt', 'id': 5}]
+        return [{'name': 'manifest.json', 'id': 3}, {'name': 'bundle-old.zip', 'id': 4},
+                {'name': 'user-notes.txt', 'id': 5}, {'name': 'Lingua.aab', 'id': 6}]
 
 
 @unittest.skipUnless(SCRIPT.exists(), 'Build tools are excluded from the production Python image; tested in Mobile apps CI')
@@ -51,13 +52,20 @@ class PublicationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             paths = self.files(folder)
             self.assertNotIn('bundle-stale.zip', paths)
+            self.assertNotIn('Lingua.aab', paths)
             api = FakeGitHub()
             module.publish(api, paths, preview=True, tag='pre-release', sha='new')
             uploads = [path for method, path, _ in api.calls if method == 'POST' and path.startswith('https://')]
             self.assertTrue(uploads[-1].endswith('name=manifest.json'))
             self.assertIn(('DELETE', '/releases/assets/4', None), api.calls)
+            self.assertIn(('DELETE', '/releases/assets/6', None), api.calls)
             self.assertNotIn(('DELETE', '/releases/assets/5', None), api.calls)
             self.assertIn(('PATCH', '/git/refs/tags/pre-release', {'sha': 'new', 'force': True}), api.calls)
+            body = next(data['body'] for method, path, data in api.calls
+                        if method == 'PATCH' and path == '/releases/1')
+            self.assertNotIn('Assets are replaced', body)
+            self.assertNotIn('unsigned IPA', body)
+            self.assertNotIn('aab', body.lower())
 
     def test_superseded_commit_cannot_publish(self):
         api = FakeGitHub(sha='newer')

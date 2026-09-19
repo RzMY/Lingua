@@ -52,7 +52,10 @@ test('GitHub workflow exposes Android, signed iOS and update artifacts with no c
   assert.match(androidSetup.with.packages, /build-tools;36\.0\.0/);
   const androidArtifact = workflow.jobs.android.steps.find((s) => s.uses === 'actions/upload-artifact@v4');
   assert.match(androidArtifact.with.path, /android\/dist\/Lingua\.apk/);
-  assert.match(androidArtifact.with.path, /android\/dist\/Lingua\.aab/);
+  assert.doesNotMatch(androidArtifact.with.path, /android\/dist\/Lingua\.aab/);
+  const androidBuild = workflow.jobs.android.steps.find((s) => s.name === 'Build APKs');
+  assert.match(androidBuild.run, /assembleDebug assembleRelease/);
+  assert.doesNotMatch(androidBuild.run, /bundleRelease/);
   const ios = workflow.jobs.ios.steps.find((s) => s.name === 'Export signed IPA when credentials are configured');
   assert.match(ios.run, /IOS_CERTIFICATE_BASE64/);
   assert.match(ios.run, /mobile\/scripts\/ios-release\.py/);

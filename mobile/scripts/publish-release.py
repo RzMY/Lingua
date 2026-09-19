@@ -43,7 +43,7 @@ class GitHub:
 
 def release_files(folder):
     paths = {path.name: path for path in folder.rglob('*') if path.is_file()}
-    required = {'manifest.json', 'Lingua-web.zip', 'Lingua.apk', 'Lingua.aab', 'Lingua.ipa'}
+    required = {'manifest.json', 'Lingua-web.zip', 'Lingua.apk', 'Lingua.ipa'}
     if required - paths.keys():
         raise RuntimeError('Missing release assets: ' + ', '.join(sorted(required - paths.keys())))
     manifest = json.loads(paths['manifest.json'].read_text())
@@ -61,6 +61,8 @@ def release_files(folder):
 
 
 def owned_asset(name):
+    # AAB is no longer built or uploaded, but still counts as owned so the
+    # next preview publish removes the obsolete asset from the Pre-release.
     return name in {'manifest.json', 'Lingua-web.zip', 'Lingua.apk', 'Lingua.aab', 'Lingua.ipa', 'Lingua-release.apk'} or (
         name.startswith('bundle-') and name.endswith('.zip'))
 
@@ -91,9 +93,8 @@ def publish(api, paths, *, preview, tag, sha):
     if preview:
         api.request('PATCH', f"/releases/{release['id']}", {'name': 'Lingua Pre-release',
             'target_commitish': sha, 'prerelease': True, 'make_latest': 'false',
-            'body': f'Latest main build: `{sha}`. Assets are replaced after each successful build.\n\n'
-                    'Lingua.apk / Lingua.aab / Lingua.ipa / Lingua-web.zip / mobile update manifest and ZIP.\n'
-                    'An unsigned IPA requires re-signing before installation.'})
+            'body': f'Latest main build: `{sha}`.\n\n'
+                    'Lingua.apk / Lingua.ipa / Lingua-web.zip / mobile update manifest and ZIP.'})
     existing = {asset['name']: asset for asset in api.assets(release['id'])}
     upload = release['upload_url'].split('{')[0]
     for name in sorted(paths, key=lambda name: (name == 'manifest.json', name)):

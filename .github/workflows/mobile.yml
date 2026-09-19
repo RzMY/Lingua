@@ -70,13 +70,13 @@ jobs:
             printf '%s' "$KEYSTORE" | base64 --decode > "$RUNNER_TEMP/lingua-release.jks"
             echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/lingua-release.jks" >> "$GITHUB_ENV"
           fi
-      - name: Build APK and AAB
+      - name: Build APKs
         working-directory: android
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: bash gradlew assembleDebug assembleRelease bundleRelease
+        run: bash gradlew assembleDebug assembleRelease
       - name: Stage packages with stable names
         working-directory: android
         run: |
@@ -84,7 +84,6 @@ jobs:
           rm -rf dist
           mkdir -p dist
           cp app/build/outputs/apk/debug/app-debug.apk dist/Lingua.apk
-          cp app/build/outputs/bundle/release/app-release.aab dist/Lingua.aab
           if [ -f app/build/outputs/apk/release/app-release.apk ]; then
             cp app/build/outputs/apk/release/app-release.apk dist/Lingua-release.apk
           fi
@@ -95,7 +94,6 @@ jobs:
           path: |
             android/dist/Lingua.apk
             android/dist/Lingua-release.apk
-            android/dist/Lingua.aab
           if-no-files-found: error
       - name: Remove signing material
         if: always()
