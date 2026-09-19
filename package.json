@@ -1,0 +1,56 @@
+{
+  "name": "lingua",
+  "version": "1.0.0",
+  "description": "Lingua web and native mobile shell",
+  "scripts": {
+    "test": "node --test tests/test_*.mjs",
+    "mobile:build": "node mobile/scripts/build.mjs",
+    "mobile:sync": "npm run mobile:permissions && npm run mobile:build && cap sync",
+    "mobile:android": "cap open android",
+    "mobile:ios": "cap open ios",
+    "mobile:release": "node mobile/scripts/build.mjs --release",
+    "mobile:permissions": "node mobile/scripts/permissions.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RzMY/Lingua.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/RzMY/Lingua/issues"
+  },
+  "homepage": "https://github.com/RzMY/Lingua#readme",
+  "dependencies": {
+    "@capacitor/android": "8.5.2",
+    "@capacitor/app": "8.1.1",
+    "@capacitor/core": "8.5.2",
+    "@capacitor/filesystem": "8.1.3",
+    "@capacitor/ios": "8.5.2",
+    "@capacitor/preferences": "8.0.1",
+    "@capacitor/share": "8.0.2",
+    "@capacitor/splash-screen": "8.0.2",
+    "@capgo/capacitor-updater": "8.51.19"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.2",
+    "esbuild": "0.28.2",
+    "fflate": "0.8.3",
+    "jsdom": "30.1.0",
+    "yaml": "2.9.1"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=22.22.2"
+  },
+  "allowScripts": {
+    "esbuild": true
+  },
+  "overrides": {
+    "xcode": {
+      "uuid": "11.1.1"
+    }
+  }
+}

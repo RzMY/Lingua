@@ -6,6 +6,7 @@ import { createPreparedTrack, savePreparedTranscript, saveAnalysis, patchTrack, 
 import { openSheet, closeSheet } from './sheet.js';
 import { analyze } from './api.js';
 import { sourceLangs } from './langs.js';
+import { saveFile } from './native.js';
 
 /** Mount once per enabled session so switching tabs preserves in-progress work. */
 export function mountWorkbench(root, { onImport = () => {} } = {}) {
@@ -27,10 +28,7 @@ export function mountWorkbench(root, { onImport = () => {} } = {}) {
   const urls = new Set();
   const urlFor = (blob) => { const url = URL.createObjectURL(blob); urls.add(url); return url; };
   const download = (file) => {
-    const a = el('a');
-    a.href = urlFor(file); a.download = file.name;
-    root.append(a); a.click(); a.remove();
-    setTimeout(() => { URL.revokeObjectURL(a.href); urls.delete(a.href); }, 30000);
+    saveFile(file, file.name).catch((error) => alert('导出失败：' + error.message));
   };
   const status = () => {
     const node = el('p', 'pane-note');

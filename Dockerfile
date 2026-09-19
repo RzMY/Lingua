@@ -1,3 +1,11 @@
+FROM node:22-bookworm-slim AS frontend
+WORKDIR /build
+COPY package.json package-lock.json .npmrc ./
+RUN npm ci
+COPY web/ ./web/
+COPY mobile/ ./mobile/
+RUN npm run mobile:release
+
 FROM python:3.11-slim-bookworm AS dependencies
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
@@ -33,7 +41,7 @@ COPY --from=dependencies /opt/venv /opt/venv
 COPY --from=dependencies /opt/nltk_data /opt/nltk_data
 WORKDIR /app
 COPY pipeline/ ./pipeline/
-COPY web/ ./web/
+COPY --from=frontend /build/web/ ./web/
 COPY docker/healthcheck.py /opt/lingua/healthcheck.py
 
 USER 10001:10001

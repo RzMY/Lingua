@@ -9,7 +9,8 @@
  * 2. 经典视频 PiP (Safari/iOS、旧内核): 系统只渲染 `<video>`, 页面 DOM 进不去, 所以把
  *    整条时间轴合成一条原生字幕轨 (每句一条 cue, 原文换行接译文), 进小窗时打开、退出
  *    时关掉 —— 系统于是自己把字幕画在画面上。
- * WebClip / WebView 这类宿主两个接口都没有, 那就只能用系统播放控件里的入口或换浏览器,
+ * 原生 Android 容器另外支持 Activity PiP；iOS 容器显式开启 WKWebView PiP。
+ * 未配置能力的 WebClip / WebView 如果两个接口都没有, 那就只能用系统播放控件里的入口或换浏览器,
  * 页面没有任何办法凭空唤起系统浮窗, 所以这种情况明确提示用户, 不自造一个假小窗顶替。
  *
  * 两条路径共用 `pipLines()` 决定「这一句显示什么」, 所以小窗里的字幕和播放页正在朗读的
@@ -18,6 +19,7 @@
 
 import { trackCfg } from './trackcfg.js';
 import { toast } from './util.js';
+import { nativeApp } from './native.js';
 
 /**  折叠空白: 小窗只有一行位置, 换行和连续空格都不该撑高盒子.
     中日韩文本里换进来的换行不该变成一个空格 (「每天/都练习」中间不该有缝), 所以
@@ -54,6 +56,18 @@ export function pipCues(track, showTr = true) {
 }
 
 export function setupVideoPip({ video, stage, app, engine, releaseLandscape, onLayout, onStateChange }) {
+  const activityPip = nativeApp()?.activityPip;
+  let activityActive = false;
+  const activityStyle = document.createElement('style');
+  activityStyle.textContent = `html.native-activity-pip body{padding:0!important}html.native-activity-pip #videoStage{position:fixed!important;inset:0!important;width:100vw!important;height:100dvh!important;max-height:none!important;z-index:99999!important;border-radius:0!important}html.native-activity-pip #videoStage video{width:100%!important;height:100%!important;object-fit:contain!important}html.native-activity-pip #videoStage button,html.native-activity-pip #videoStage .video-status{display:none!important}`;
+  if (activityPip) document.head.append(activityStyle);
+  window.addEventListener('native-pip', ({ detail }) => {
+    activityActive = detail.active;
+    if (activityActive) fillCues();
+    cuesOn(activityActive);
+    document.documentElement.classList.toggle('native-activity-pip', activityActive);
+    onStateChange?.(); onLayout?.();
+  });
   /*  只认「真的能调用」的接口: 有些宿主会把 documentPictureInPicture 暴露成残缺对象,
       按存在性判断会走进死路, 然后被 catch 掉、误报成「不支持小窗」。               */
   const documentPip = () => (typeof window.documentPictureInPicture?.requestWindow === 'function'
@@ -81,7 +95,7 @@ export function setupVideoPip({ video, stage, app, engine, releaseLandscape, onL
 
   const classicOn = () => video === document.pictureInPictureElement
     || video.webkitPresentationMode === 'picture-in-picture';
-  const isActive = () => !!pipWin || classicOn();
+  const isActive = () => activityActive || !!pipWin || classicOn();
 
   /**  小窗的样式表在主页面里取好再内联写进小窗: 小窗是独立文档, 外链在请求被拦截的
        环境里会一直挂着不生效 (DevTools/扩展/自动化都会), 内联则永远算得出样式。     */
@@ -159,7 +173,7 @@ export function setupVideoPip({ video, stage, app, engine, releaseLandscape, onL
 
   function fillCues() {
     if (!cueTrack) {
-      cueTrack = video.addTextTrack('subtitles', 'LinguaTrack', 'zh');
+      cueTrack = video.addTextTrack('subtitles', 'Lingua', 'zh');
       cueTrack.mode = 'disabled';
     }
     const Cue = window.VTTCue || window.WebKitVTTCue;
@@ -244,6 +258,7 @@ export function setupVideoPip({ video, stage, app, engine, releaseLandscape, onL
   }
 
   async function close() {
+    if (activityActive) { toast('点击系统小窗的展开按钮返回应用'); return; }
     if (pipWin) { unmountDocument(); return; }
     if (video === document.pictureInPictureElement && document.exitPictureInPicture) {
       try { await document.exitPictureInPicture(); } catch { /* 已经退出 */ }
@@ -265,6 +280,14 @@ export function setupVideoPip({ video, stage, app, engine, releaseLandscape, onL
   /**  原生路径挨个试: 残缺的接口会让位给下一条, 两个都没有就老实告诉用户。 */
   async function open() {
     const failures = [];
+    if (activityPip) {
+      try {
+        await releaseLandscape?.();
+        fillCues();
+        await activityPip.enterPip({ width: video.videoWidth || 16, height: video.videoHeight || 9 });
+        return;
+      } catch (error) { failures.push(error); }
+    }
     if (documentPip()) {
       try { await openDocument(); return; } catch (error) { failures.push(error); }
     }
@@ -290,7 +313,7 @@ export function setupVideoPip({ video, stage, app, engine, releaseLandscape, onL
   function refresh() {
     lastPaint = '';
     if (pipWin) { syncSkin(); paint(true); }
-    else if (classicOn()) fillCues();
+    else if (classicOn() || activityActive) fillCues();
   }
 
   // 小窗开着的时候页面多半在后台, rAF 会被节流; 媒体事件不受影响, 所以用它们驱动重画。
@@ -303,5 +326,5 @@ export function setupVideoPip({ video, stage, app, engine, releaseLandscape, onL
   window.addEventListener('pagehide', () => { if (pipWin) unmountDocument(); });
 
   return { toggle, close, refresh, paint: () => paint(true), isActive,
-    supported: () => !!(documentPip() || classicKind()) };
+    supported: () => !!(activityPip || documentPip() || classicKind()) };
 }

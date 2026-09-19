@@ -26,3 +26,27 @@ docs/*
 # test
 tools/
 audio-check.html
+
+# Native builds (platform source projects are tracked)
+node_modules/
+mobile/www/
+web/mobile/
+android/.gradle/
+android/local.properties
+android/**/build/
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+android/capacitor-cordova-android-plugins/
+ios/App/App/public/
+ios/App/App/capacitor.config.json
+ios/App/Pods/
+ios/App/build/
+ios/**/xcuserdata/
+*.keystore
+*.jks
+*.p12
+*.mobileprovision
+mobile-artifacts/
+dist/
+release-assets/

@@ -146,6 +146,20 @@ body {
   -webkit-text-size-adjust: 100%;
 }
 
+/* The native WebView covers the screen. Only controls consume safe-area insets. */
+html.native-app { background: var(--bg); }
+html.native-app .topbar {
+  height: calc(var(--topbar-h) + env(safe-area-inset-top, 0px));
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-left: max(6px, env(safe-area-inset-left, 0px));
+  padding-right: max(6px, env(safe-area-inset-right, 0px));
+}
+html.native-app .page {
+  padding-top: calc(8px + env(safe-area-inset-top, 0px));
+  padding-left: max(18px, env(safe-area-inset-left, 0px));
+  padding-right: max(18px, env(safe-area-inset-right, 0px));
+}
+
 button {
   font: inherit;
   color: inherit;

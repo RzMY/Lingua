@@ -1,0 +1,6 @@
+{
+  "microphone": true,
+  "camera": true,
+  "photoLibrary": true,
+  "notifications": true
+}

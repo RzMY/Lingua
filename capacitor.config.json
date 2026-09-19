@@ -1,0 +1,42 @@
+{
+  "appId": "app.linguatrack.mobile",
+  "appName": "Lingua",
+  "webDir": "mobile/www",
+  "backgroundColor": "#f2f2ea",
+  "appendUserAgent": "Lingua/1",
+  "server": {
+    "hostname": "localhost",
+    "androidScheme": "https"
+  },
+  "ios": {
+    "contentInset": "never",
+    "scrollEnabled": true,
+    "preferredContentMode": "mobile"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "minWebViewVersion": 109
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchAutoHide": true,
+      "launchShowDuration": 1000,
+      "backgroundColor": "#f2f2ea",
+      "showSpinner": false
+    },
+    "CapacitorUpdater": {
+      "autoUpdate": false,
+      "appReadyTimeout": 30000,
+      "autoDeleteFailed": false,
+      "autoDeletePrevious": true,
+      "resetWhenUpdate": true,
+      "statsUrl": "",
+      "updateUrl": "",
+      "channelUrl": "",
+      "keepUrlPathAfterReload": false
+    }
+  },
+  "initialFocus": false,
+  "loggingBehavior": "debug"
+}

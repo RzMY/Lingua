@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>PreferenceSpecifiers</key>
+	<array>
+		<dict>
+			<key>Type</key>
+			<string>PSGroupSpecifier</string>
+			<key>Title</key>
+			<string>Lingua 开发人员选项</string>
+			<key>FooterText</key>
+			<string>重新打开应用后生效。开发分支直接联网加载网页，可返回正式分支。</string>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSMultiValueSpecifier</string>
+			<key>Title</key>
+			<string>代码分支</string>
+			<key>Key</key>
+			<string>CapacitorStorage.lingua.channel</string>
+			<key>DefaultValue</key>
+			<string>stable</string>
+			<key>Titles</key>
+			<array>
+				<string>正式分支</string>
+				<string>自有分支</string>
+				<string>测试分支</string>
+				<string>开发分支</string>
+			</array>
+			<key>Values</key>
+			<array>
+				<string>stable</string>
+				<string>own</string>
+				<string>preview</string>
+				<string>development</string>
+			</array>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSTextFieldSpecifier</string>
+			<key>Title</key>
+			<string>自有站点</string>
+			<key>Key</key>
+			<string>CapacitorStorage.lingua.own-url</string>
+			<key>DefaultValue</key>
+			<string></string>
+			<key>KeyboardType</key>
+			<string>URL</string>
+			<key>AutocapitalizationType</key>
+			<string>None</string>
+			<key>AutocorrectionType</key>
+			<string>No</string>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSTextFieldSpecifier</string>
+			<key>Title</key>
+			<string>开发网页</string>
+			<key>Key</key>
+			<string>CapacitorStorage.lingua.development-url</string>
+			<key>DefaultValue</key>
+			<string></string>
+			<key>KeyboardType</key>
+			<string>URL</string>
+			<key>AutocapitalizationType</key>
+			<string>None</string>
+			<key>AutocorrectionType</key>
+			<string>No</string>
+		</dict>
+	</array>
+</dict>
+</plist>

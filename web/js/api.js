@@ -12,6 +12,7 @@
  */
 
 import { config } from './config.js';
+import { nativeApp } from './native.js';
 
 export class ApiError extends Error {
   constructor(status, message) {
@@ -23,7 +24,7 @@ export class ApiError extends Error {
 
 /** 规整后端地址: 去掉尾斜杠, 容忍用户把 `/api` 也填进去. */
 export function baseOf(raw) {
-  const value = raw === undefined ? config.apiBase : raw;
+  const value = (raw === undefined ? config.apiBase : raw) || nativeApp()?.target;
   let base = String(value || '').trim().replace(/\/+$/, '');
   if (!base) return '';
   base = base.replace(/\/api$/i, '');
@@ -33,7 +34,7 @@ export function baseOf(raw) {
 export const apiUrl = (path, base) => baseOf(base) + '/api' + path;
 
 /** 给人看的地址描述 (设置页/关于页用). */
-export const baseLabel = (raw) => baseOf(raw) || '同源 (本机服务)';
+export const baseLabel = (raw) => baseOf(raw) || (nativeApp() ? '未配置分析后端' : '同源 (本机服务)');
 
 async function json(url, init) {
   const headers = new Headers(init.headers);
@@ -62,6 +63,7 @@ async function json(url, init) {
  * @returns {Promise<{ok, version, schemaVersion, languages, formats, maxBody}>}
  */
 export function health({ base, probe = true, signal } = {}) {
+  if (nativeApp() && !baseOf(base)) return Promise.reject(new ApiError(0, '请在「设置 → 分析后端」配置服务地址'));
   return json(apiUrl(`/health?probe=${probe ? 1 : 0}`, base), { method: 'GET', signal });
 }
 
@@ -72,6 +74,7 @@ export function health({ base, probe = true, signal } = {}) {
  * @returns {Promise<{ok, log, track}>}
  */
 export function analyze(file, params = {}, { signal, base } = {}) {
+  if (nativeApp() && !baseOf(base)) return Promise.reject(new ApiError(0, '请在「设置 → 分析后端」配置服务地址'));
   const q = new URLSearchParams();
   q.set('name', file.name || 'transcript.json');
   if (params.lang) q.set('lang', params.lang);

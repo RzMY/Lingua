@@ -1,0 +1,19 @@
+# Stable source hashes and shell scripts on Windows, macOS and GitHub Actions.
+* text=auto
+*.js text eol=lf
+*.mjs text eol=lf
+*.json text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.py text eol=lf
+*.yml text eol=lf
+*.swift text eol=lf
+*.java text eol=lf
+*.gradle text eol=lf
+*.plist text eol=lf
+gradlew text eol=lf
+*.bat text eol=crlf
+*.png binary
+*.jpg binary
+*.wav binary
+*.jar binary

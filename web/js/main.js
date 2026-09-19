@@ -29,6 +29,7 @@ import { setupVideo } from './video-player.js';
 import { initSettings, setSetting, settings } from './settings.js';
 import { initTrackCfg, trackCfg } from './trackcfg.js';
 import { config, loadConfig } from './config.js';
+import { nativeReady } from './native.js';
 import { sourceLangs } from './langs.js';
 import { createExplain, openSpeedSheet, openTrackSheet } from './ui.js';
 import { closeSheet, sheetOpen } from './sheet.js';
@@ -700,6 +701,7 @@ async function boot() {
   loadConfig();
   initSettings(onSetting);
   wireReader();
+  nativeReady(); // A valid entry point is ready before network or large media reads.
   dom.btnBack.addEventListener('click', () => {
     if (history.length > 1) history.back();
     else location.href = 'index.html';

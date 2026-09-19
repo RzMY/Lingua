@@ -3,6 +3,7 @@ import { attachFiles, listTracks, missingFiles, matchFiles, AUDIO_ACCEPT, SUB_EX
 import { openSheet, closeSheet } from './sheet.js';
 import { button, buttonBar, group, infoRow, switchRow } from './rows.js';
 import { el, isIOS, toast } from './util.js';
+import { saveFile } from './native.js';
 
 let importing = false;
 const errorText = (err) => (err && err.message) || '操作失败';
@@ -36,14 +37,8 @@ export function openBackupExport() {
     note.textContent = '正在导出…';
     try {
       const backup = await exportBackup({ includeCredentials });
-      const url = URL.createObjectURL(new Blob([JSON.stringify(backup)], { type: 'application/json' }));
-      const link = el('a');
-      link.href = url;
-      link.download = 'lingua-backup-' + backup.exportedAt.replace(/[:.]/g, '-') + '.json';
-      document.body.append(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      await saveFile(new Blob([JSON.stringify(backup)], { type: 'application/json' }),
+        'lingua-backup-' + backup.exportedAt.replace(/[:.]/g, '-') + '.json');
       const summary = backupSummary(backup);
       note.textContent = `已导出 ${summary.tracks} 条曲目、${summary.analyses} 份分析、${summary.llm} 条 LLM 产物`;
     } catch (err) { note.textContent = '导出失败: ' + errorText(err); }

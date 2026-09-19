@@ -32,6 +32,7 @@ import {
 import { stats, clearAll, wipeTrack, isDegraded, usage } from './store.js';
 import { el, icon, toast, fmtTime, fmtSize, dayKey, debounce } from './util.js';
 import { mountWorkbench } from './workbench.js';
+import { nativeApp, nativeReady } from './native.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -417,6 +418,10 @@ function paintSettings() {
     ),
   );
 
+  if (nativeApp()) box.append(group(navRow('开发人员选项', '代码分支、离线版本与更新', {
+    value: '设置', onPick: () => nativeApp().settings(),
+  })));
+
   //  探活不带 probe: 只要知道通不通, 不用让后端把六个分词器全 import 一遍。
   //  顺手把语言清单存下来, 于是后端新加的语言会自己出现在「语言设置」里。
   health({ probe: false }).then((r) => {
@@ -755,3 +760,4 @@ function boot() {
 }
 
 boot();
+nativeReady();
