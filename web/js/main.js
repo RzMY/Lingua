@@ -24,6 +24,8 @@ import { Reader } from './reader.js';
 import { VirtualList } from './virtual.js';
 import { Engine } from './engine.js';
 import { setupPlayer } from './player.js';
+import { mediaKind } from './media.js';
+import { setupVideo } from './video-player.js';
 import { initSettings, setSetting, settings } from './settings.js';
 import { initTrackCfg, trackCfg } from './trackcfg.js';
 import { config, loadConfig } from './config.js';
@@ -47,6 +49,7 @@ const HOT_AHEAD = 8;
 const SWEEP_DELAY = 1600;                      // ms: 视口翻完再后台补全篇
 
 const dom = {
+  app: $('app'), videoStage: $('videoStage'),
   topbar: document.querySelector('.topbar'),
   scroller: $('scroller'), viewport: $('viewport'), readerState: $('readerState'),
   setup: $('setup'),
@@ -62,13 +65,37 @@ const dom = {
   btnShadow: $('btnShadow'), hint: $('hint'),
 };
 
-const audio = $('audio');
+// The engine's historic `audio` name refers to the one active HTMLMediaElement.
+let audio = $('audio');
 const metrics = new Metrics($('probe'));
 let track = null, reader = null, vlist = null;
 let player = null;
 let translator = null, sweepTimer = 0;
 let record = null;                 // 当前音频的库记录 (library.js)
 let objUrl = '';                   // 当前 <audio> 用的 blob URL, 换曲要 revoke
+let videoReady = false;
+let videoPlayer = null;
+
+function syncVideoLayout() {
+  const visible = videoReady && dom.setup.hidden;
+  dom.app.classList.toggle('has-video', visible);
+  dom.videoStage.hidden = !visible;
+  videoPlayer?.syncLayout();
+  syncFollowAlign();
+}
+
+function syncFollowAlign() {
+  // Compact overlays leave more room below the active sentence for its extra layers.
+  engine.followAlign = dom.app.classList.contains('has-video')
+    && dom.app.classList.contains('is-immersive') ? 0.08 : FOLLOW_ALIGN;
+  if (vlist) {
+    const single = dom.app.classList.contains('is-immersive');
+    if (vlist.followSingle !== single) {
+      vlist.followSingle = single;
+      vlist.update(true);
+    }
+  }
+}
 
 const engine = new Engine({ audio, reader: null, vlist: null, scroller: dom.scroller, dom });
 const explain = createExplain({
@@ -110,6 +137,7 @@ function showSetup() {
   box.hidden = false;
 
   const head = el('div', 'setup-h');
+  syncVideoLayout();
   head.append(el('b', null, '导入字幕'));
   head.append(el('span', null,
     '上传转录文件，支持 JSON / SRT / VTT'));
@@ -218,7 +246,7 @@ function showSetup() {
 
 // ---------------------------------------------------------------- 载入曲目
 
-/** 把库里的音频 Blob 挂到 `<audio>` 上; blob URL 天生支持 seek, 不需要服务端 Range. */
+/** 原始音视频 Blob 直接挂到当前媒体元素, 共用字幕时间轴. */
 async function attachAudio(id) {
   const next = await audioUrl(id);
   if (objUrl) URL.revokeObjectURL(objUrl);
@@ -226,6 +254,9 @@ async function attachAudio(id) {
   if (!next) {
     record = { ...record, audio: { ...record.audio, missing: true } };
     audio.removeAttribute('src');
+    audio.load();
+    videoReady = false;
+    syncVideoLayout();
     updateFileState();
     return;
   }
@@ -238,7 +269,7 @@ async function attachAudio(id) {
 function updateFileState() {
   dom.btnFiles.hidden = !record || (!record.audio?.missing && !record.transcript?.missing);
   dom.btnPlay.disabled = !objUrl;
-  dom.btnPlay.title = objUrl ? '' : '请先补充音频文件';
+  dom.btnPlay.title = objUrl ? '' : '请先补充音频或视频文件';
 }
 
 function repairFiles() {
@@ -246,6 +277,11 @@ function repairFiles() {
   openFileRepair([record], {
     onUpdate: async (updated) => {
       record = updated;
+      if ((audio === $('video')) !== (mediaKind(record.audio) === 'video')) {
+        // A replacement may change media kind. Rebind all listeners on a fresh page.
+        location.reload();
+        return;
+      }
       if (!objUrl && !record.audio?.missing) await attachAudio(record.id);
       if (track) track.audioUrl = objUrl;
       updateFileState();
@@ -264,12 +300,28 @@ async function load(id, forceSetup) {
   record = await getTrack(id);
   if (!record) {
     dom.player.hidden = true;
-    showState('找不到这条音频', '它可能已经被删掉了; 回首页重新导入一次');
+    showState('找不到这条媒体', '它可能已经被删掉了; 回首页重新导入一次');
     return false;
   }
+  audio = mediaKind(record.audio) === 'video' ? $('video') : $('audio');
+  engine.audio = audio;
+  player = setupPlayer({ audio, engine, dom, savePosition: setPosition });
+  if (audio === $('video')) {
+    videoPlayer = setupVideo({ app: dom.app, video: audio, engine, toggle: () => player.toggle(),
+      onLayout: () => relayout(false), overlayOpen: () => sheetOpen() || chatOpen() || isCardOpen(),
+      openSettings: openDisplay });
+    dom.btnDisplay.setAttribute('aria-label', '视频设置');
+    dom.btnDisplay.querySelector('use').setAttribute('href', '#i-tune');
+  }
+  wireTools();
+  audio.addEventListener('loadedmetadata', () => {
+    videoReady = audio === $('video') && audio.videoWidth > 0 && audio.videoHeight > 0;
+    syncVideoLayout();
+  });
   // 显示层开关要在算高度之前写进 <html>, 免得首帧闪一下; 语言先用记录里的,
   // track.json 载入后再按它自述的 features 精修一次 (见 apply)
   initTrackCfg(record.id, record.lang, null, onTrackCfg);
+  videoPlayer?.apply();
   await attachAudio(record.id);
   if (forceSetup || record.status !== 'ready') {
     if (record.status === 'failed' && record.error) toast('上次分析失败: ' + record.error);
@@ -281,6 +333,7 @@ async function load(id, forceSetup) {
 
 async function openTrack() {
   dom.setup.hidden = true;
+  syncVideoLayout();
   dom.setup.textContent = '';
   dom.player.hidden = false;
   showState('正在载入…', record.title || record.id);
@@ -304,6 +357,7 @@ function apply(next) {
   setSetting('track', next.id);
   // 这条音频到底支持哪些显示层, 由 track.json 自述的 features 说了算
   initTrackCfg(next.id, next.lang, next.features, onTrackCfg);
+  videoPlayer?.apply();
 
   explain.close();
   closeWordCard();
@@ -312,6 +366,7 @@ function apply(next) {
   dom.scroller.scrollTop = 0;
   reader = new Reader(dom.viewport, next, metrics);
   vlist = new VirtualList(dom.scroller, dom.viewport, reader, metrics);
+  vlist.followSingle = dom.app.classList.contains('is-immersive');
   engine.reader = reader;
   engine.vlist = vlist;
   explain.setTrack(next);
@@ -349,6 +404,7 @@ function applyTranslations(batch) {
   if (!reader) return;
   const list = [];
   for (const [i, text] of batch) if (reader.setTranslation(i, text)) list.push(i);
+  if (list.length) videoPlayer?.refreshPip?.();   // 小窗里的译文跟着补齐
   if (!list.length || !vlist) return;
   if (document.documentElement.dataset.tr === '0') return;   // 没显示译文, 高度不变
   vlist.invalidate(list);
@@ -387,12 +443,13 @@ const runRelayout = rafOnce(() => {
   const force = pendingForce;
   pendingForce = false;
   if (!track || !vlist) return;
+  syncFollowAlign();
   const changed = metrics.sync(dom.viewport.clientWidth);
   if (!changed && !force) { engine.markScrollDirty(); return; }
   const active = reader.activeS;
   const keepActive = active >= 0 && engine.follow;
   vlist.remeasure(keepActive ? active : vlist.indexAt(dom.scroller.scrollTop),
-    keepActive ? FOLLOW_ALIGN : 0);
+    keepActive ? engine.followAlign : 0);
   if (keepActive) engine.scrollToActive();
   else engine.markScrollDirty();
 });
@@ -401,6 +458,18 @@ function relayout(force) {
   pendingForce = pendingForce || !!force;
   runRelayout();
 }
+
+/** Immersive subtitles are one non-wrapping line; follow the spoken word horizontally. */
+const followSubtitleX = rafOnce(() => {
+  if (!videoPlayer || !dom.app.classList.contains('is-immersive')) return;
+  const word = dom.scroller.querySelector('.s.is-active .w.is-cur');
+  if (!word) return;
+  const wr = word.getBoundingClientRect();
+  const sr = dom.scroller.getBoundingClientRect();
+  const pad = 24;
+  if (wr.left < sr.left + pad) dom.scroller.scrollLeft -= sr.left + pad - wr.left;
+  else if (wr.right > sr.right - pad) dom.scroller.scrollLeft += wr.right - (sr.right - pad);
+});
 
 // ---------------------------------------------------------------- 阅读区交互
 
@@ -467,11 +536,14 @@ function wireReader() {
   const sc = dom.scroller;
   sc.addEventListener('scroll', () => {
     engine.onScroll();
-    cancelPress();
+    // A queued follow-scroll can arrive just after a paused video press begins.
+    // Pointer movement and wheel still cancel an intentional subtitle gesture.
+    if (!videoPlayer || !audio.paused) cancelPress();
     wantVisible();
     const on = sc.scrollTop > 2;
     if (on !== stuck) { stuck = on; dom.topbar.classList.toggle('is-stuck', on); }
   }, { passive: true });
+  sc.addEventListener('wheel', cancelPress, { passive: true });
   for (const ev of ['wheel', 'touchstart', 'pointerdown']) {
     sc.addEventListener(ev, () => engine.noteUserScroll(), { passive: true });
   }
@@ -483,6 +555,7 @@ function wireReader() {
   dom.viewport.addEventListener('pointermove', onPressMove);
   dom.viewport.addEventListener('pointerup', cancelPress);
   dom.viewport.addEventListener('pointercancel', cancelPress);
+  dom.viewport.addEventListener('contextmenu', (event) => { if (videoPlayer) event.preventDefault(); });
 }
 
 // ---------------------------------------------------------------- 工具行
@@ -507,6 +580,11 @@ function toggleChat() {
     track, i, lang: trackCfg.lang,
     onClose: () => dom.btnExplain.setAttribute('aria-pressed', 'false'),
   });
+}
+
+/** Topbar and the immersive toolbar share one settings entry. */
+function openDisplay() {
+  if (track) openTrackSheet(track, { trStats: () => translator.stats(), video: videoPlayer });
 }
 
 function paintRepeat() {
@@ -543,11 +621,6 @@ function paintShadow(kind, i, until) {
 }
 
 function wireTools() {
-  dom.btnBack.addEventListener('click', () => {
-    if (history.length > 1) history.back();
-    else location.href = 'index.html';
-  });
-
   dom.btnPin.addEventListener('click', () => {
     if (!track) return;
     const on = dom.btnPin.getAttribute('aria-pressed') !== 'true';
@@ -576,13 +649,16 @@ function wireTools() {
     closeSheet();
   }));
 
-  dom.btnDisplay.addEventListener('click', () => {
-    if (track) openTrackSheet(track, { trStats: () => translator.stats() });
-  });
+  dom.btnDisplay.addEventListener('click', openDisplay);
+  audio.addEventListener('ratechange', paintSpeed);
 
   engine.onCursor = (s, w, changed) => {
     explain.cursor(s, w, changed);
-    if (changed) wantVisible();
+    if (changed) {
+      wantVisible();
+      if (dom.app.classList.contains('is-immersive')) dom.scroller.scrollLeft = 0;
+    }
+    followSubtitleX();
   };
   engine.onShadowState = paintShadow;
 
@@ -612,7 +688,8 @@ function onSetting(key, value, layout) {
 
 /** 本条音频的配置回调. */
 function onTrackCfg(key, value, layout) {
-  if (key === 'tr' || key === 'lang') syncTranslate();
+  if (key === 'video') { videoPlayer?.apply(); return; }
+  if (key === 'tr' || key === 'lang') { syncTranslate(); videoPlayer?.refreshPip?.(); }
   if (layout) relayout(true);
   else engine.kick();
 }
@@ -622,15 +699,17 @@ function onTrackCfg(key, value, layout) {
 async function boot() {
   loadConfig();
   initSettings(onSetting);
-  player = setupPlayer({ audio, engine, dom, savePosition: setPosition });
   wireReader();
-  wireTools();
+  dom.btnBack.addEventListener('click', () => {
+    if (history.length > 1) history.back();
+    else location.href = 'index.html';
+  });
 
   const q = new URLSearchParams(location.search);
   const id = q.get('track') || settings.track;
   if (!id) {
     dom.player.hidden = true;
-    showState('没有指定音频', '回首页选一条, 或先在首页导入音频');
+    showState('没有指定媒体', '回首页选择或导入音频、视频');
     return;
   }
   await load(id, q.get('setup') === '1');

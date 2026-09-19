@@ -1,6 +1,7 @@
 /** Versioned, local-only user-data backups. File contents never enter this format. */
 import { CACHE_STORES, snapshot, writeBatch } from './store.js';
 import { DEFAULTS } from './config.js';
+import { VIDEO_RANGES } from './video-config.js';
 
 export const BACKUP_FORMAT = 'linguatrack.user-data';
 export const BACKUP_VERSION = 1;
@@ -90,6 +91,17 @@ function validateLocal(key, text) {
   } else {
     validateFlags(value);
     if (value.fonts !== undefined) validateFonts(value.fonts);
+    if (value.video !== undefined) {
+      const v = value.video;
+      require(object(v), '视频配置格式错误');
+      require(v.fit === undefined || ['contain', 'cover'].includes(v.fit), '视频画面适配错误');
+      for (const key of ['subtitles', 'muted']) {
+        require(v[key] === undefined || [0, 1, false, true].includes(v[key]), '视频开关错误');
+      }
+      for (const [key, [min, max]] of Object.entries(VIDEO_RANGES)) {
+        require(v[key] === undefined || (finite(v[key]) && v[key] >= min && v[key] <= max), '视频配置数值错误');
+      }
+    }
     require(value.lang === undefined || typeof value.lang === 'string', '译文语言错误');
   }
 }

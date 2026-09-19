@@ -22,6 +22,7 @@
 import { config, langDefaults } from './config.js';
 import { sourceSpec } from './langs.js';
 import { FONT_DEFAULTS, fontSizes, normFontSize, normalizeFonts, setFontContext } from './settings.js';
+import { normalizeVideo } from './video-config.js';
 
 const PREFIX = 'linguatrack.track.';
 
@@ -44,6 +45,7 @@ export const trackCfg = {
   card: 1,          // 点词是否弹释义卡片
   lang: 'zh-CN',    // 译文语言
   fonts: {},       // 只保存这条音频明确调整过的字号
+  video: normalizeVideo(),
 };
 
 const bit = (v, fallback) => (v === undefined || v === null ? fallback : (v ? 1 : 0));
@@ -59,13 +61,14 @@ export const cfgSupports = (key) => supported.has(key);
  * @param {string} srcLang 源语言代码
  */
 export function readTrackCfg(id, srcLang = '') {
-  const out = { ...langDefaults(srcLang), id, lang: config.targetLang || 'zh-CN', fonts: {} };
+  const out = { ...langDefaults(srcLang), id, lang: config.targetLang || 'zh-CN', fonts: {}, video: normalizeVideo() };
   try {
     const saved = JSON.parse(localStorage.getItem(PREFIX + id) || 'null');
     if (saved && typeof saved === 'object') {
       for (const k of SAVED) if (saved[k] !== undefined) out[k] = bit(saved[k], out[k]);
       if (typeof saved.lang === 'string' && saved.lang) out.lang = saved.lang;
       out.fonts = normalizeFonts(saved.fonts);
+      out.video = normalizeVideo(saved.video);
     }
   } catch { /* 坏了就用默认 */ }
   return out;
@@ -118,6 +121,7 @@ function save() {
   if (!trackCfg.id) return;
   const out = { lang: trackCfg.lang };
   if (Object.keys(trackCfg.fonts).length) out.fonts = trackCfg.fonts;
+  out.video = trackCfg.video;
   for (const k of SAVED) if (supported.has(k)) out[k] = trackCfg[k];
   try {
     localStorage.setItem(PREFIX + trackCfg.id, JSON.stringify(out));
@@ -165,6 +169,15 @@ export function setTrackCfg(key, value) {
   save();
   applyTrackCfg();
   onChange(key, value, LAYOUT.has(key));
+}
+
+/** Video fields are bounded before persistence; they never modify subtitle font overrides. */
+export function setVideoCfg(fields) {
+  const next = normalizeVideo({ ...trackCfg.video, ...fields });
+  if (JSON.stringify(next) === JSON.stringify(trackCfg.video)) return;
+  trackCfg.video = next;
+  save();
+  onChange('video', next, false);
 }
 
 /** 删音频时顺手清掉它的配置. */

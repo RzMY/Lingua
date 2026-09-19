@@ -6,7 +6,7 @@
  * 校正会连带修正 scrollTop, 所以滚动条和内容不会跳。
  */
 
-import { locateOffset } from './util.js';
+import { layoutHeight, locateOffset } from './util.js';
 
 export class VirtualList {
   constructor(scroller, viewport, reader, metrics) {
@@ -15,6 +15,7 @@ export class VirtualList {
     this.reader = reader;
     this.metrics = metrics;
     this.overscan = 700;
+    this.followSingle = false;
     this.gap = 4;
     this.padTop = 8;
     this.padBottom = 0;
@@ -93,6 +94,8 @@ export class VirtualList {
     const { off, count, overscan } = this;
     let first = locateOffset(off, count, st - overscan);
     let last = locateOffset(off, count, st + vh + overscan);
+    const active = this.reader.activeS;
+    if (this.followSingle && active >= 0 && active < count) first = last = active;
     if (!force && first === this._first && last === this._last) return;
     this._first = first;
     this._last = last;
@@ -120,7 +123,7 @@ export class VirtualList {
     for (let i = newFrom; i <= newTo; i++) {
       const el = this.reader.els.get(i);
       if (!el || this.measured[i]) continue;
-      const real = el.getBoundingClientRect().height;
+      const real = layoutHeight(el);
       this.measured[i] = 1;
       if (Math.abs(real - this.h[i]) > 0.6) {
         this.h[i] = real;
@@ -184,7 +187,7 @@ export class VirtualList {
       const el = reader.els.get(i);
       if (!el) continue;
       measured[i] = 1;
-      bump(i, el.getBoundingClientRect().height);
+      bump(i, layoutHeight(el));
     }
     if (dirty < 0) return false;
 

@@ -61,17 +61,18 @@ function dragToClose(handle) {
   let id = -1;
   let y0 = 0;
   let dy = 0;
+  const pointerY = (event) => document.body.classList.contains('video-rotated') ? -event.clientX : event.clientY;
   handle.addEventListener('pointerdown', (e) => {
     if (id !== -1 || e.target.closest('button')) return;
     id = e.pointerId;
-    y0 = e.clientY;
+    y0 = pointerY(e);
     dy = 0;
     handle.setPointerCapture(id);
     sheetEl.style.transition = 'none';
   });
   handle.addEventListener('pointermove', (e) => {
     if (e.pointerId !== id) return;
-    dy = Math.max(0, e.clientY - y0);
+    dy = Math.max(0, pointerY(e) - y0);
     sheetEl.style.transform = `translate(-50%, ${dy}px)`;
     scrimEl.style.opacity = String(Math.max(0, 1 - dy / 320));
   });
@@ -112,6 +113,7 @@ export function openSheet(title, body, opts = {}) {
 
   closeCb = o.onClose || null;
   openFlag = true;
+  document.documentElement.classList.add('sheet-open');
   requestAnimationFrame(() => {
     // 这一帧到达前又被关掉了 (同一帧内开又关) 就别再补 `.is-open`,
     // 否则浮层会自己弹回来, 而 openFlag 已经是 false, 点遮罩也关不掉。
@@ -125,6 +127,7 @@ export function openSheet(title, body, opts = {}) {
 export function closeSheet() {
   if (!sheetEl || !openFlag) return;
   openFlag = false;
+  document.documentElement.classList.remove('sheet-open');
   sheetEl.classList.remove('is-open');
   scrimEl.classList.remove('is-open');
   if (closeCb) {
@@ -179,11 +182,15 @@ export function openMenu(anchor, items) {
     menu.append(btn);
   }
   document.body.append(scrim, menu);
-  const box = anchor.getBoundingClientRect();
+  let box = anchor.getBoundingClientRect();
+  const rotated = document.body.classList.contains('video-rotated');
+  const viewWidth = rotated ? innerHeight : innerWidth;
+  const viewHeight = rotated ? innerWidth : innerHeight;
+  if (rotated) box = { right: box.bottom, top: innerWidth - box.right, bottom: innerWidth - box.left };
   const w = menu.offsetWidth;
-  const left = Math.min(Math.max(8, box.right - w), innerWidth - w - 8);
+  const left = Math.min(Math.max(8, box.right - w), viewWidth - w - 8);
   const below = box.bottom + 6;
-  const fits = below + menu.offsetHeight < innerHeight - 8;
+  const fits = below + menu.offsetHeight < viewHeight - 8;
   menu.style.left = left + 'px';
   menu.style.top = (fits ? below : Math.max(8, box.top - menu.offsetHeight - 6)) + 'px';
   requestAnimationFrame(() => menu.classList.add('is-open'));

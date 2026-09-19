@@ -125,7 +125,8 @@
 .card-in {
   position: relative;
   overflow: hidden;
-  background: var(--sheet);
+  background: radial-gradient(ellipse at 95% 0%, var(--accent-soft), transparent 68%),
+    linear-gradient(135deg, var(--sheet), var(--card));
   border-radius: calc(var(--radius-card) - 9px);
   padding: 13px 14px 14px;
 }
@@ -141,6 +142,13 @@
 }
 
 /* 整卡可点: 铺一层透明按钮, 「…」按钮抬到它上面 */
+.card-video { background: var(--card-2); }
+.card-video .card-in {
+  color: var(--ink);
+}
+.card-video .art { border-radius: 50%; background: var(--accent-soft); color: var(--accent-2); }
+.card-video .card-wm { width: 124px; height: 124px; right: 16px; color: var(--accent); opacity: .14; transform: translateY(-46%) rotate(-9deg); }
+
 .card-hit {
   position: absolute;
   inset: 0;

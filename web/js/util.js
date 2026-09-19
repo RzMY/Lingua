@@ -2,6 +2,12 @@
 
 export const $ = (id) => document.getElementById(id);
 
+/** Logical block size remains the same when the video page is rotated as a fallback. */
+export function layoutHeight(node) {
+  const rect = node.getBoundingClientRect();
+  return document.body.classList.contains('video-rotated') ? rect.width : rect.height;
+}
+
 export const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
 /** Local storage identifiers also work on HTTP origins without randomUUID. */

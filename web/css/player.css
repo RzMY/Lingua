@@ -2,6 +2,224 @@
    player.css — 底部播放器卡片 / 进度条 / 工具行 / 讲解面板
    ========================================================================== */
 
+.playback-content {
+  position: relative;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  min-width: 0;
+}
+
+.app {
+  --video-fit: contain;
+  --video-view-w: 100vw;
+  --video-view-h: 100vh;
+  --subtitle-position: 0;
+  --subtitle-width: 96%;
+  --subtitle-background: 85%;
+  --subtitle-blur: 10px;
+}
+
+.has-video .playback-content { grid-template-rows: auto minmax(0, 1fr); }
+.video-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  max-height: 34vh;
+  max-height: 34dvh;
+  min-height: 0;
+  overflow: hidden;
+  background: #000;
+}
+.video-stage video { touch-action: none; user-select: none; -webkit-user-select: none; display: block; width: 100%; height: 100%; object-fit: var(--video-fit); }
+.video-status { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 8px 14px; border-radius: 14px; background: var(--sheet); color: var(--ink); pointer-events: none; }
+.has-video[data-video-subtitles="0"] .reader { visibility: hidden; pointer-events: none; }
+.has-video[data-video-subtitles="0"] .playback-content { grid-template-rows: minmax(0, 1fr); }
+.has-video[data-video-subtitles="0"] .video-stage { height: 100%; max-height: none; aspect-ratio: auto; grid-row: 1; grid-column: 1; }
+.has-video[data-video-subtitles="0"] .reader { grid-row: 1; grid-column: 1; }
+/* Landscape is a full-canvas player; controls never take space from the picture. */
+.app.has-video.is-immersive {
+  position: fixed;
+  inset: 0;
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  height: -webkit-fill-available;
+  height: 100dvh;
+  max-width: none;
+  background: #000;
+}
+.has-video.is-immersive::before {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  inset: 0 0 auto;
+  height: env(safe-area-inset-top, 0px);
+  background: #000;
+  pointer-events: none;
+}
+html.video-immersive, html.video-immersive body { background: #000; }
+.has-video.is-immersive .playback-content { position: absolute; inset: 0; display: block; }
+.has-video.is-immersive .video-stage { position: absolute; inset: 0; height: 100%; max-height: none; aspect-ratio: auto; }
+.has-video.is-immersive .reader {
+  --chip-a: 42%;
+  --bar-a: 70%;
+  --subtitle-panel-height: clamp(96px, 30%, 132px);
+  --subtitle-bottom-min: calc(4px + var(--safe-b));
+  --subtitle-bottom-max: calc(100% - var(--subtitle-panel-height) - 4px);
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--subtitle-bottom-min) + (var(--subtitle-bottom-max) - var(--subtitle-bottom-min)) * var(--subtitle-position));
+  transform: translateX(-50%);
+  width: min(1000px, var(--subtitle-width));
+  height: var(--subtitle-panel-height);
+  max-height: calc(100% - 110px);
+  padding: 0 14px;
+  border: 1px solid color-mix(in srgb, #fff 20%, transparent);
+  border-radius: 22px;
+  background: color-mix(in srgb, #0b0f0a var(--subtitle-background), transparent);
+  color: #fff;
+  box-shadow: 0 8px 28px #0005;
+  backdrop-filter: blur(var(--subtitle-blur));
+  -webkit-backdrop-filter: blur(var(--subtitle-blur));
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+.has-video.is-immersive .reader::-webkit-scrollbar { display: none; }
+.has-video.is-immersive .reader-vp {
+  position: static;
+  width: max-content;
+  min-width: 100%;
+  height: 100% !important;
+}
+.has-video.is-immersive .reader .s {
+  display: none;
+  position: static !important;
+  width: max-content;
+  min-width: 100%;
+  height: 100%;
+  padding: 8px 0;
+  transform: none !important;
+}
+.has-video.is-immersive .reader .s.is-active {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.has-video.is-immersive .reader .s-words { flex-wrap: nowrap; }
+.has-video.is-immersive .reader .s-tr { white-space: nowrap; margin-top: 2px; }
+.has-video.is-immersive .reader .s::before { background: color-mix(in srgb, #fff 9%, transparent); }
+.has-video.is-immersive .reader .s { color: #fff; text-shadow: 0 1px 3px #000, 0 0 8px #0009; }
+.has-video.is-immersive .reader .s.is-active::before { background: color-mix(in srgb, #fff 13%, transparent); }
+.has-video.is-immersive .reader .w-read { color: #c8e4b5; }
+.has-video.is-immersive .reader .w-text { color: #fff; }
+.has-video.is-immersive .reader .w-roman { color: #d6dfce; }
+.has-video.is-immersive .reader .s-tr { color: #edf2e7; }
+.has-video.is-immersive .reader .w-text::before {
+  background: color-mix(in oklab, var(--pc) 42%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--pc) 72%, transparent);
+}
+.has-video.is-immersive .topbar {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 3;
+  width: 100%;
+  height: calc(44px + env(safe-area-inset-top, 0px));
+  max-width: none;
+  padding: env(safe-area-inset-top, 0px) max(8px, env(safe-area-inset-right, 0px)) 0 max(8px, env(safe-area-inset-left, 0px));
+  border-radius: 0 0 20px 20px;
+  overflow: hidden;
+  border-bottom: 1px solid color-mix(in srgb, var(--line-2) 72%, transparent);
+  background: color-mix(in srgb, var(--sheet) 72%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+.has-video.is-immersive .topbar #btnDisplay { display: none; }
+.has-video.is-immersive .player {
+  position: absolute;
+  z-index: 3;
+  inset: auto max(14px, env(safe-area-inset-right, 0px)) calc(4px + var(--safe-b)) max(14px, env(safe-area-inset-left, 0px));
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  pointer-events: none;
+  transition: opacity .18s linear, visibility .18s;
+}
+.has-video.is-immersive .p-seek { pointer-events: auto; gap: 8px; padding: 0; }
+.has-video.is-immersive .seek { padding: 8px 5px; }
+.has-video.is-immersive .seek-hit { height: 3px; }
+.has-video.is-immersive .seek-rail { background: color-mix(in srgb, var(--sheet) 55%, transparent); }
+.has-video.is-immersive .p-t { color: var(--ink); border-radius: 6px; background: var(--sheet); padding: 1px 4px; }
+.has-video.is-immersive .tools {
+  position: absolute;
+  bottom: 38px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(760px, 96%);
+  margin: 0;
+  padding: 3px 8px;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--line-2) 62%, transparent);
+  background: color-mix(in srgb, var(--sheet) 70%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  pointer-events: auto;
+}
+.has-video.is-immersive .tool { display: flex; justify-content: center; gap: 6px; padding: 10px 2px; }
+.tool.immersive-only { display: none; }
+.has-video.is-immersive .tool.immersive-only { display: flex; }
+.has-video.is-immersive .tool-t { font-size: 10px; }
+.has-video.is-immersive .hint { display: none; }
+.video-immersive.sheet-open .topbar,
+.video-immersive.sheet-open .tools { visibility: hidden; opacity: 0; pointer-events: none; }
+.has-video.is-immersive:not(.controls-visible) .topbar,
+.has-video:not(.controls-visible) .video-rotate,
+.has-video:not(.controls-visible) .video-pip,
+.has-video.is-immersive:not(.controls-visible) .player { visibility: hidden; opacity: 0; pointer-events: none; }
+.has-video.is-immersive .video-rotate { display: none; }
+.has-video.is-immersive .video-pip { display: none; }
+
+/* Transparent chrome keeps the picture and subtitles visible while tuning. */
+.video-immersive .sheet {
+  width: min(480px, calc(var(--video-view-w, 100vw) - 32px));
+  max-height: calc(var(--video-view-h, 100vh) - 56px);
+  border: 1px solid color-mix(in srgb, var(--line-2) 65%, transparent);
+  background: color-mix(in srgb, var(--sheet) 68%, transparent);
+  box-shadow: 0 12px 48px #0005;
+}
+.video-immersive .sheet-tall { max-height: calc(var(--video-view-h, 100vh) - 56px); }
+/* Page-rotation fallback: --video-view-* already carry the logical size, so the
+   base rule above yields the same box the OS-rotated landscape layout gets. */
+.video-immersive .rows {
+  background: color-mix(in srgb, var(--card) 58%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line-2) 52%, transparent);
+}
+.video-immersive .segs { background: color-mix(in srgb, var(--bg-soft) 62%, transparent); }
+.video-immersive .seg[aria-pressed="true"] { background: color-mix(in srgb, var(--sheet) 78%, transparent); }
+.video-immersive .p-t { background: color-mix(in srgb, var(--sheet) 70%, transparent); }
+.video-immersive .video-status { background: color-mix(in srgb, var(--sheet) 76%, transparent); backdrop-filter: blur(12px); }
+.video-immersive .scrim {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* Unsupported orientation-lock browsers rotate the entire page, including dialogs. */
+body { --rotated-width: 100vh; --rotated-height: 100vw; }
+body.video-rotated {
+  position: fixed;
+  top: 50%; left: 50%;
+  width: var(--rotated-width);
+  height: var(--rotated-height);
+  transform: translate(-50%, -50%) rotate(90deg);
+  overflow: hidden;
+}
+.video-rotated .sheet-chat { height: calc(var(--rotated-height) * .86); max-height: calc(var(--rotated-height) * .92); }
+.video-rotated .wcard { width: min(calc(var(--rotated-width) - 32px), 390px); max-height: calc(var(--rotated-height) - 24px); }
+.video-rotated .app.has-video.is-immersive { width: var(--rotated-width); height: var(--rotated-height); }
+
 .player {
   flex: none;
   margin: 4px 10px calc(10px + var(--safe-b));
@@ -292,3 +510,31 @@
   overflow: auto;
   -webkit-overflow-scrolling: touch;
 }
+
+.video-rotate { position: absolute; right: 10px; bottom: 10px; z-index: 2; border-radius: 12px; color: var(--ink-2); background: var(--sheet); }
+.has-video.is-immersive .video-rotate { bottom: calc(35px + var(--safe-b)); right: max(10px, env(safe-area-inset-right, 0px)); }
+
+/*  小窗入口: 竖屏贴在横屏按钮左边, 横屏统一走工具栏, 所以这里跟着横屏按钮一起显隐。
+    画面被搬进系统小窗后, 原位只剩这块可以点回来的提示。                              */
+.video-pip { position: absolute; right: 60px; bottom: 10px; z-index: 2; border-radius: 12px; color: var(--ink-2); background: var(--sheet); }
+.has-video.is-pip .video-rotate { display: none; }
+.video-pip-note {
+  pointer-events: auto;
+  cursor: pointer;
+  max-width: calc(100% - 24px);
+  font: 600 12px/1.4 var(--font-ui);
+  color: var(--ink-2);
+  border: 1px solid var(--line-2);
+}
+
+/*  经典 PiP (Safari/iOS) 画的是原生字幕轨, 这里给它一套与沉浸字幕一致的底和字色。 */
+#video::cue {
+  background: rgba(11, 15, 10, .82);
+  color: #fff;
+  font-family: var(--font-text);
+  font-size: var(--cue-size, 20px);
+  line-height: 1.4;
+  text-shadow: 0 1px 3px #000;
+}
+.video-gesture-hint { z-index: 4; top: 24%; }
+.has-video .reader { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }

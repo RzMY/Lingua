@@ -28,6 +28,7 @@ export class Engine {
     this.track = null;
 
     this.follow = true;
+    this.followAlign = FOLLOW_ALIGN;
     this.repeat = 0;          // 0 关 / 1 单句 / 2 全部
     this.loopS = -1;
     this.shadow = 'off';      // off | listen | speak
@@ -178,14 +179,14 @@ export class Engine {
     const top = vl.offsetOf(s) - this.scroller.scrollTop;
     const bottom = top + vl.h[s];
     if (top >= vh * 0.12 && (bottom <= vh * 0.74 || top <= vh * 0.30)) return;
-    this._target = vl.scrollTargetFor(s, FOLLOW_ALIGN);
+    this._target = vl.scrollTargetFor(s, this.followAlign);
   }
 
   scrollToActive() {
     const s = this.reader.activeS;
     if (s < 0) return;
     this._userAt = 0;
-    this._target = this.vlist.scrollTargetFor(s, FOLLOW_ALIGN);
+    this._target = this.vlist.scrollTargetFor(s, this.followAlign);
     this.kick();
   }
 

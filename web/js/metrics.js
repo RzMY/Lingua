@@ -10,6 +10,8 @@
  * 万一有偏差, 虚拟列表挂载时的实测会再校正一次。
  */
 
+import { layoutHeight } from './util.js';
+
 const PROBE_HTML =
   '<div class="s"><div class="s-words"><span class="w">' +
   '<span class="w-read">あ</span><span class="w-text">あ</span>' +
@@ -48,7 +50,7 @@ export class Metrics {
     const csB = getComputedStyle(textEl);
     const csR = getComputedStyle(romanEl);
 
-    const chipH = chip.getBoundingClientRect().height;
+    const chipH = layoutHeight(chip);
     const sig = [
       chipH, csW.columnGap, csW.rowGap, csS.padding, csC.padding,
       csA.font, csB.font, csR.font, csA.display, csR.display,

@@ -12,6 +12,7 @@
 </head>
 <body>
 <svg class="sprite" aria-hidden="true" focusable="false"><defs>
+  <symbol id="i-video" viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="16" rx="3"/><path d="M10 8l6 4-6 4z"/></symbol>
   <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
   <symbol id="i-cc" viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="4"/><path d="M10 10.2a2.6 2.6 0 100 3.6M17 10.2a2.6 2.6 0 100 3.6"/></symbol>
   <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 4.8l11 7.2-11 7.2z" stroke-linejoin="round"/></symbol>
@@ -47,14 +48,14 @@
       <div class="hero-acts">
         <button class="hero-a" id="btnSearch" aria-label="搜索" aria-pressed="false">
           <svg class="ic"><use href="#i-search"/></svg></button>
-        <button class="hero-add" id="btnAdd" aria-label="导入音频">
+        <button class="hero-add" id="btnAdd" aria-label="导入音频或视频">
           <svg class="ic"><use href="#i-plus"/></svg></button>
       </div>
       <h1 class="wordmark">Lingua</h1>
     </div>
     <div class="finder" id="finder" hidden>
       <svg class="ic ic-sm"><use href="#i-search"/></svg>
-      <input id="q" type="text" placeholder="搜索音频…" autocomplete="off" spellcheck="false" aria-label="搜索音频">
+      <input id="q" type="text" placeholder="搜索音频或视频…" autocomplete="off" spellcheck="false" aria-label="搜索音频或视频">
       <button class="finder-x" id="btnSearchX" aria-label="清空搜索">
         <svg class="ic ic-sm"><use href="#i-x"/></svg></button>
     </div>

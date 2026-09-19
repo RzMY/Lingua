@@ -21,6 +21,7 @@ import { openFontSheet } from './font-settings.js';
 import { featureKeys, featureText, mergeCatalog, sourceLangs, sourceName, sourceSpec } from './langs.js';
 import { ApiError, baseLabel, health } from './api.js';
 import { createTrack, listTracks, patchTrack, removeTrack } from './library.js';
+import { MEDIA_ACCEPT, isMediaFile, mediaKind } from './media.js';
 import { openBackupExport, openBackupImport, openMissingFiles, openFileRepair } from './backup-ui.js';
 import { probe, LLMError } from './llm.js';
 import { openSheet, closeSheet, openConfirm, openMenu } from './sheet.js';
@@ -44,6 +45,7 @@ const dom = {
 };
 
 const VIEWS = ['viewHome', 'viewWorkbench', 'viewSet'];
+dom.file.accept = MEDIA_ACCEPT;
 let workbench;
 let currentView = 'viewHome';
 const experimentsEnabled = () => config.experimental === 1;
@@ -73,7 +75,7 @@ const STATUS = {
 function metaOf(t) {
   const meta = el('div', 'card-meta');
   meta.append(el('span', 'dur', fmtTime(t.duration || 0)));
-  const hit = t.audio?.missing ? ['is-warn', '待补充音频']
+  const hit = t.audio?.missing ? ['is-warn', '待补充媒体']
     : t.transcript?.missing ? ['is-warn', '待补充字幕'] : STATUS[t.status];
   if (hit) {
     meta.append(el('span', 'badge ' + hit[0], hit[1]));
@@ -82,6 +84,7 @@ function metaOf(t) {
   const bits = [sourceName(t.lang)];
   if (t.sentences) bits.push(t.sentences + ' 句');
   if (t.hasWordTiming) bits.push('逐词');
+  if (mediaKind(t.audio) === 'video') bits.push('视频');
   meta.append(el('span', 'badge', bits.join(' · ')));
   return meta;
 }
@@ -96,7 +99,7 @@ function art(glyph) {
 /** 奶白面板: 右侧一枚淡水印 + 顶部头像/操作 + 底部时长与标题. */
 function panelOf(glyph, meta, title) {
   const panel = el('div', 'card-in');
-  panel.append(icon('i-wave', 'ic card-wm'));
+  panel.append(icon(glyph, 'ic card-wm'));
   const top = el('div', 'card-top');
   top.append(art(glyph));
   const body = el('div', 'card-b');
@@ -111,8 +114,9 @@ const openSetup = (id) => {
 };
 
 function cardOf(t) {
-  const card = el('div', 'card');
-  const { panel, top } = panelOf('i-wave', metaOf(t), el('div', 'card-t', t.title || t.id));
+  const video = mediaKind(t.audio) === 'video';
+  const card = el('div', video ? 'card card-video' : 'card');
+  const { panel, top } = panelOf(video ? 'i-video' : 'i-wave', metaOf(t), el('div', 'card-t', t.title || t.id));
 
   const more = el('button', 'card-a');
   more.type = 'button';
@@ -148,17 +152,17 @@ function paintBlank() {
   if (listErr) {
     const ic = el('span', 'blank-ic');
     ic.append(icon('i-info'));
-    box.append(ic, el('b', null, '读不到音频库'), el('p', null, listErr));
+    box.append(ic, el('b', null, '读不到媒体库'), el('p', null, listErr));
     box.append(buttonBar(button('重试', { main: true, glyph: 'i-refresh', onPick: refresh })));
   } else if (query) {
     const ic = el('span', 'blank-ic');
     ic.append(icon('i-search'));
-    box.append(ic, el('b', null, '没有匹配的音频'), el('p', null, `换个词试试, 当前搜索: “${query}”`));
+    box.append(ic, el('b', null, '没有匹配的媒体'), el('p', null, `换个词试试, 当前搜索: “${query}”`));
   } else {
     const ic = el('span', 'blank-ic');
     ic.append(icon('i-wave'));
-    box.append(ic, el('b', null, '还没有音频'));
-    box.append(buttonBar(button('导入音频', { main: true, glyph: 'i-plus', onPick: pick })));
+    box.append(ic, el('b', null, '还没有音频或视频'));
+    box.append(buttonBar(button('导入音频或视频', { main: true, glyph: 'i-plus', onPick: pick })));
   }
   box.hidden = false;
 }
@@ -235,7 +239,7 @@ function importSheet(files) {
       button('取消', { onPick: closeSheet }),
     ),
   );
-  openSheet('导入音频', body);
+  openSheet('导入音频或视频', body);
 }
 
 /** 顺序写库: 一个大文件写 IndexedDB 也要点时间, 串行能让列表状态好读. */
@@ -257,7 +261,9 @@ async function runImport(files, lang) {
 }
 
 dom.file.addEventListener('change', () => {
-  const files = [...(dom.file.files || [])];
+  const picked = [...(dom.file.files || [])];
+  const files = picked.filter(isMediaFile);
+  if (files.length !== picked.length) toast('已跳过不支持的文件，请选择音频或视频');
   dom.file.value = '';
   if (files.length) importSheet(files);
 });
@@ -268,7 +274,7 @@ $('btnAdd').addEventListener('click', pick);
 function renameSheet(t) {
   let text = t.title || '';
   const field = inputField('标题', {
-    value: text, placeholder: '给这条音频起个名字', onInput: (v) => { text = v; },
+    value: text, placeholder: '给这条媒体起个名字', onInput: (v) => { text = v; },
   });
   const body = el('div', 'pane');
   const save = button('保存', {
@@ -309,8 +315,8 @@ function cardMenu(anchor, t) {
     {
       label: '删除', icon: 'i-trash', danger: true,
       onPick: async () => {
-        const ok = await openConfirm('删除音频',
-          `将从这台浏览器删除「${t.title || t.id}」的音频、分析结果与全部缓存, 不可撤销。`,
+        const ok = await openConfirm('删除媒体',
+          `将从这台浏览器删除「${t.title || t.id}」的媒体文件、分析结果与全部缓存, 不可撤销。`,
           { ok: '删除', danger: true });
         if (!ok) return;
         await removeTrack(t.id);

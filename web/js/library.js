@@ -1,10 +1,10 @@
 /**
- * 音频库 —— 全部数据都在浏览器里.
+ * 媒体库 —— 全部数据都在浏览器里, `audio` 为兼容旧数据保留的媒体存储名.
  *
  * 后端不存东西, 所以「一条音频」= IndexedDB 里的三条记录及可选字幕原件:
  *
  * * `tracks`  元数据 (标题 / 源语言 / 状态 / 统计), 首页列表读它;
- * * `audio`   原始音频 Blob, 播放时用 `URL.createObjectURL` 喂给 `<audio>`;
+ * * `audio`   原始音视频 Blob, 播放时用 blob URL 喂给 `<audio>` / `<video>`;
  * * `data`    分析后端返回的 track.json, 播放页读它。
  * * `transcripts` 字幕原件, 重新分析时可直接复用。
  *
@@ -15,6 +15,8 @@
 import { del, get, put, values, wipeTrack, wipeTrackAll, writeBatch } from './store.js';
 import { dropTrackCfg } from './trackcfg.js';
 import { randomId } from './util.js';
+import { isMediaFile } from './media.js';
+export { MEDIA_ACCEPT as AUDIO_ACCEPT } from './media.js'; // legacy name used by file repair
 
 const now = () => new Date().toISOString();
 
@@ -68,8 +70,11 @@ async function uniqueId(base) {
   return id;
 }
 
-/** 导入一个音频文件; 只写库, 不做任何分析. */
+/** 导入一个音频或视频文件; 只写库, 不做任何分析. */
 export async function createTrack(file, { title = '', lang = 'ja' } = {}) {
+  if (!(file instanceof Blob) || !file.size || !isMediaFile(file)) {
+    throw new Error('请选择非空的音频或视频文件');
+  }
   const id = await uniqueId(slugId(file.name));
   const record = {
     id,
@@ -181,7 +186,6 @@ export async function savePreparedTranscript(id, file, lang) {
   await wipeTrack(id);
   return next;
 }
-export const AUDIO_ACCEPT = 'audio/*,.wav,.mp3,.m4a,.flac,.ogg,.opus,.aac,.mp4,.webm';
 
 export const missingFiles = (records) => records.flatMap((record) =>
   ['audio', 'transcript'].filter((kind) => record[kind]?.missing)
@@ -213,9 +217,8 @@ export async function attachFiles(id, files) {
     if (!file) continue;
     if (!(file instanceof Blob) || !file.name || !file.size) throw new Error('请选择非空文件');
     if (kind === 'transcript' && !SUB_RE.test(file.name)) throw new Error('请选择 JSON / SRT / VTT 字幕');
-    if (kind === 'audio' && !/^audio\//i.test(file.type)
-      && !/\.(wav|mp3|m4a|flac|ogg|opus|aac|mp4|webm|aiff?|wma)$/i.test(file.name)) {
-      throw new Error('请选择音频文件');
+    if (kind === 'audio' && !isMediaFile(file)) {
+      throw new Error('请选择音频或视频文件');
     }
     next[kind] = { name: file.name, size: file.size, type: file.type, missing: false };
     batches[kind === 'audio' ? 'audio' : 'transcripts'] = [{ key: id, value: file, track: id }];

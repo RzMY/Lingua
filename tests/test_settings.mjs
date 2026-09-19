@@ -20,6 +20,7 @@ const {
 const {
   trackCfg, initTrackCfg, readTrackCfg, setTrackCfg, setTrackFontSize, resetTrackFontSizes, dropTrackCfg,
   deferTrackFontSizes,
+  setVideoCfg,
 } = await import('../web/js/trackcfg.js');
 const fonts = () => Object.fromEntries(Object.keys(FONT_DEFAULTS).map((key) => [key, settings[key]]));
 
@@ -27,6 +28,29 @@ beforeEach(() => {
   saved.clear();
   styles.clear();
   initSettings(() => {});
+});
+
+test('video preferences are bounded, isolated per track and survive subtitle changes', () => {
+  initTrackCfg('video-one', 'en');
+  setVideoCfg({ position: 70, width: 80, height: 55, transparency: 40, blur: 18,
+    fit: 'cover', muted: 1 });
+  setTrackCfg('read', 1);
+  setTrackFontSize('textSize', 29);
+  assert.equal(readTrackCfg('video-one').video.position, 70);
+  initTrackCfg('video-two', 'en');
+  assert.equal(trackCfg.video.position, 0);
+  assert.equal(trackCfg.video.fit, 'contain');
+  initTrackCfg('video-one', 'en');
+  assert.equal(trackCfg.video.fit, 'cover');
+  assert.equal(trackCfg.video.transparency, 40);
+  assert.equal(trackCfg.video.blur, 18);
+  assert.equal(trackCfg.fonts.textSize, 29);
+  setVideoCfg({ position: 999, width: -1, volume: NaN });
+  assert.equal(trackCfg.video.position, 100);
+  assert.equal(trackCfg.video.width, 50);
+  assert.equal(trackCfg.video.volume, 100);
+  dropTrackCfg('video-one');
+  assert.equal(readTrackCfg('video-one').video.position, 0);
 });
 
 test('default fonts are applied as independent pixel sizes', () => {

@@ -1,4 +1,4 @@
-/** 播放控制: audio 元素、进度条拖拽、快捷键、播放进度续播. */
+/** 播放控制: HTMLMediaElement、进度条拖拽、快捷键、播放进度续播. */
 
 import { clamp, fmtTime, toast } from './util.js';
 
@@ -85,7 +85,7 @@ export function setupPlayer(ctx) {
   });
   audio.addEventListener('error', () => {
     if (!audio.src) return;                 // 还没挂上音频, 不是错误
-    toast('音频解码失败: 这个格式浏览器放不了, 换个文件重新导入');
+    toast('媒体解码失败: 浏览器不支持这个音视频格式，请换个文件重新导入');
   });
 
   const toggle = () => {
@@ -205,20 +205,25 @@ function setupSeek({ audio, engine, dom }) {
   const hit = dom.seek.querySelector('.seek-hit');
   let rect = null, lastSet = 0;
 
-  const measure = () => { rect = hit.getBoundingClientRect(); engine.setRailWidth(rect.width); };
+  const measure = () => { rect = hit.getBoundingClientRect(); engine.setRailWidth(hit.clientWidth); };
   measure();
   new ResizeObserver(measure).observe(hit);
 
-  const ratioAt = (x) => (rect && rect.width ? clamp((x - rect.left) / rect.width, 0, 1) : 0);
+  const ratioAt = (event) => {
+    if (!rect) return 0;
+    const rotated = document.body.classList.contains('video-rotated');
+    const size = rotated ? rect.height : rect.width;
+    return size ? clamp(((rotated ? event.clientY - rect.top : event.clientX - rect.left)) / size, 0, 1) : 0;
+  };
   const dur = () => audio.duration || engine.track?.duration || 0;
 
   const down = (e) => {
     if (!dur()) return;
     measure();
     dom.seek.classList.add('is-drag');
-    dom.seek.setPointerCapture(e.pointerId);
+    try { dom.seek.setPointerCapture(e.pointerId); } catch { /* synthetic/test pointers */ }
     engine.scrubbing = true;
-    engine.scrubTime = ratioAt(e.clientX) * dur();
+    engine.scrubTime = ratioAt(e) * dur();
     engine.noteUserScroll();
     engine.kick();
     e.preventDefault();
@@ -226,7 +231,7 @@ function setupSeek({ audio, engine, dom }) {
 
   const move = (e) => {
     if (!engine.scrubbing) return;
-    engine.scrubTime = ratioAt(e.clientX) * dur();
+    engine.scrubTime = ratioAt(e) * dur();
     const now = performance.now();
     if (now - lastSet > 90) { lastSet = now; audio.currentTime = engine.scrubTime; }
     engine.kick();
@@ -260,7 +265,10 @@ function setupKeys({ engine, dom }, toggle) {
   window.addEventListener('keydown', (e) => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const tag = document.activeElement && document.activeElement.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (e.key !== 'Escape' && (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT')) return;
+    if (e.key !== 'Escape' && document.activeElement?.closest('.sheet.is-open')) return;
+    if (e.key === ' ' && tag === 'BUTTON') return;
+    if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && document.activeElement === dom.seek) return;
     switch (e.key) {
       case ' ': case 'k': e.preventDefault(); toggle(); break;
       case 'ArrowLeft': e.preventDefault(); engine.seek(engine.audio.currentTime - 5); break;

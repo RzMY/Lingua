@@ -74,6 +74,19 @@ test('export includes every data store and saved configuration, but only source 
   assert.equal((await get('data', 'lesson')).audio.src, 'blob:private-resource');
 });
 
+test('video preferences survive export and reject invalid layout values', async () => {
+  const original = fixture();
+  const key = 'linguatrack.track.lesson';
+  const video = { position: 50, width: 75, height: 55, transparency: 30, blur: 18,
+    fit: 'cover', subtitles: 1, muted: 0, volume: 60 };
+  original.localStorage[key] = JSON.stringify({ ...JSON.parse(original.localStorage[key]), video });
+  await seed(original);
+  const backup = parseBackup(JSON.stringify(await exportBackup()));
+  assert.deepEqual(JSON.parse(backup.localStorage[key]).video, video);
+  backup.localStorage[key] = JSON.stringify({ video: { position: 101 } });
+  assert.throws(() => parseBackup(JSON.stringify(backup)), /视频配置数值/);
+});
+
 test('fresh restore retains analysis and all LLM outputs and records both missing files', async () => {
   const backup = fixture();
   const plan = prepareImport(backup, empty(), {});

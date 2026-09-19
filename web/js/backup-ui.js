@@ -51,7 +51,7 @@ export function openBackupExport() {
   } });
   body.append(group(
     infoRow('备份内容', '配置、分析结果、LLM 产物'),
-    infoRow('音频与字幕', '仅文件名'), credentials,
+    infoRow('音视频与字幕', '仅文件名'), credentials,
   ), buttonBar(save), note);
   openSheet('导出用户数据', body);
 }
@@ -110,7 +110,7 @@ export function openBackupImport() {
         infoRow('导出时间', new Date(parsed.exportedAt).toLocaleString()),
         infoRow('曲目 / 分析 / LLM 产物', `${summary.tracks} / ${summary.analyses} / ${summary.llm}`),
         infoRow('重复曲目', copies ? `${copies} 条保存为副本` : '无'),
-        infoRow('待补充文件', `${summary.tracks} 个音频、${parsed.stores.tracks.filter((r) => r.value.transcript).length} 个字幕`),
+        infoRow('待补充文件', `${summary.tracks} 个媒体、${parsed.stores.tracks.filter((r) => r.value.transcript).length} 个字幕`),
         infoRow('API Key 与访问令牌', parsed.includesCredentials ? '包含在备份中' : '保留本机凭据'),
       ));
       note.textContent = '';
@@ -144,7 +144,7 @@ export function openFileRepair(records, { onUpdate, onClose, imported = false } 
     const pending = missingFiles(records);
     const audios = pending.filter((f) => f.kind === 'audio').length;
     count.textContent = (imported ? '用户数据已导入\n' : '')
-      + (pending.length ? `待补充 ${audios} 个音频、${pending.length - audios} 个字幕` : '文件已补齐');
+      + (pending.length ? `待补充 ${audios} 个媒体、${pending.length - audios} 个字幕` : '文件已补齐');
     done.lastElementChild.textContent = pending.length ? '稍后补充' : '完成';
     batch.disabled = busy || !pending.length;
     list.textContent = '';
@@ -154,7 +154,7 @@ export function openFileRepair(records, { onUpdate, onClose, imported = false } 
       const section = el('section', 'transfer-track');
       section.append(el('h3', null, record.title || record.id));
       for (const item of wanted) {
-        const label = item.kind === 'audio' ? '音频' : '字幕';
+        const label = item.kind === 'audio' ? '音频或视频' : '字幕';
         const row = el('div', 'transfer-file');
         const text = el('div', 'transfer-file-name');
         text.append(el('span', null, label), el('b', null, item.name));
@@ -208,5 +208,5 @@ export function openFileRepair(records, { onUpdate, onClose, imported = false } 
   });
   body.append(count, input, buttonBar(batch, done), list, note);
   render();
-  openSheet('补充音频与字幕', body, { cls: 'sheet-tall', onClose });
+  openSheet('补充媒体与字幕', body, { cls: 'sheet-tall', onClose });
 }

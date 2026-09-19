@@ -158,7 +158,7 @@ export function openFontSheet({ track = null, onClose } = {}) {
     previousWidth = entry.contentRect.width;
     scheduleFit();
   });
-  openSheet(track ? '字幕字号 · 当前音频' : '字幕字号', body, {
+  openSheet(track ? '字幕字号 · 当前媒体' : '字幕字号', body, {
     cls: 'sheet-tall', onClose: () => {
       observer.disconnect();
       cancelAnimationFrame(fitFrame);

@@ -13,14 +13,15 @@
 
 import { el } from './util.js';
 import { openSheet } from './sheet.js';
-import { group, infoRow, navRow, sectionTitle, segRow, switchRow } from './rows.js';
+import { button, buttonBar, group, infoRow, navRow, sectionTitle, segRow, stepRow, switchRow } from './rows.js';
 import { setSetting, settings } from './settings.js';
 import { openFontSheet } from './font-settings.js';
-import { setTrackCfg, trackCfg } from './trackcfg.js';
+import { setTrackCfg, setVideoCfg, trackCfg } from './trackcfg.js';
+import { VIDEO_DEFAULTS } from './video-config.js';
 import { TARGET_LANGS } from './config.js';
 import { featureText } from './langs.js';
 
-const RATES = [0.5, 0.75, 0.9, 1, 1.25, 1.5, 2];
+const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const THEMES = [['auto', '跟随'], ['light', '浅色'], ['dark', '深色']];
 
 /** 词性图例: 只加 `p-<tag>` 类, 颜色由 reader.css 里的 --pc 决定. */
@@ -46,8 +47,31 @@ function legendCard(track) {
  * @param {object} track
  * @param {object} [o] `{trStats}` —— 翻译进度的读取回调
  */
-export function openTrackSheet(track, { trStats } = {}) {
+export function openTrackSheet(track, { trStats, video } = {}) {
   const body = document.createDocumentFragment();
+  if (video) {
+    const cfg = () => trackCfg.video;
+    const control = (label, key, hint, min, max) => stepRow(label, hint,
+      () => cfg()[key], (value) => setVideoCfg({ [key]: value }), { min, max, step: 5, unit: '%' });
+    const subtitleRows = [
+      switchRow('显示字幕', '', () => cfg().subtitles,
+        (subtitles) => setVideoCfg({ subtitles })),
+      control('字幕位置', 'position', '底部 → 顶部', 0, 100),
+      control('字幕窗口宽度', 'width', '', 50, 100),
+      control('字幕背景透明度', 'transparency', '', 0, 100),
+      stepRow('字幕背景模糊', '', () => cfg().blur, (blur) => setVideoCfg({ blur }),
+        { min: 0, max: 30, step: 1, unit: 'px' }),
+      stepRow('系统字幕字号', '系统小窗里的字幕', () => cfg().captionSize,
+        (captionSize) => setVideoCfg({ captionSize }), { min: 12, max: 36, step: 1, unit: 'px' }),
+    ];
+    body.append(sectionTitle('字幕布局 · 当前视频'), group(...subtitleRows), buttonBar(button('重置字幕布局', {
+      onPick: () => {
+        const { subtitles, position, width, height, transparency, blur, captionSize } = VIDEO_DEFAULTS;
+        setVideoCfg({ subtitles, position, width, height, transparency, blur, captionSize });
+        subtitleRows.forEach((row) => row.refresh());
+      },
+    })));
+  }
   const langRow = segRow('译文语言', '',
     () => trackCfg.lang, (v) => setTrackCfg('lang', v),
     TARGET_LANGS.map((l) => [l.code, l.name]), { wrap: true });
@@ -57,15 +81,15 @@ export function openTrackSheet(track, { trStats } = {}) {
   const rows = [];
   for (const key of keys) {
     const [title, hint] = featureText(track.layers, key);
-    rows.push(switchRow(title, hint, () => trackCfg[key], (v) => {
+    rows.push(switchRow(title, video ? '' : hint, () => trackCfg[key], (v) => {
       setTrackCfg(key, v);
       if (key === 'tr') langRow.refresh();
     }));
     if (key === 'tr') rows.push(langRow);
   }
 
-  rows.push(navRow('字幕字号', '', { onPick: () => openFontSheet({ track }) }));
-  body.append(sectionTitle('这条音频'), group(...rows));
+  rows.push(navRow('字幕字号', video ? '' : '分别调节原文、注音、原形 / 转写与译文', { onPick: () => openFontSheet({ track }) }));
+  body.append(sectionTitle(video ? '字幕内容 · 当前视频' : '这条音频'), group(...rows));
   body.append(group(infoRow('源语言', track.langName)));
 
   if (trStats) {
@@ -81,7 +105,7 @@ export function openTrackSheet(track, { trStats } = {}) {
   );
   const legend = legendCard(track);
   if (legend) body.append(sectionTitle('图例'), legend);
-  openSheet('音频配置', body, { cls: 'sheet-tall' });
+  openSheet(video ? '视频设置' : '音频配置', body, { cls: 'sheet-tall' });
 }
 
 /** 倍速; 选中项由最接近的档位决定 (可能被键盘微调过). */
