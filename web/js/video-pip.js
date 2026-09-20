@@ -282,6 +282,12 @@ export function setupVideoPip({ video, stage, app, engine, releaseLandscape, onL
 
   /**  原生路径挨个试: 残缺的接口会让位给下一条, 两个都没有就老实告诉用户。 */
   async function open() {
+    if (video.error) { toast('视频加载失败，请重新加载后再试小窗'); return; }
+    // Safari 在首帧就绪前可能报告不支持 PiP；标准接口也会拒绝未就绪的视频。
+    // 保留下一次真实点击的用户激活，不在 loadeddata 回调里自动申请系统窗口。
+    if (video.readyState < 2 || !video.videoWidth || !video.videoHeight) {
+      toast('视频正在加载，请稍后再试小窗'); return;
+    }
     const failures = [];
     if (activityPip) {
       try {

@@ -239,7 +239,10 @@ const fixture = process.argv[4];
     await reveal();
     await page.locator('#seek').focus();
     await page.keyboard.press('ArrowRight');
-    await page.waitForFunction(() => Math.abs(document.querySelector('#video').currentTime - 13) < 0.05);
+    await page.waitForFunction(() => {
+      const video = document.querySelector('#video');
+      return Math.abs(video.currentTime - 13) < 0.05 && !video.seeking && video.readyState >= 2;
+    });
     assert.equal(await page.locator('#seek').isVisible(), true);
     assert.equal(await page.locator('#btnToolFit').isVisible(), true);
     assert.equal(await page.locator('#btnToolSubtitles').isVisible(), true);

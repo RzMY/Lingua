@@ -236,6 +236,9 @@ body.video-rotated {
   -webkit-user-select: none;
 }
 
+/* 播放提示会盖到工具栏；视频页让点击穿过提示，连续操作无需等待提示消失。 */
+.has-video ~ .toast.is-on { pointer-events: none; }
+
 /* ---------------------------------------------------------------- 进度条 */
 
 /*  照 img/播放页面.png: 时间贴在进度条两端, 一行放下。 */

@@ -189,7 +189,12 @@ export function setupVideo({ app, video, engine, toggle, onLayout, overlayOpen, 
     }
   }, { capture: true }); // Observe dialogs before the shared Escape handler closes them.
   app.addEventListener('pointerdown', (event) => {
-    if (event.target.closest('button, .seek')) showControls();
+    if (!event.target.closest('button, .seek')) return;
+    // 工具操作接管交互，取消视频尚在等待双击判定的单击，避免随后反转控件显隐。
+    gestures?.cancel();
+    // 竖屏工具栏始终可用。按下它时不改变画面按钮的可见性，避免触屏浏览器
+    // 在生成 click 前因页面显隐变化把第一次点击变成仅唤出控件。
+    if (isImmersive() || stage.contains(event.target)) showControls();
   });
   const showStatus = (text) => { status.textContent = text; status.hidden = !text; };
   video.addEventListener('waiting', () => { if (!video.paused) showStatus('正在缓冲…'); });

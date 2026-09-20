@@ -26,6 +26,11 @@ function harness(t, { native = true, wakeRequest } = {}) {
   w.eval(outputFiles[0].text);
   const app = doc.getElementById('app'), video = doc.getElementById('video');
   app.classList.add('has-video');
+  Object.defineProperties(video, {
+    readyState: { configurable: true, value: 2 },
+    videoWidth: { configurable: true, value: 1280 },
+    videoHeight: { configurable: true, value: 720 },
+  });
   const track = { S: 1, sStart: [0], sEnd: [4], sentences: [{ text: 'Hello.', translation: '你好。' }] };
   const cues = { mode: 'disabled', addCue() {}, removeCue() {} };
   video.addTextTrack = () => cues;
@@ -42,8 +47,84 @@ function harness(t, { native = true, wakeRequest } = {}) {
     landscape.matches = horizontal;
     landscape.dispatchEvent(new w.Event('change')); await flush();
   };
-  return { w, doc, app, video, player, calls, cues, rotate, turn };
+  const pointer = (target, type) => target.dispatchEvent(Object.assign(new w.Event(type, { bubbles: true, cancelable: true }),
+    { pointerId: 1, button: 0, isPrimary: true, clientX: 160, clientY: 90 }));
+  return { w, doc, app, video, player, calls, cues, rotate, turn, pointer };
 }
+
+test('PiP waits for a video frame before probing Safari support, then opens on the next tap', async (t) => {
+  const h = harness(t);
+  let probes = 0, requests = 0;
+  h.video.webkitSupportsPresentationMode = () => { probes++; return h.video.readyState >= 2; };
+  h.video.webkitSetPresentationMode = (mode) => { requests++; h.video.webkitPresentationMode = mode; };
+  for (const readyState of [0, 1]) {
+    Object.defineProperty(h.video, 'readyState', { configurable: true, value: readyState });
+    await h.player.pip.toggle();
+    assert.match(h.doc.getElementById('toast').textContent, /视频正在加载/);
+    assert.equal(probes, 0);
+    assert.equal(requests, 0);
+  }
+  Object.defineProperty(h.video, 'readyState', { configurable: true, value: 2 });
+  await h.player.pip.toggle();
+  assert.equal(requests, 1);
+  assert.equal(h.player.pip.isActive(), true);
+  // Closing an existing PiP must still work if the media becomes unready.
+  Object.defineProperty(h.video, 'readyState', { configurable: true, value: 0 });
+  await h.player.pip.toggle();
+  assert.equal(h.player.pip.isActive(), false);
+});
+
+test('loading media does not request standard or Document PiP, or exit landscape', async (t) => {
+  const h = harness(t, { native: false });
+  let requests = 0;
+  h.w.documentPictureInPicture = { requestWindow() { requests++; } };
+  h.video.requestPictureInPicture = () => { requests++; };
+  await h.rotate();
+  Object.defineProperty(h.video, 'readyState', { configurable: true, value: 1 });
+  await h.player.pip.toggle();
+  assert.equal(requests, 0);
+  assert.equal(h.player.isImmersive(), true);
+  assert.match(h.doc.getElementById('toast').textContent, /视频正在加载/);
+});
+
+test('ready media without a PiP interface still reports unsupported; media errors report a load failure', async (t) => {
+  const h = harness(t);
+  h.video.webkitSetPresentationMode = undefined;
+  await h.player.pip.toggle();
+  assert.match(h.doc.getElementById('toast').textContent, /没有系统小窗接口/);
+  Object.defineProperty(h.video, 'error', { value: { code: 3 } });
+  await h.player.pip.toggle();
+  assert.match(h.doc.getElementById('toast').textContent, /视频加载失败/);
+});
+
+test('portrait toolbar presses do not reveal video controls or consume button clicks', (t) => {
+  const h = harness(t);
+  for (const id of ['btnPin', 'btnExplain', 'btnRepeat', 'btnSpeed', 'btnPlay', 'btnDisplay', 'seek']) {
+    const button = h.doc.getElementById(id);
+    let clicks = 0;
+    button.addEventListener('click', () => { clicks++; });
+    const target = button.firstElementChild || button;
+    assert.equal(h.pointer(target, 'pointerdown'), true, `${id} must retain its default input handling`);
+    assert.equal(h.app.classList.contains('controls-visible'), false, `${id} must not reveal video controls`);
+    h.pointer(target, 'pointerup'); target.dispatchEvent(new h.w.MouseEvent('click', { bubbles: true }));
+    assert.equal(clicks, 1);
+  }
+});
+
+test('a toolbar press cancels a pending video single tap while immersive controls remain usable', async (t) => {
+  const h = harness(t);
+  h.video.setPointerCapture = h.video.releasePointerCapture = () => {};
+  h.video.getBoundingClientRect = () => ({ left: 0, top: 0, right: 320, width: 320, height: 180 });
+  h.pointer(h.video, 'pointerdown'); h.pointer(h.video, 'pointerup');
+  h.pointer(h.doc.getElementById('btnSpeed'), 'pointerdown');
+  await new Promise((resolve) => h.w.setTimeout(resolve, 350));
+  assert.equal(h.app.classList.contains('controls-visible'), false);
+  await h.rotate(); h.player.showControls();
+  h.pointer(h.video, 'pointerdown'); h.pointer(h.video, 'pointerup');
+  h.pointer(h.doc.getElementById('btnToolSettings'), 'pointerdown');
+  await new Promise((resolve) => h.w.setTimeout(resolve, 350));
+  assert.equal(h.app.classList.contains('controls-visible'), true);
+});
 
 test('native iOS manually enters and leaves full-canvas playback without WebKit fullscreen or orientation lock', async (t) => {
   const h = harness(t);

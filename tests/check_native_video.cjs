@@ -89,6 +89,54 @@ const base = process.argv[3] || 'http://127.0.0.1:5189';
         }
       };
       await check(false);
+      // Use actual touch input: DOM .click() bypasses WebKit's synthetic-click path.
+      const tap = async (id) => {
+        const box = await page.locator('#' + id).boundingBox();
+        assert.ok(box, `${id} must be visible`);
+        assert.equal(await page.evaluate(({ id, box }) => {
+          const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+          return hit?.closest('button')?.id === id;
+        }, { id, box }), true, `${name}: ${id} must not be covered by a toast or video`);
+        await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+      };
+      const closeDialog = async () => {
+        await page.locator('.sheet-acts [aria-label="关闭"]').tap();
+        await page.waitForFunction(() => !document.querySelector('.scrim.is-open'));
+        await page.waitForFunction(() => {
+          const sheet = document.querySelector('.sheet');
+          return !sheet || sheet.getBoundingClientRect().top >= innerHeight;
+        });
+      };
+      for (const subtitles of [1, 0]) {
+        await page.evaluate(async (value) => {
+          const { setVideoCfg } = await import('./js/trackcfg.js');
+          setVideoCfg({ subtitles: value });
+          document.getElementById('app').classList.remove('controls-visible');
+        }, subtitles);
+        for (const id of ['btnPin', 'btnRepeat']) {
+          const before = await page.locator('#' + id).evaluate((button) => button.getAttribute('aria-pressed') + button.textContent);
+          await tap(id);
+          const after = await page.locator('#' + id).evaluate((button) => button.getAttribute('aria-pressed') + button.textContent);
+          assert.notEqual(after, before, `${name}: ${id} responds on first tap`);
+        }
+        for (const id of ['btnSpeed', 'btnExplain']) {
+          await tap(id);
+          await page.waitForFunction(() => document.querySelector('.sheet.is-open'));
+          await closeDialog();
+        }
+        assert.equal(await page.locator('#app').evaluate((node) => node.classList.contains('controls-visible')), false,
+          `${name}: portrait toolbar does not reveal picture controls (subtitles=${subtitles})`);
+      }
+      await page.evaluate(async () => {
+        const { setVideoCfg } = await import('./js/trackcfg.js');
+        setVideoCfg({ subtitles: 1 });
+      });
+      if (name === 'chromium') {
+        await tap('btnPlay');
+        await page.waitForFunction(() => !document.getElementById('video').paused);
+        await tap('btnPlay');
+        assert.equal(await page.locator('#video').evaluate((video) => video.paused), true);
+      }
       for (let i = 0; i < 3; i++) {
         await click('btnVideoRotate'); await check(true);
         await click('btnToolRotate'); await check(false);
@@ -100,7 +148,7 @@ const base = process.argv[3] || 'http://127.0.0.1:5189';
       await page.setViewportSize({ width: 390, height: 844 }); await check(false);
       assert.equal(await page.locator('body').evaluate((node) => node.classList.contains('video-rotated')), false);
       assert.deepEqual(errors, []);
-      console.log(`PASS ${name}: native iOS bridge path, repeated fullscreen, physical rotation, safe areas and unchanged media${name === 'webkit' ? ' (synthetic metadata; no H.264 decoder on Windows)' : ''}`);
+      console.log(`PASS ${name}: portrait toolbar first-touch response, native iOS bridge path, repeated fullscreen, physical rotation, safe areas and unchanged media${name === 'webkit' ? ' (synthetic metadata; no H.264 decoder on Windows)' : ''}`);
     } finally { await browser.close(); }
   }
 })().catch((error) => { console.error(error); process.exitCode = 1; });
