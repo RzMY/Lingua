@@ -211,10 +211,10 @@ html.video-immersive, html.video-immersive body { background: #000; }
 body { --rotated-width: 100vh; --rotated-height: 100vw; }
 body.video-rotated {
   /* The CSS canvas turns clockwise: physical top becomes logical left. */
-  --safe-t: env(safe-area-inset-right, 0px);
-  --safe-r: env(safe-area-inset-bottom, 0px);
-  --safe-b: env(safe-area-inset-left, 0px);
-  --safe-l: env(safe-area-inset-top, 0px);
+  --safe-t: var(--native-safe-r, env(safe-area-inset-right, 0px));
+  --safe-r: var(--native-safe-b, env(safe-area-inset-bottom, 0px));
+  --safe-b: var(--native-safe-l, env(safe-area-inset-left, 0px));
+  --safe-l: var(--native-safe-t, env(safe-area-inset-top, 0px));
   position: fixed;
   top: 50%; left: 50%;
   width: var(--rotated-width);

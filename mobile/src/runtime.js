@@ -6,17 +6,22 @@ import { SplashScreen } from '@capacitor/splash-screen';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import { UpdateManager } from './update.js';
+import { nativeStyles } from './ui.js';
 import { CHANNELS, CHANNEL_KEY, OWN_KEY, DEV_KEY, normalizeSource, sourceKey, fetchSourceManifest } from './channels.js';
 
 const NativeMedia = registerPlugin('NativeMedia');
 const KEY = 'lingua.native.state';
 const NativeShell = registerPlugin('NativeShell');
 let source = { channel: 'stable', ownUrl: '', developmentUrl: '' };
-let manager, target = '', status = '本地版本已就绪', panel, version = '';
+let manager, target = '', status = '', panel, updatePanel, version = '', updating = false;
+let manualChecks = 0;
+const SESSION_CHECK = 'lingua.native.startup-check';
 const save = (state) => Preferences.set({ key: KEY, value: JSON.stringify(state) });
 const node = (tag, text) => { const n = document.createElement(tag); if (text) n.textContent = text; return n; };
-function button(text, action) {
+function button(text, action, className = 'native-button') {
   const b = node('button', text); b.type = 'button';
+  b.className = className;
+  if (className === 'native-tool') b.setAttribute('aria-label', text);
   b.onclick = async () => { b.disabled = true; try { await action(); } catch (e) { setStatus(e.message); } finally { b.disabled = false; } };
   return b;
 }
@@ -48,7 +53,7 @@ function clearImplicitBackendToken() {
   }
 }
 async function changeSource(next) {
-  if (manager?.busy) throw Error('更新正在下载，请等待完成后再切换分支');
+  if (manager?.busy || updating) throw Error('请等待更新完成后再切换分支');
   next = normalizeSource(next);
   if (sourceKey(next) !== sourceKey(source)) clearImplicitBackendToken();
   await save({ source: next, pending: null });
@@ -58,69 +63,112 @@ async function changeSource(next) {
   if (next.channel === 'development') await NativeShell.openDevelopment({ url: next.developmentUrl });
   else await CapacitorUpdater.reset();
 }
+function dialog(className, title) {
+  const box = node('dialog'); box.className = `native-dialog ${className}`;
+  const heading = node('h2', title); heading.id = className + '-title';
+  box.setAttribute('aria-labelledby', heading.id);
+  box.addEventListener('close', () => box.remove());
+  return { box, heading };
+}
 function settings(suggested = source) {
   panel?.remove();
-  panel = node('dialog'); panel.className = 'native-settings';
-  const title = node('h2', '开发人员选项');
-  const label = node('label', '代码分支');
+  const { box, heading } = dialog('native-settings', '开发人员选项'); panel = box;
+  const head = node('div'); head.className = 'native-head';
+  const close = button('×', () => box.close(), 'native-close'); close.setAttribute('aria-label', '关闭');
+  head.append(heading, close);
+  const label = node('label'); label.className = 'native-field'; label.append(node('span', '代码分支'));
   const select = node('select'); select.setAttribute('aria-label', '代码分支');
   for (const channel of CHANNELS) {
     const option = node('option', channel.label); option.value = channel.id; select.append(option);
   }
   select.value = suggested.channel;
   label.append(select);
-  const help = node('p');
-  const address = node('label');
+  const address = node('label'); address.className = 'native-field';
   const caption = node('span');
   const input = node('input'); input.type = 'url'; input.autocomplete = 'url';
+  input.autocapitalize = 'none'; input.spellcheck = false;
   address.append(caption, input);
   const draft = { ...suggested };
   const refresh = () => {
     const id = select.value;
-    help.textContent = CHANNELS.find((c) => c.id === id).description;
     address.hidden = id !== 'own' && id !== 'development';
-    caption.textContent = id === 'development' ? '调试网页地址' : '自有站点地址';
+    caption.textContent = id === 'development' ? '开发网页地址' : '站点地址';
     input.value = id === 'development' ? draft.developmentUrl : draft.ownUrl;
     input.placeholder = id === 'development' ? 'http://192.168.1.10:5173/' : 'https://lingua.example.com/';
   };
   select.onchange = refresh;
   input.oninput = () => { draft[select.value === 'development' ? 'developmentUrl' : 'ownUrl'] = input.value; };
   refresh();
-  const note = node('p', status); note.dataset.nativeStatus = ''; note.setAttribute('role', 'status');
+  const note = node('p', status); note.className = 'native-status'; note.dataset.nativeStatus = ''; note.setAttribute('role', 'status');
   const actions = node('div'); actions.className = 'native-actions';
   actions.append(button('保存并切换', () => changeSource({ ...draft, channel: select.value,
     ...(select.value === 'own' ? { ownUrl: input.value } : select.value === 'development' ? { developmentUrl: input.value } : {}),
-  })),
-    button('检查当前分支更新', check), button('恢复安装包前端', async () => {
-      if (manager?.busy) throw Error('请等待当前下载完成');
-      if (confirm('恢复随安装包附带的前端并重新载入？学习数据会保留。')) {
+  }), 'native-button native-button-primary'));
+  const tools = node('div'); tools.className = 'native-tools';
+  tools.append(button('检查更新', () => check(true), 'native-tool'), button('恢复内置版本', async () => {
+      if (manager?.busy || updating) throw Error('请等待更新完成');
+      if (confirm('恢复内置版本并重新打开应用？学习数据会保留。')) {
         await save({ source, pending: null }); await CapacitorUpdater.reset();
       }
-    }));
-  if (manager?.state.pending) actions.append(button('重启并使用更新', apply));
-  actions.append(button('关闭', () => panel.close()));
-  panel.append(title, label, help, address, node('p', `本地版本：${version.slice(0, 12) || '安装包'}`), note, actions);
+    }, 'native-tool'));
+  if (manager?.state.pending) tools.append(button('安装已下载的更新', () => offerUpdate(), 'native-tool'));
+  panel.append(head, label, address, note, actions, tools);
   document.body.append(panel); panel.showModal();
 }
-async function apply() {
-  if (!confirm('现在重新载入应用以使用新版本？当前播放及未保存的操作会中断。')) return;
-  await manager.apply();
+function updateDialog(title) {
+  updatePanel?.remove();
+  const { box, heading } = dialog('native-update', title); box.id = 'native-update'; updatePanel = box;
+  const mark = node('div'); mark.className = 'native-update-mark'; mark.setAttribute('aria-hidden', 'true');
+  // Static, trusted icon; all service-provided text is rendered with textContent.
+  mark.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 16V3m-5 5 5-5 5 5M4 15v5a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5"/></svg>';
+  const note = node('p'); note.className = 'native-status'; note.setAttribute('role', 'status');
+  const actions = node('div'); actions.className = 'native-actions';
+  box.append(mark, heading, note, actions);
+  box.addEventListener('cancel', (event) => { if (updating) event.preventDefault(); });
+  document.body.append(box); box.showModal();
+  return { box, heading, note, actions };
 }
-function announce() {
-  if (document.getElementById('native-update')) return;
-  const box = node('aside'); box.id = 'native-update'; box.setAttribute('role', 'status');
-  box.append(node('span', '新版本已完整下载，下次可离线载入。'),
-    button('重启更新', apply), button('稍后', () => box.remove()));
-  document.body.append(box);
+function offerUpdate(manifest, view = updateDialog('发现新版本')) {
+  const { box, heading, note, actions } = view;
+  heading.textContent = '发现新版本'; note.textContent = '更新后将重新打开应用。';
+  const later = button('稍后', () => box.close());
+  const install = button('立即更新', async () => {
+    updating = true; later.disabled = true;
+    heading.textContent = '正在更新'; note.textContent = '正在下载并校验…';
+    box.setAttribute('aria-busy', 'true');
+    try {
+      if (manifest) await manager.download(manifest);
+      note.textContent = '正在重新打开…';
+      await manager.apply();
+    } catch (error) {
+      heading.textContent = '更新未完成'; note.textContent = error.message;
+      install.textContent = '重试';
+    } finally { updating = false; later.disabled = false; box.removeAttribute('aria-busy'); }
+  }, 'native-button native-button-primary');
+  actions.replaceChildren(later, install);
 }
-async function check() {
-  setStatus('正在检查远端更新…');
+async function check(manual = false) {
+  if (updating) return;
+  if (manual) manualChecks++;
+  const manualGeneration = manualChecks;
+  const view = manual ? updateDialog('正在检查更新') : null;
+  if (view) view.actions.append(button('取消', () => view.box.close()));
   try {
-    const pending = await manager.check();
-    setStatus(pending ? '更新已校验并保存，重启后生效' : '当前已是最新版本');
-    if (pending) announce();
-    else document.getElementById('native-update')?.remove();
-  } catch (e) { setStatus(`继续使用本地版本：${e.message}`); }
+    const manifest = await manager.check();
+    if (manual && !view.box.open) return;
+    // A manual check owns its dialog if it overlaps the silent startup check.
+    if (!manual && (updatePanel?.open || manualGeneration !== manualChecks)) return;
+    if (manifest) offerUpdate(manifest, view || undefined);
+    else if (view) {
+      view.heading.textContent = '已是最新版本';
+      view.actions.replaceChildren(button('完成', () => view.box.close(), 'native-button native-button-primary'));
+    }
+  } catch (error) {
+    if (!view?.box.open) return;
+    view.heading.textContent = '暂时无法检查更新'; view.note.textContent = error.message;
+    view.actions.replaceChildren(button('关闭', () => view.box.close()),
+      button('重试', () => check(true), 'native-button native-button-primary'));
+  }
 }
 async function exportFile(blob, name) {
   // Android's chooser resolves before the receiving app finishes reading the URI.
@@ -146,7 +194,7 @@ async function exportFile(blob, name) {
 async function initialize() {
   if (!Capacitor.isNativePlatform()) return;
   const style = node('style');
-  style.textContent = `.native-settings{color:var(--ink,#1b1f16);background:var(--sheet,#f7f7f1);border:0;border-radius:20px;padding:24px;width:min(90vw,480px);max-height:85dvh;overflow:auto}.native-settings::backdrop{background:#0007}.native-settings p{line-height:1.6}.native-settings input,.native-settings select{display:block;box-sizing:border-box;width:100%;font:inherit;padding:12px;margin:12px 0;border:1px solid #999;border-radius:8px}.native-actions{display:flex;gap:12px;flex-wrap:wrap}.native-settings button,#native-update button{padding:10px 14px;border-radius:12px;border:1px solid #999;font:inherit}#native-update{position:fixed;bottom:calc(env(safe-area-inset-bottom) + 16px);left:16px;right:16px;z-index:10000;background:var(--sheet,#f7f7f1);color:var(--ink,#1b1f16);border:1px solid #999;border-radius:16px;padding:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}html.native-app{overscroll-behavior:none}html.native-activity-pip .topbar,html.native-activity-pip .bottom-nav{display:none}`;
+  style.textContent = nativeStyles;
   document.head.append(style); document.documentElement.classList.add('native-app');
   let state;
   try { state = JSON.parse((await Preferences.get({ key: KEY })).value || '{}'); } catch { state = {}; }
@@ -184,15 +232,22 @@ async function initialize() {
   manager = new UpdateManager({ updater: CapacitorUpdater, fetchManifest: (selected) => fetchSourceManifest(selected, getJson), save, state, currentVersion: version });
   let marked = false;
   window.LinguaNative = {
-    target, settings, exportFile, channel: source.channel, platform: Capacitor.getPlatform(),
+    target, settings, checkUpdates: () => check(true), exportFile, channel: source.channel, platform: Capacitor.getPlatform(),
     activityPip: Capacitor.getPlatform() === 'android' ? NativeMedia : null,
     async markReady() {
       if (marked) return; marked = true;
       await CapacitorUpdater.notifyAppReady();
       await SplashScreen.hide();
       if (location.hash === '#native-settings') settings();
-      if (state.pending) announce();
-      void check();
+      // sessionStorage follows this WebView across full-document navigation, but not a cold launch.
+      // Include the source so switching channels still checks the newly selected version.
+      const key = sourceKey(source);
+      let shouldCheck = true;
+      try {
+        shouldCheck = sessionStorage.getItem(SESSION_CHECK) !== key;
+        sessionStorage.setItem(SESSION_CHECK, key);
+      } catch { /* Storage unavailable: still permit this startup's single check. */ }
+      if (shouldCheck) void check();
     },
   };
   // UIKit owns system bars; theme-color alone only changes browser chrome.
@@ -221,6 +276,7 @@ async function initialize() {
   window.addEventListener('pageshow', () => { pageVisible = true; syncPresentation(true); });
   syncPresentation();
   await App.addListener('backButton', ({ canGoBack }) => {
+    if (updatePanel?.open) { if (!updating) updatePanel.close(); return; }
     if (panel?.open) { panel.close(); return; }
     const overlay = document.querySelector('.menu-scrim') || document.querySelector('.wc-scrim.is-open');
     if (overlay) { overlay.click(); return; }

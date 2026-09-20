@@ -10,7 +10,7 @@
 			<key>Title</key>
 			<string>Lingua 开发人员选项</string>
 			<key>FooterText</key>
-			<string>重新打开应用后生效。开发分支直接联网加载网页，可返回正式分支。</string>
+			<string>重新打开应用后生效。</string>
 		</dict>
 		<dict>
 			<key>Type</key>

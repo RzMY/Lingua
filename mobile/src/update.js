@@ -21,10 +21,11 @@ export class UpdateManager {
     this.busy = null;
   }
   check() {
-    if (!this.busy) this.busy = this.run().finally(() => { this.busy = null; });
+    if (!this.busy) this.busy = this.inspect().finally(() => { this.busy = null; });
     return this.busy;
   }
-  async run() {
+  async inspect() {
+    this.available = null;
     const { data, manifestUrl, bundleUrl } = await this.fetchManifest(this.state.source);
     const manifest = validateManifest(data, manifestUrl, bundleUrl);
     if (manifest.version === this.currentVersion) {
@@ -38,6 +39,20 @@ export class UpdateManager {
     const { bundles } = await this.updater.list();
     if (bundles.some((b) => b.version === manifest.version && b.status === 'error')) {
       throw Error('此版本曾启动失败，已保留可用版本；请等待站点发布修复');
+    }
+    this.available = manifest;
+    return manifest;
+  }
+  download(manifest = this.available) {
+    if (this.busy) return Promise.reject(Error('请等待当前更新操作完成'));
+    if (!manifest || manifest !== this.available) return Promise.reject(Error('请重新检查更新'));
+    this.busy = this.stage(manifest).finally(() => { this.busy = null; });
+    return this.busy;
+  }
+  async stage(manifest) {
+    const { bundles } = await this.updater.list();
+    if (bundles.some((b) => b.version === manifest.version && b.status === 'error')) {
+      throw Error('此版本曾启动失败，请等待修复');
     }
     const pending = this.state.pending;
     if (pending?.version === manifest.version && pending.checksum === manifest.checksum
@@ -62,6 +77,7 @@ export class UpdateManager {
     if (!bundles.some((b) => b.id === pending.id && b.version === pending.version
         && b.checksum === pending.checksum && ['pending', 'success'].includes(b.status))) throw Error('更新包已失效，请重新检查');
     await this.save({ ...this.state, pending: null });
-    await this.updater.set({ id: pending.id });
+    try { await this.updater.set({ id: pending.id }); }
+    catch (error) { await this.save(this.state); throw error; }
   }
 }

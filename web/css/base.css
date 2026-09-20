@@ -50,10 +50,10 @@
   --radius-card: 24px;
   --radius-chip: 9px;
   --maxw: 720px;
-  --safe-t: env(safe-area-inset-top, 0px);
-  --safe-r: env(safe-area-inset-right, 0px);
-  --safe-b: env(safe-area-inset-bottom, 0px);
-  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-t: var(--native-safe-t, env(safe-area-inset-top, 0px));
+  --safe-r: var(--native-safe-r, env(safe-area-inset-right, 0px));
+  --safe-b: var(--native-safe-b, env(safe-area-inset-bottom, 0px));
+  --safe-l: var(--native-safe-l, env(safe-area-inset-left, 0px));
 
   /* 各文字层使用独立 px 字号; 固定网格行高只跟随对应层, 由 Metrics 重新度量. */
   --fs-text: 25px;

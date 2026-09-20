@@ -35,10 +35,12 @@ test('manifest binds zip URL to selected site and refuses incompatible or malfor
     assert.throws(() => validateManifest({ ...manifest, ...patch }, 'https://example.org/'));
   }
 });
-test('download is verified and persisted without activating, and concurrent checks are coalesced', async () => {
+test('checks are coalesced and never download until explicitly requested', async () => {
   const { manager, calls, saved } = fixture();
   const a = manager.check(), b = manager.check(); assert.equal(a, b);
-  await a;
+  const available = await a;
+  assert.equal(calls.length, 0); assert.equal(saved.length, 0);
+  await manager.download(available);
   assert.equal(calls.length, 1); assert.equal(saved.length, 1);
   assert.equal(calls[0].checksum, checksum);
   assert.equal(saved[0].pending.id, 'local-id');
@@ -50,9 +52,10 @@ test('network and checksum failures never replace a working version or saved sta
   assert.equal(saved.length, 0); assert.equal(calls.length, 0);
   manager.fetchManifest = async () => ({ data: manifest, manifestUrl: 'https://example.org/mobile/manifest.json' });
   updater.download = async () => ({ id: 'bad', version, checksum: '0'.repeat(64) });
-  await assert.rejects(manager.check(), /校验/); assert.equal(saved.length, 0);
+  await manager.check();
+  await assert.rejects(manager.download(), /校验/); assert.equal(saved.length, 0);
   updater.download = async () => { throw Error('disk full'); };
-  await assert.rejects(manager.check(), /disk full/); assert.equal(saved.length, 0);
+  await assert.rejects(manager.download(), /disk full/); assert.equal(saved.length, 0);
 });
 test('same frontend and failed versions are not downloaded again', async () => {
   const { manager, calls, updater } = fixture();
@@ -71,30 +74,31 @@ test('upstream rollback to the running version discards a stale pending update',
 });
 test('pending update survives restart and only explicit apply switches native bundle', async () => {
   const { manager, calls, updater, saved } = fixture();
-  const pending = await manager.check();
+  const pending = await manager.download(await manager.check());
   updater.list = async () => ({ bundles: [{ ...pending, status: 'pending' }] });
   const reloaded = new UpdateManager({ updater, fetchManifest: manager.fetchManifest,
     save: manager.save, state: saved[0], currentVersion: 'old' });
-  assert.deepEqual(await reloaded.check(), pending); assert.equal(calls.length, 1);
+  assert.deepEqual(await reloaded.download(await reloaded.check()), pending); assert.equal(calls.length, 1);
   await reloaded.apply(); assert.deepEqual(calls[1], ['activate', 'local-id']);
   assert.equal(saved.at(-1).pending, null);
 });
 test('evicted pending bundle is downloaded again and invalid pending cannot activate', async () => {
   const { manager, calls } = fixture();
-  await manager.check(); await manager.check(); assert.equal(calls.length, 2);
+  await manager.download(await manager.check()); await manager.download(await manager.check()); assert.equal(calls.length, 2);
   await assert.rejects(manager.apply(), /失效/);
   assert.ok(calls.every((call) => !Array.isArray(call)));
 });
 test('failed preferences commit cannot schedule or activate an uncommitted update', async () => {
   const { manager, calls } = fixture(); manager.save = async () => { throw Error('storage unavailable'); };
-  await assert.rejects(manager.check(), /storage unavailable/);
+  await manager.check();
+  await assert.rejects(manager.download(), /storage unavailable/);
   assert.equal(manager.state.pending, null); assert.equal(calls.length, 1);
 });
 test('native download completed during navigation is reused even without pending preferences', async () => {
   const { manager, calls, saved } = fixture({ list: async () => ({ bundles: [
     { id: 'orphan', version, checksum, status: 'pending' },
   ] }) });
-  assert.equal((await manager.check()).id, 'orphan');
+  assert.equal((await manager.download(await manager.check())).id, 'orphan');
   assert.equal(calls.length, 0); assert.equal(saved[0].pending.id, 'orphan');
 });
 test('native default backend follows selected subpath; explicit backend still wins', (t) => {
@@ -107,4 +111,12 @@ test('native default backend follows selected subpath; explicit backend still wi
   assert.equal(apiUrl('/health'), 'https://analysis.example/api/health');
   delete globalThis.window;
   config.apiBase = ''; assert.equal(apiUrl('/health'), '/api/health');
+});
+
+test('activation failure keeps the downloaded update available for a later retry', async () => {
+  const { manager, updater, saved } = fixture({ set: async () => { throw Error('reload failed'); } });
+  const pending = await manager.download(await manager.check());
+  updater.list = async () => ({ bundles: [{ ...pending, status: 'pending' }] });
+  await assert.rejects(manager.apply(), /reload failed/);
+  assert.deepEqual(saved.at(-1).pending, pending);
 });
