@@ -239,6 +239,10 @@ body.video-rotated {
   -webkit-user-select: none;
 }
 
+.setup-options { margin-block: 16px; }
+.setup-options summary { cursor: pointer; padding: 10px 0; color: var(--ink-2); }
+.setup .field-acts { flex-wrap: wrap; }
+
 /* 播放提示会盖到工具栏；视频页让点击穿过提示，连续操作无需等待提示消失。 */
 .has-video ~ .toast.is-on { pointer-events: none; }
 

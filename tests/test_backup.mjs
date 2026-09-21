@@ -4,6 +4,7 @@ import { BACKUP_FORMAT, BACKUP_VERSION, BACKUP_STORES, GLOBAL_KEYS,
   exportBackup, parseBackup, prepareImport, applyLocalData, importBackup } from '../web/js/backup.js';
 import { STORES, snapshot, writeBatch, put, get, del } from '../web/js/store.js';
 import { matchFiles, missingFiles, removeTrack, saveAnalysis } from '../web/js/library.js';
+import { plainTrack } from '../web/js/subtitles.js';
 
 const empty = () => Object.fromEntries(BACKUP_STORES.map((name) => [name, []]));
 const row = (key, value, track = key.split('|')[0]) => ({ key, value, track, at: 1234 });
@@ -84,6 +85,21 @@ test('video preferences survive export and reject invalid layout values', async 
   const backup = parseBackup(JSON.stringify(await exportBackup()));
   assert.deepEqual(JSON.parse(backup.localStorage[key]).video, video);
   backup.localStorage[key] = JSON.stringify({ video: { position: 101 } });
+  assert.throws(() => parseBackup(JSON.stringify(backup)), /视频配置数值/);
+});
+
+test('global video settings and unanalysed subtitles round-trip through backup', async () => {
+  const original = fixture();
+  original.localStorage[GLOBAL_KEYS[1]] = JSON.stringify({ video: { captionSize: 28, position: 60 } });
+  original.stores.tracks[0].value.status = 'subtitles';
+  original.stores.data[0].value = plainTrack(original.stores.tracks[0].value,
+    [{ start: 0, end: 1, text: 'Hello world.' }]);
+  await seed(original);
+  const backup = parseBackup(JSON.stringify(await exportBackup()));
+  assert.equal(backup.stores.tracks[0].value.status, 'subtitles');
+  assert.equal(backup.stores.data[0].value.subtitleMode, 'plain');
+  assert.deepEqual(JSON.parse(backup.localStorage[GLOBAL_KEYS[1]]).video, { captionSize: 28, position: 60 });
+  backup.localStorage[GLOBAL_KEYS[1]] = JSON.stringify({ video: { captionSize: 100 } });
   assert.throws(() => parseBackup(JSON.stringify(backup)), /视频配置数值/);
 });
 

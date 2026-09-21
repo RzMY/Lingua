@@ -260,8 +260,11 @@ test('both settings sheets expose a single persisted system caption size', (t) =
     h.api.openTrackSheet(h.track, { video });
     const rows = [...h.doc.querySelectorAll('.row')].filter((row) => row.querySelector('b')?.textContent === '系统字幕字号');
     assert.equal(rows.length, 1);
-    const input = rows[0].querySelector('input'); input.value = '28'; input.dispatchEvent(new h.w.Event('change'));
+    rows[0].click();
+    assert.ok(h.doc.querySelector('.caption-preview'));
+    const input = h.doc.querySelector('.sheet input'); input.value = '28'; input.dispatchEvent(new h.w.Event('change'));
     assert.equal(h.api.readTrackCfg('lesson').video.captionSize, 28);
+    assert.equal(h.doc.querySelector('.caption-preview-text').style.fontSize, '28px');
   }
 });
 

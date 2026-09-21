@@ -16,11 +16,13 @@ globalThis.localStorage = {
 };
 const {
   settings, initSettings, setSetting, FONT_DEFAULTS, fontSizes, setLangFontSize, resetLangFontSizes,
+  setGlobalVideo,
 } = await import('../web/js/settings.js');
 const {
   trackCfg, initTrackCfg, readTrackCfg, setTrackCfg, setTrackFontSize, resetTrackFontSizes, dropTrackCfg,
   deferTrackFontSizes,
   setVideoCfg,
+  resetVideoCfg,
 } = await import('../web/js/trackcfg.js');
 const fonts = () => Object.fromEntries(Object.keys(FONT_DEFAULTS).map((key) => [key, settings[key]]));
 
@@ -28,6 +30,37 @@ beforeEach(() => {
   saved.clear();
   styles.clear();
   initSettings(() => {});
+});
+
+test('video defaults inherit per field and font/display edits do not freeze them', () => {
+  setGlobalVideo({ position: 40, captionSize: 26 });
+  initSettings();
+  initTrackCfg('inherits', 'en');
+  assert.equal(trackCfg.video.captionSize, 26);
+  setTrackFontSize('textSize', 29);
+  setTrackCfg('read', 0);
+  assert.equal(JSON.parse(saved.get('linguatrack.track.inherits')).video, undefined);
+  setVideoCfg({ width: 80 });
+  assert.deepEqual(JSON.parse(saved.get('linguatrack.track.inherits')).video, { width: 80 });
+  setGlobalVideo({ position: 60, captionSize: 30 });
+  initTrackCfg('inherits', 'en');
+  assert.equal(trackCfg.video.position, 60);
+  assert.equal(trackCfg.video.captionSize, 30);
+  assert.equal(trackCfg.video.width, 80);
+  resetVideoCfg(['width']);
+  assert.equal(trackCfg.video.width, settings.video.width);
+  saved.set('linguatrack.track.legacy', JSON.stringify({ video: { captionSize: 18, position: 20 } }));
+  assert.equal(readTrackCfg('legacy').video.captionSize, 18);
+});
+
+test('raw subtitle edits preserve hidden learning preferences for later analysis', () => {
+  initTrackCfg('raw', 'en');
+  setTrackCfg('tr', 1);
+  initTrackCfg('raw', 'en', ['text']);
+  assert.equal(trackCfg.tr, 0);
+  setVideoCfg({ captionSize: 24 });
+  initTrackCfg('raw', 'en');
+  assert.equal(trackCfg.tr, 1);
 });
 
 test('video preferences are bounded, isolated per track and survive subtitle changes', () => {

@@ -6,7 +6,9 @@ import { sourceLangs } from './langs.js';
 import {
   applyFontSizes, fontSizes, setLangFontSize, resetLangFontSizes,
   FONT_SIZE_MIN, FONT_SIZE_MAX, FONT_SIZE_STEP,
+  settings,
 } from './settings.js';
+import { videoPreview } from './video-preview.js';
 import { trackCfg, setTrackFontSize, resetTrackFontSizes, deferTrackFontSizes } from './trackcfg.js';
 
 // All examples describe the same sentence, so the translation preview needs no model request.
@@ -38,7 +40,7 @@ const TRANSLATIONS = {
 };
 const SIZE_OPT = { min: FONT_SIZE_MIN, max: FONT_SIZE_MAX, step: FONT_SIZE_STEP, unit: 'px' };
 
-function previewSentence(spec, track, layers) {
+export function previewSentence(spec, track, layers) {
   const preview = el('div', 'font-preview');
   preview.dataset.lang = spec.code;
   preview.dataset.space = spec.spaceDelimited === false ? '0' : '1';
@@ -79,11 +81,12 @@ function previewSentence(spec, track, layers) {
  * 头部只留「关闭」那一枚 X: 二级菜单不需要第二个能离开本页的图标按钮
  * (以前那枚返回箭头在设置页里做的就是同一件事, 两个按钮挨在一起只会让人犹豫).
  */
-export function openFontSheet({ track = null, onClose } = {}) {
+export function openFontSheet({ track = null, video = false, onClose } = {}) {
   const list = sourceLangs();
   let code = list.find((spec) => spec.code === config.importLang)?.code || list[0].code;
   const body = el('div', 'font-pane');
   const content = el('div');
+  let landscape = null;
   let fitPreview = () => {};
   let fitFrame = 0;
   let finishFonts = () => {};
@@ -104,6 +107,7 @@ export function openFontSheet({ track = null, onClose } = {}) {
   body.append(content);
 
   function paint() {
+    landscape?.dispose();
     const spec = track ? {
       code: track.lang, name: track.langName, spaceDelimited: track.space,
       layers: track.layers, layerOrder: track.layerOrder, features: track.features,
@@ -112,6 +116,7 @@ export function openFontSheet({ track = null, onClose } = {}) {
     const layers = ['text', ...(spec.layerOrder || []).filter((key) =>
       ['read', 'roman'].includes(key) && supports(key)), ...(supports('tr') ? ['tr'] : [])];
     const preview = previewSentence(spec, track, layers);
+    landscape = video ? videoPreview(preview, () => ({ ...(track ? trackCfg.video : settings.video), subtitles: 1 })) : null;
     const get = () => fontSizes(code, track ? trackCfg.fonts : {});
     fitPreview = () => {
       if (!preview.isConnected) return;
@@ -128,7 +133,7 @@ export function openFontSheet({ track = null, onClose } = {}) {
       }
       for (const [span, scale] of fitted) span.style.transform = scale < 1 ? `scale(${scale})` : '';
     };
-    const updatePreview = () => { applyFontSizes(get(), preview); scheduleFit(); };
+    const updatePreview = () => { applyFontSizes(get(), preview); landscape?.update(); scheduleFit(); };
     const rows = layers.map((layer) => {
       const label = layer === 'text' ? '原文' : layer === 'tr' ? '译文'
         : spec.layers?.[layer] || (layer === 'read' ? '注音' : '转写');
@@ -147,7 +152,7 @@ export function openFontSheet({ track = null, onClose } = {}) {
         updatePreview();
       },
     });
-    content.replaceChildren(sectionTitle('例句'), preview, group(...rows), buttonBar(reset));
+    content.replaceChildren(sectionTitle(video ? '横屏视频示例' : '例句'), landscape?.element || preview, group(...rows), buttonBar(reset));
     updatePreview();
   }
 
@@ -160,6 +165,7 @@ export function openFontSheet({ track = null, onClose } = {}) {
   });
   openSheet(track ? '字幕字号 · 当前媒体' : '字幕字号', body, {
     cls: 'sheet-tall', onClose: () => {
+      landscape?.dispose();
       observer.disconnect();
       cancelAnimationFrame(fitFrame);
       fitFrame = 0;

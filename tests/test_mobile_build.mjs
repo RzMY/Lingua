@@ -28,7 +28,7 @@ test('iOS playback uses a valid shared audio category and retains the caption co
   const shell = (await read('ios/App/App/AppDelegate.swift')).toString();
   const audio = (await read('ios/App/App/AudioPlayerPlugin.swift')).toString();
   const captions = (await read('ios/App/App/CaptionPipPlugin.swift')).toString();
-  assert.match(shell, /setCategory\(\.playback, mode: \.moviePlayback, options: \[\]\)/);
+  assert.match(shell, /setCategory\(\.playback, mode: \.default, options: \[\]\)/);
   for (const source of [shell, audio, captions]) assert.doesNotMatch(source, /options:\s*\[\.allowAirPlay\]/);
   assert.match(audio, /try PlaybackSession.activate\(\)/);
   assert.match(captions, /try PlaybackSession.activate\(\)/);

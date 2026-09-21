@@ -21,8 +21,8 @@
 
 import { config, langDefaults } from './config.js';
 import { sourceSpec } from './langs.js';
-import { FONT_DEFAULTS, fontSizes, normFontSize, normalizeFonts, setFontContext } from './settings.js';
-import { normalizeVideo } from './video-config.js';
+import { FONT_DEFAULTS, fontSizes, normFontSize, normalizeFonts, setFontContext, settings } from './settings.js';
+import { normalizeVideo, videoOverrides } from './video-config.js';
 
 const PREFIX = 'linguatrack.track.';
 
@@ -61,14 +61,16 @@ export const cfgSupports = (key) => supported.has(key);
  * @param {string} srcLang 源语言代码
  */
 export function readTrackCfg(id, srcLang = '') {
-  const out = { ...langDefaults(srcLang), id, lang: config.targetLang || 'zh-CN', fonts: {}, video: normalizeVideo() };
+  const out = { ...langDefaults(srcLang), id, lang: config.targetLang || 'zh-CN', fonts: {},
+    video: normalizeVideo(settings.video), videoOverrides: {} };
   try {
     const saved = JSON.parse(localStorage.getItem(PREFIX + id) || 'null');
     if (saved && typeof saved === 'object') {
       for (const k of SAVED) if (saved[k] !== undefined) out[k] = bit(saved[k], out[k]);
       if (typeof saved.lang === 'string' && saved.lang) out.lang = saved.lang;
       out.fonts = normalizeFonts(saved.fonts);
-      out.video = normalizeVideo(saved.video);
+      out.videoOverrides = videoOverrides(saved.video);
+      out.video = normalizeVideo({ ...settings.video, ...out.videoOverrides });
     }
   } catch { /* 坏了就用默认 */ }
   return out;
@@ -119,10 +121,15 @@ export function initTrackCfg(id, srcLang = '', features = null, handler = null) 
 
 function save() {
   if (!trackCfg.id) return;
+  let previous = {};
+  try { previous = JSON.parse(localStorage.getItem(PREFIX + trackCfg.id) || '{}') || {}; } catch { /* ignore */ }
   const out = { lang: trackCfg.lang };
   if (Object.keys(trackCfg.fonts).length) out.fonts = trackCfg.fonts;
-  out.video = trackCfg.video;
-  for (const k of SAVED) if (supported.has(k)) out[k] = trackCfg[k];
+  if (Object.keys(trackCfg.videoOverrides || {}).length) out.video = trackCfg.videoOverrides;
+  for (const k of SAVED) {
+    if (supported.has(k)) out[k] = trackCfg[k];
+    else if (previous[k] !== undefined) out[k] = previous[k];
+  }
   try {
     localStorage.setItem(PREFIX + trackCfg.id, JSON.stringify(out));
   } catch { /* 隐私模式 */ }
@@ -173,11 +180,22 @@ export function setTrackCfg(key, value) {
 
 /** Video fields are bounded before persistence; they never modify subtitle font overrides. */
 export function setVideoCfg(fields) {
-  const next = normalizeVideo({ ...trackCfg.video, ...fields });
+  const overrides = { ...trackCfg.videoOverrides, ...videoOverrides(fields) };
+  const next = normalizeVideo({ ...settings.video, ...overrides });
   if (JSON.stringify(next) === JSON.stringify(trackCfg.video)) return;
   trackCfg.video = next;
+  trackCfg.videoOverrides = overrides;
   save();
   onChange('video', next, false);
+}
+
+export function resetVideoCfg(keys) {
+  const overrides = { ...trackCfg.videoOverrides };
+  for (const key of keys) delete overrides[key];
+  trackCfg.videoOverrides = overrides;
+  trackCfg.video = normalizeVideo({ ...settings.video, ...overrides });
+  save();
+  onChange('video', trackCfg.video, false);
 }
 
 /** 删音频时顺手清掉它的配置. */

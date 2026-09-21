@@ -18,6 +18,7 @@ import {
 } from './config.js';
 import { initSettings, settings, setSetting } from './settings.js';
 import { openFontSheet } from './font-settings.js';
+import { openVideoSheet } from './video-settings.js';
 import { featureKeys, featureText, mergeCatalog, sourceLangs, sourceName, sourceSpec } from './langs.js';
 import { ApiError, baseLabel, health } from './api.js';
 import { createTrack, listTracks, patchTrack, removeTrack } from './library.js';
@@ -68,7 +69,8 @@ let query = '';
 /* ------------------------------------------------------------------ 列表 */
 
 const STATUS = {
-  new: ['is-warn', '待导入字幕'],
+  new: ['', '无字幕 · 可直接播放'],
+  subtitles: ['', '原始字幕 · 未分析'],
   failed: ['is-bad', '分析失败'],
 };
 
@@ -303,7 +305,7 @@ function cardMenu(anchor, t) {
       onPick: () => openFileRepair([t], { onUpdate: refresh, onClose: refresh }),
     },
     {
-      label: t.status === 'ready' ? '重新分析' : '导入字幕', icon: 'i-doc',
+      label: t.status === 'ready' ? '字幕管理 / 重新分析' : t.transcript ? '字幕管理 / 分析字幕' : '导入字幕（可选）', icon: 'i-doc',
       onPick: () => openSetup(t.id),
     },
     {
@@ -394,6 +396,7 @@ function paintSettings() {
       navRow('语言默认值', '',
         { value: sourceLangs().length + ' 种', onPick: langsPane }),
       navRow('字幕字号', '', { onPick: () => openFontSheet() }),
+      navRow('视频设置', '字幕布局与系统字幕字号', { onPick: () => openVideoSheet() }),
       segRow('主题', '', () => settings.theme, (v) => setSetting('theme', v), THEMES),
     ),
     sectionTitle('数据管理'),

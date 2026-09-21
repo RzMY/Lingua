@@ -52,6 +52,7 @@ const fixture = process.argv[4];
     assert.match(await page.locator('.card-video .card-in').evaluate((el) => getComputedStyle(el).backgroundImage), /gradient/);
     await page.screenshot({ path: path.resolve('.cache/video-player-qa/home.png') });
     await page.getByRole('button', { name: 'Video lesson · 打开', exact: true }).click();
+    await page.getByRole('button', { name: '导入字幕（可选）', exact: true }).click();
     await page.locator('#setup input[type=file]').setInputFiles({ name: 'lesson.srt', mimeType: 'text/plain',
       buffer: Buffer.from('1\n00:00:00,000 --> 00:00:04,000\nWelcome to the video lesson.\n') });
     await page.getByRole('button', { name: '开始分析', exact: true }).click();
@@ -352,6 +353,7 @@ const fixture = process.argv[4];
     // Video settings persist and never replace the media element or its current time.
     await reveal();
     await page.locator('#btnToolSettings').click();
+    await page.getByRole('button', { name: /^视频字幕布局/ }).click();
     const editPercent = async (label, value) => {
       const input = page.getByRole('spinbutton', { name: label + ' (%)', exact: true });
       await input.fill(String(value)); await input.press('Tab');
@@ -377,6 +379,7 @@ const fixture = process.argv[4];
     const blur = page.getByRole('spinbutton', { name: '字幕背景模糊 (px)', exact: true });
     await blur.fill('18'); await blur.press('Tab');
     // 系统小窗里的字幕由系统画, 字号只能靠 ::cue 传进去 —— 默认给一个能读的值, 并且可调。
+    await page.getByRole('button', { name: /^系统字幕字号/ }).click();
     const cueSize = page.getByRole('spinbutton', { name: '系统字幕字号 (px)', exact: true });
     await cueSize.fill('26'); await cueSize.press('Tab');
     assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('#app'))
@@ -416,7 +419,11 @@ const fixture = process.argv[4];
       transparency: 45, blur: 18, captionSize: 26, volume: 100, muted: 0 });
     await reveal();
     await page.locator('#btnToolSettings').click();
-    await page.getByRole('button', { name: '重置字幕布局', exact: true }).click();
+    await page.getByRole('button', { name: /^视频字幕布局/ }).click();
+    await page.getByRole('button', { name: '恢复全局字幕布局', exact: true }).click();
+    await page.keyboard.press('Escape');
+    await reveal();
+    await page.locator('#btnToolSettings').click();
     await page.getByRole('button', { name: 'IPA', exact: true }).click();
     await page.getByRole('button', { name: 'Lemma', exact: true }).click();
     await page.getByRole('button', { name: '翻译', exact: true }).click();

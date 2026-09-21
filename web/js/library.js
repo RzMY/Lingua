@@ -16,6 +16,7 @@ import { del, get, put, values, wipeTrack, wipeTrackAll, writeBatch } from './st
 import { dropTrackCfg } from './trackcfg.js';
 import { randomId } from './util.js';
 import { isMediaFile } from './media.js';
+import { subtitleTrack } from './subtitles.js';
 export { MEDIA_ACCEPT as AUDIO_ACCEPT } from './media.js'; // legacy name used by file repair
 
 const now = () => new Date().toISOString();
@@ -80,7 +81,7 @@ export async function createTrack(file, { title = '', lang = 'ja' } = {}) {
     id,
     title: (title || file.name.replace(/\.[^.]+$/, '') || id).slice(0, 200),
     lang,
-    status: 'new',                 // new | ready | failed
+    status: 'new',                 // new | subtitles (raw) | ready (analyzed) | failed
     error: '',
     audio: { name: file.name, size: file.size || 0, type: file.type || '' },
     duration: 0,
@@ -113,7 +114,7 @@ export async function saveAnalysis(id, track, { transcriptName = '', transcriptF
   const stats = track.stats || {};
   const audio = track.audio || {};
   const next = { ...record,
-    status: 'ready',
+    status: track.subtitleMode === 'plain' ? 'subtitles' : 'ready',
     error: '',
     lang: (track.lang && track.lang.code) || record.lang,
     sentences: stats.sentences || (track.sentences || []).length,
@@ -177,12 +178,8 @@ export async function savePreparedTranscript(id, file, lang) {
   const record = await getTrack(id);
   if (!record) throw new Error('找不到这条音频，请重新选择');
   if (!(file instanceof Blob) || !file.size || !SUB_RE.test(file.name)) throw new Error('请选择 JSON / SRT / VTT 字幕');
-  const next = { ...record, lang: lang || record.lang, status: 'new', error: '',
-    sentences: 0, words: 0, hasWordTiming: false, schemaVersion: 0,
-    transcript: { name: file.name, at: now(), missing: false }, updatedAt: now() };
-  await writeBatch({ tracks: [{ key: id, value: next, track: id }],
-    transcripts: [{ key: id, value: file, track: id }],
-    data: [{ key: id, value: null, track: id }] }, { persistent: true });
+  const data = await subtitleTrack({ ...record, lang: lang || record.lang }, file);
+  const next = await saveAnalysis(id, data, { transcriptName: file.name, transcriptFile: file });
   await wipeTrack(id);
   return next;
 }

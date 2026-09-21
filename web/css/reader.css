@@ -35,6 +35,11 @@
   padding: 24px;
 }
 
+/* Raw subtitles keep their original spacing; fragments are only for wrapping. */
+html[data-subtitle-mode="plain"] .s-words { column-gap: 0; }
+html[data-subtitle-mode="plain"] .w { padding-inline: 0; }
+html[data-subtitle-mode="plain"] .w-text { white-space: pre; }
+
 /* ---------------------------------------------------------------- 句子卡片 */
 
 .s {

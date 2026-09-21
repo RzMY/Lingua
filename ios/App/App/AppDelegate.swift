@@ -8,8 +8,8 @@ import WebKit
 enum PlaybackSession {
     static func configure() throws {
         let audio = AVAudioSession.sharedInstance()
-        if audio.category != .playback || audio.mode != .moviePlayback {
-            try audio.setCategory(.playback, mode: .moviePlayback, options: [])
+        if audio.category != .playback || audio.mode != .default {
+            try audio.setCategory(.playback, mode: .default, options: [])
         }
     }
     static func activate() throws {

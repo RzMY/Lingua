@@ -22,3 +22,14 @@ export function normalizeVideo(value) {
   }
   return out;
 }
+
+/** Keep only explicit overrides so untouched fields keep inheriting global defaults. */
+export function videoOverrides(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const normalized = normalizeVideo(value);
+  return Object.fromEntries(Object.keys(VIDEO_DEFAULTS).filter((key) =>
+    Object.hasOwn(value, key) && (key in VIDEO_RANGES
+      ? typeof value[key] === 'number' && Number.isFinite(value[key])
+      : key === 'fit' ? ['contain', 'cover'].includes(value[key])
+        : [0, 1, false, true].includes(value[key]))).map((key) => [key, normalized[key]]));
+}

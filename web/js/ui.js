@@ -13,11 +13,11 @@
 
 import { el } from './util.js';
 import { openSheet } from './sheet.js';
-import { button, buttonBar, group, infoRow, navRow, sectionTitle, segRow, stepRow, switchRow } from './rows.js';
+import { group, infoRow, navRow, sectionTitle, segRow, switchRow } from './rows.js';
 import { setSetting, settings } from './settings.js';
 import { openFontSheet } from './font-settings.js';
-import { setTrackCfg, setVideoCfg, trackCfg } from './trackcfg.js';
-import { VIDEO_DEFAULTS } from './video-config.js';
+import { setTrackCfg, trackCfg } from './trackcfg.js';
+import { openVideoSheet, openCaptionSheet } from './video-settings.js';
 import { TARGET_LANGS } from './config.js';
 import { featureText } from './langs.js';
 
@@ -47,28 +47,10 @@ function legendCard(track) {
  * @param {object} track
  * @param {object} [o] `{trStats}` —— 翻译进度的读取回调
  */
-export function openTrackSheet(track, { trStats, video } = {}) {
+export function openTrackSheet(track, { trStats, video, onSubtitles } = {}) {
   const body = document.createDocumentFragment();
   if (video) {
-    const cfg = () => trackCfg.video;
-    const control = (label, key, hint, min, max) => stepRow(label, hint,
-      () => cfg()[key], (value) => setVideoCfg({ [key]: value }), { min, max, step: 5, unit: '%' });
-    const subtitleRows = [
-      switchRow('显示字幕', '', () => cfg().subtitles,
-        (subtitles) => setVideoCfg({ subtitles })),
-      control('字幕位置', 'position', '底部 → 顶部', 0, 100),
-      control('字幕窗口宽度', 'width', '', 50, 100),
-      control('字幕背景透明度', 'transparency', '', 0, 100),
-      stepRow('字幕背景模糊', '', () => cfg().blur, (blur) => setVideoCfg({ blur }),
-        { min: 0, max: 30, step: 1, unit: 'px' }),
-    ];
-    body.append(sectionTitle('字幕布局 · 当前视频'), group(...subtitleRows), buttonBar(button('重置字幕布局', {
-      onPick: () => {
-        const { subtitles, position, width, height, transparency, blur } = VIDEO_DEFAULTS;
-        setVideoCfg({ subtitles, position, width, height, transparency, blur });
-        subtitleRows.forEach((row) => row.refresh());
-      },
-    })));
+    body.append(group(navRow('视频字幕布局', '位置、宽度与背景', { onPick: () => openVideoSheet({ track }) })));
   }
   const langRow = segRow('译文语言', '',
     () => trackCfg.lang, (v) => setTrackCfg('lang', v),
@@ -86,9 +68,9 @@ export function openTrackSheet(track, { trStats, video } = {}) {
     if (key === 'tr') rows.push(langRow);
   }
 
-  rows.push(navRow('字幕字号', video ? '' : '分别调节原文、注音、原形 / 转写与译文', { onPick: () => openFontSheet({ track }) }));
-  rows.push(stepRow('系统字幕字号', '纯音频画中画与系统字幕', () => trackCfg.video.captionSize,
-    (captionSize) => setVideoCfg({ captionSize }), { min: 12, max: 36, step: 1, unit: 'px' }));
+  rows.push(navRow('字幕字号', video ? '' : '分别调节原文、注音、原形 / 转写与译文', { onPick: () => openFontSheet({ track, video: !!video }) }));
+  rows.push(navRow('系统字幕字号', '画中画示例', { value: trackCfg.video.captionSize + 'px', onPick: () => openCaptionSheet({ track }) }));
+  if (onSubtitles) rows.push(navRow('字幕管理', '导入字幕或分析字幕（可选）', { onPick: onSubtitles }));
   body.append(sectionTitle(video ? '字幕内容 · 当前视频' : '这条音频'), group(...rows));
   body.append(group(infoRow('源语言', track.langName)));
 

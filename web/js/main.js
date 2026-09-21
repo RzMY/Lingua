@@ -38,7 +38,8 @@ import { createExplain, openSpeedSheet, openTrackSheet } from './ui.js';
 import { closeSheet, sheetOpen } from './sheet.js';
 import { analyze, ApiError } from './api.js';
 import { audioBlob, audioUrl, getTrack, patchTrack, saveAnalysis, setDuration, setPosition, trackData,
-  transcriptBlob, SUB_EXT, SUB_RE } from './library.js';
+  transcriptBlob, savePreparedTranscript, SUB_EXT, SUB_RE } from './library.js';
+import { plainTrack } from './subtitles.js';
 import { openFileRepair } from './backup-ui.js';
 import { createTranslator } from './translate.js';
 import { closeWordCard, isCardOpen, openWordCard } from './card.js';
@@ -131,6 +132,7 @@ function clearState() {
  * 参数, 换回一份 track.json, 由浏览器负责存。
  */
 function showSetup() {
+  audio.pause();
   clearState();
   dom.player.hidden = true;
   const title = record.title || record.id;
@@ -145,12 +147,13 @@ function showSetup() {
   syncVideoLayout();
   head.append(el('b', null, '导入字幕'));
   head.append(el('span', null,
-    '上传转录文件，支持 JSON / SRT / VTT'));
+    '可选：只导入字幕即可显示原文；分析后可使用分词、注音等学习功能。'));
   box.append(head);
 
   const flags = { estimate: false, split: true, merge: true };
   let lang = record.lang || config.importLang || 'ja';
-  box.append(group(
+  const analysisOptions = el('details', 'setup-options');
+  analysisOptions.append(el('summary', null, '分析选项（可选）'), group(
     segRow('源语言', '决定用哪套分词器与注音层', () => lang, (v) => { lang = v; },
       sourceLangs().map((l) => [l.code, l.name]), { wrap: true }),
     switchRow('自动拆句', '一段字幕里有多句时按标点切开',
@@ -160,6 +163,7 @@ function showSetup() {
     switchRow('估算词级时间戳', '字幕只有句级时间时, 按字数摊给每个词',
       () => (flags.estimate ? 1 : 0), (v) => { flags.estimate = !!v; }),
   ));
+  box.append(analysisOptions);
 
   const input = el('input');
   input.type = 'file';
@@ -176,11 +180,12 @@ function showSetup() {
 
   const go = button('开始分析', { main: true, glyph: 'i-check', onPick: () => start() });
   go.disabled = true;
+  const only = button('只导入字幕', { glyph: 'i-doc', onPick: () => start(false) });
+  only.disabled = true;
   const choose = button('选择文件', { glyph: 'i-doc', onPick: () => input.click() });
-  const bottom = buttonBar(choose, go);
-  if (record.status === 'ready') {
-    bottom.append(button('先看现有内容', { glyph: 'i-back', onPick: () => openTrack() }));
-  }
+  const back = button(record.transcript ? '返回播放' : '跳过，直接播放',
+    { glyph: 'i-play', onPick: () => openTrack() });
+  const bottom = buttonBar(choose, only, go, back);
   box.append(input, name, bottom, bar, log);
 
   let file = null;
@@ -189,6 +194,7 @@ function showSetup() {
     file = new File([saved], record.transcript?.name || 'transcript.json', { type: saved.type });
     name.textContent = file.name;
     go.disabled = false;
+    only.disabled = false;
   });
   input.addEventListener('change', () => {
     const picked = (input.files || [])[0] || null;
@@ -201,6 +207,7 @@ function showSetup() {
     file = picked;
     name.textContent = file ? file.name : '还没选择文件';
     go.disabled = !file;
+    only.disabled = !file;
   });
 
   const write = (text) => {
@@ -209,15 +216,23 @@ function showSetup() {
     log.scrollTop = log.scrollHeight;
   };
 
-  async function start() {
+  async function start(withAnalysis = true) {
     if (!file) return;
     go.disabled = true;
     choose.disabled = true;
+    only.disabled = true;
+    back.disabled = true;
     bar.hidden = false;
     bar.classList.add('is-busy');
     log.textContent = '';
-    write('· 正在分析 ' + file.name + ' …');
+    write('· 正在' + (withAnalysis ? '分析 ' : '导入 ') + file.name + ' …');
     try {
+      if (!withAnalysis) {
+        record = await savePreparedTranscript(record.id, file, lang);
+        updateFileState();
+        await openTrack();
+        return;
+      }
       const dur = record.duration || (Number.isFinite(audio.duration) ? audio.duration : 0);
       const resp = await analyze(file, {
         lang,
@@ -238,11 +253,13 @@ function showSetup() {
       const msg = err instanceof ApiError ? err.message : (err && err.message) || '分析失败';
       write('! ' + msg);
       // 之前已经分析过的就别把状态打回失败, 用户还能「先看现有内容」
-      if (record.status !== 'ready') {
+      if (!['ready', 'subtitles'].includes(record.status)) {
         record = (await patchTrack(record.id, { status: 'failed', error: msg })) || record;
       }
       go.disabled = false;
       choose.disabled = false;
+      only.disabled = false;
+      back.disabled = false;
     } finally {
       bar.classList.remove('is-busy');
     }
@@ -358,7 +375,7 @@ async function load(id, forceSetup) {
   initTrackCfg(record.id, record.lang, null, onTrackCfg);
   videoPlayer?.apply();
   await attachAudio(record.id);
-  if (forceSetup || record.status !== 'ready') {
+  if (forceSetup) {
     if (record.status === 'failed' && record.error) toast('上次分析失败: ' + record.error);
     showSetup();
     return false;
@@ -373,11 +390,17 @@ async function openTrack() {
   dom.player.hidden = false;
   showState('正在载入…', record.title || record.id);
   audio.pause();
-  const data = await trackData(record.id);
+  let data = await trackData(record.id);
   if (!data || !Array.isArray(data.sentences)) {
-    // 元数据说分析过, 但结果没了 (清过缓存/换过浏览器): 退回导入屏
-    showSetup();
-    return false;
+    const saved = await transcriptBlob(record.id);
+    if (saved) {
+      try {
+        record = await savePreparedTranscript(record.id,
+          new File([saved], record.transcript?.name || 'transcript.json'), record.lang);
+        data = await trackData(record.id);
+      } catch (err) { toast(err.message); }
+    }
+    data ||= plainTrack(record);
   }
   apply(Track.fromData(data, objUrl));
   return true;
@@ -386,6 +409,7 @@ async function openTrack() {
 /** 用新曲目重建阅读区: Reader / VirtualList / Translator 都是一曲一份. */
 function apply(next) {
   track = next;
+  document.documentElement.dataset.subtitleMode = next.raw.subtitleMode || 'analyzed';
   const title = (record && record.title) || next.title;
   dom.trackTitle.textContent = title;
   document.title = title + ' · Lingua';
@@ -426,7 +450,12 @@ function apply(next) {
   //  上次停在哪儿由 library.js 记着: 这里把位置交给 player.js 决定要不要续播
   player.setTrack({ id: next.id, title, position: record?.position });
   if (next.S) clearState();
-  else showState('这一曲没有句子', '换一份字幕重新分析看看');
+  else {
+    showState('可以直接播放', '字幕为可选项，可在设置中随时导入');
+    dom.readerState.append(button('导入字幕（可选）', { onPick: showSetup }));
+  }
+  dom.btnPin.disabled = !next.S;
+  dom.btnExplain.disabled = !next.S || next.raw.subtitleMode === 'plain';
   syncTranslate();
 }
 
@@ -597,6 +626,7 @@ function wireReader() {
 
 /** 长按打开的本地逐词拆解 (不调模型). */
 function openExplain(i) {
+  if (!track?.S || track.raw.subtitleMode === 'plain') return;
   const at = i >= 0 ? i : curIndex();
   explain.open(at);
   // 引擎只在游标变化时回调, 面板刚打开时得自己补一次当前词.
@@ -607,7 +637,7 @@ function openExplain(i) {
 
 /** 工具条的「讲解」: 2/3 屏对话框, 流式讲解当前句. */
 function toggleChat() {
-  if (!track) return;
+  if (!track?.S || track.raw.subtitleMode === 'plain') return;
   if (chatOpen()) { closeChat(); return; }
   const i = curIndex();
   dom.btnExplain.setAttribute('aria-pressed', 'true');
@@ -619,7 +649,8 @@ function toggleChat() {
 
 /** Topbar and the immersive toolbar share one settings entry. */
 function openDisplay() {
-  if (track) openTrackSheet(track, { trStats: () => translator.stats(), video: videoPlayer });
+  if (track) openTrackSheet(track, { trStats: () => translator.stats(), video: videoPlayer,
+    onSubtitles: () => { closeSheet(); showSetup(); } });
 }
 
 function paintRepeat() {
@@ -703,6 +734,11 @@ function wireTools() {
     if (!record) return;
     const updated = await setDuration(record.id, audio.duration);
     if (updated) record = updated;
+    if (track && Number.isFinite(audio.duration)) {
+      track.duration = audio.duration;
+      dom.timeTotal.textContent = fmtTime(audio.duration);
+      dom.seek.setAttribute('aria-valuemax', audio.duration.toFixed(1));
+    }
   });
 
   dom.closeOverlays = () => {

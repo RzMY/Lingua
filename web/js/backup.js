@@ -76,6 +76,7 @@ function validateLocal(key, text) {
       for (const bag of Object.values(value.langs)) validateFlags(bag);
     }
   } else if (key === GLOBAL_KEYS[1]) {
+    if (value.video !== undefined) validateVideo(value.video);
     require(value.theme === undefined || ['auto', 'light', 'dark'].includes(value.theme), '主题错误');
     require(value.rate === undefined || (finite(value.rate) && value.rate > 0), '播放速度错误');
     require(value.size === undefined || finite(value.size) || ['s', 'm', 'l'].includes(value.size), '字号错误');
@@ -91,18 +92,19 @@ function validateLocal(key, text) {
   } else {
     validateFlags(value);
     if (value.fonts !== undefined) validateFonts(value.fonts);
-    if (value.video !== undefined) {
-      const v = value.video;
-      require(object(v), '视频配置格式错误');
-      require(v.fit === undefined || ['contain', 'cover'].includes(v.fit), '视频画面适配错误');
-      for (const key of ['subtitles', 'muted']) {
-        require(v[key] === undefined || [0, 1, false, true].includes(v[key]), '视频开关错误');
-      }
-      for (const [key, [min, max]] of Object.entries(VIDEO_RANGES)) {
-        require(v[key] === undefined || (finite(v[key]) && v[key] >= min && v[key] <= max), '视频配置数值错误');
-      }
-    }
+    if (value.video !== undefined) validateVideo(value.video);
     require(value.lang === undefined || typeof value.lang === 'string', '译文语言错误');
+  }
+}
+
+function validateVideo(v) {
+  require(object(v), '视频配置格式错误');
+  require(v.fit === undefined || ['contain', 'cover'].includes(v.fit), '视频画面适配错误');
+  for (const key of ['subtitles', 'muted']) {
+    require(v[key] === undefined || [0, 1, false, true].includes(v[key]), '视频开关错误');
+  }
+  for (const [key, [min, max]] of Object.entries(VIDEO_RANGES)) {
+    require(v[key] === undefined || (finite(v[key]) && v[key] >= min && v[key] <= max), '视频配置数值错误');
   }
 }
 
@@ -185,7 +187,7 @@ export function validateBackup(backup) {
   for (const row of backup.stores.tracks) {
     const t = row.value;
     require(object(t) && ID.test(t.id) && t.id === row.key && typeof t.title === 'string'
-      && typeof t.lang === 'string' && ['new', 'ready', 'failed'].includes(t.status), '曲目元数据错误');
+      && typeof t.lang === 'string' && ['new', 'subtitles', 'ready', 'failed'].includes(t.status), '曲目元数据错误');
     for (const kind of ['audio', 'transcript']) {
       const f = t[kind];
       if (kind === 'transcript' && f == null) continue;
@@ -201,7 +203,7 @@ export function validateBackup(backup) {
     analyzed.add(row.key);
   }
   for (const { value: t } of backup.stores.tracks) {
-    require(t.status !== 'ready' || analyzed.has(t.id), '已分析曲目缺少分析结果');
+    require(!['ready', 'subtitles'].includes(t.status) || analyzed.has(t.id), '已分析曲目缺少分析结果');
   }
   return backup;
 }

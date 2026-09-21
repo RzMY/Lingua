@@ -123,6 +123,7 @@ final class AudioPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
             do { try self.handle?.close(); self.handle = nil }
             catch { call.reject("音频文件写入失败"); return }
             let item = AVPlayerItem(url: file)
+            item.allowedAudioSpatializationFormats = []
             item.audioTimePitchAlgorithm = .timeDomain
             let player = AVPlayer(playerItem: item)
             player.audiovisualBackgroundPlaybackPolicy = .continuesIfPossible

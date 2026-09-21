@@ -78,3 +78,35 @@
 @media (max-width: 480px) {
   .font-preview { height: 130px; }
 }
+
+.video-preview {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #15282e;
+  margin-bottom: 12px;
+}
+.video-preview-scene {
+  position: relative;
+  transform-origin: top left;
+  overflow: hidden;
+  color: #fff;
+  background: linear-gradient(165deg, #294a5b, #829d91 60%, #e1c695);
+}
+.video-preview-sun { position: absolute; width: 12%; aspect-ratio: 1; border-radius: 50%; background: #ffedc9; left: 68%; top: 12%; }
+.video-preview-hill { position: absolute; width: 150%; height: 85%; border-radius: 50%; background: #355f54; top: 60%; left: -25%; transform: rotate(-12deg); }
+.video-preview-label { position: absolute; top: 18px; left: 24px; font-size: 18px; opacity: .85; }
+.video-preview-subs { position: absolute; left: 50%; transform: translateX(-50%); border-radius: 22px; padding: 0 14px; max-width: 1000px; border: 1px solid #ffffff33; }
+.video-preview .font-preview { display: flex; flex-direction: column; justify-content: center; height: 100%; min-height: 0; max-height: none; padding: 8px 0; margin: 0; border: 0; color: #fff; }
+.video-preview .font-preview-words { flex-wrap: nowrap; width: max-content; min-width: 100%; }
+.video-preview .font-preview-word { flex: none; max-width: none; }
+.video-preview .font-preview-read { color: #c8e4b5; }
+.video-preview .font-preview-roman { color: #d6dfce; }
+.video-preview .font-preview-tr { white-space: nowrap; color: #edf2e7; margin-top: 2px; }
+.caption-preview { width: min(100%, 320px); min-height: 150px; margin: 10px auto 22px; padding: 12px; border: 1px solid #ffffff70; border-radius: 16px; color: #fff; background: linear-gradient(140deg, #8b9493, #515c58); box-shadow: 0 8px 26px #0003; text-align: center; }
+.caption-preview-head { display: flex; justify-content: space-between; margin-bottom: 18px; font-size: 11px; color: #fff; opacity: .85; }
+.caption-preview-text, .caption-preview-tr { font-weight: 600; line-height: 1.3; text-shadow: 0 1px 2px #000; overflow-wrap: anywhere; }
+.caption-preview-tr { margin-top: 4px; }

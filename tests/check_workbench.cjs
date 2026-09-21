@@ -171,7 +171,7 @@ const base = process.argv[3] || 'http://127.0.0.1:5184';
     await page.getByRole('button', { name: '开始转录', exact: true }).click();
     await page.getByText('转录完成 ·', { exact: false }).waitFor();
     await page.getByRole('button', { name: '导入字幕到对应音频', exact: true }).click();
-    await page.getByText('字幕已保存到对应音频。字幕分析未完成', { exact: false }).waitFor();
+    await page.getByText('字幕已导入，可直接播放；需要时可在播放页分析。', { exact: true }).waitFor();
     const saved = await page.evaluate(async () => {
       const lib = await import('./js/library.js'); const tracks = await lib.listTracks(); const t = tracks[0];
       const b = await (await lib.audioBlob(t.id)).arrayBuffer(); const v = new DataView(b);
@@ -183,6 +183,7 @@ const base = process.argv[3] || 'http://127.0.0.1:5184';
     assert.equal(JSON.parse(saved.text).segments[0].text, 'Hello.');
     assert.equal(downloads, 0); assert.equal(asrRequests, 1);
     // A second transcript updates the same audio, without duplicating the listening master.
+    await page.getByRole('button', { name: '导入后分析字幕', exact: true }).click();
     await page.getByRole('button', { name: '聆听原音频', exact: true }).click();
     await page.route('**/api/analyze*', (route) => {
       const params = new URL(route.request().url()).searchParams;
@@ -227,7 +228,8 @@ const base = process.argv[3] || 'http://127.0.0.1:5184';
         data: await lib.trackData(id), subtitle: await (await lib.transcriptBlob(id)).text(),
         oldCache: await store.get('chat', id + '|0'), keepCache: await store.get('chat', original.id + '|0') };
     }, otherId);
-    assert.equal(replaced.count, 2); assert.equal(replaced.status, 'failed'); assert.equal(replaced.data, null);
+    assert.equal(replaced.count, 2); assert.equal(replaced.status, 'subtitles');
+    assert.equal(replaced.data.subtitleMode, 'plain');
     assert.equal(replaced.oldCache, undefined); assert.deepEqual(replaced.keepCache, { msgs: ['keep'] });
     assert.equal(JSON.parse(replaced.subtitle).segments[0].text, 'Hello.');
     // Deleting a selected target cannot silently create a duplicate or overwrite another record.

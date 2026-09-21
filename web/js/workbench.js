@@ -19,6 +19,7 @@ export function mountWorkbench(root, { onImport = () => {} } = {}) {
   const keepMedia = (output) => { if (output.release) temporary.add(output); return output; };
   const savedTargets = new Set();
   let importLang = config.importLang || 'ja';
+  let analyzeImport = false;
   let previewUrl = '', prompt = typeof config.asrPrompt === 'string' ? config.asrPrompt : '';
   let wordTimestamps = !!config.asrWordTimestamps;
   const savedParams = Array.isArray(config.asrExtraParams) ? config.asrExtraParams.filter((p) =>
@@ -355,6 +356,10 @@ export function mountWorkbench(root, { onImport = () => {} } = {}) {
       const record = await savePreparedTranscript(id, subtitle, lang);
       savedTargets.add(id); await onImport();
       if (disposed) return;
+      if (!analyzeImport) {
+        importNote.textContent = '字幕已导入，可直接播放；需要时可在播放页分析。';
+        return;
+      }
       importNote.textContent = '字幕已保存，正在分析…';
       const controller = new AbortController(); request = controller;
       try {
@@ -364,7 +369,7 @@ export function mountWorkbench(root, { onImport = () => {} } = {}) {
         await saveAnalysis(record.id, response.track, { transcriptName: subtitle.name, transcriptFile: subtitle });
         if (!disposed) importNote.textContent = '字幕已导入对应音频，分析完成，可以开始聆听。';
       } catch (err) {
-        await patchTrack(record.id, { status: 'failed', error: err.message });
+        await patchTrack(record.id, { error: err.message });
         if (!disposed) importNote.textContent = '字幕已保存到对应音频。字幕分析未完成：' + err.message
           + '。打开音频后可直接重试，无需上传文件。';
       }
@@ -373,7 +378,9 @@ export function mountWorkbench(root, { onImport = () => {} } = {}) {
     finally { saving = false; request = null; if (!disposed) update(); }
   } });
   const subtitleImport = el('div', 'workbench-subtitle-import');
-  subtitleImport.append(targetField, languageRow, importNote, buttonBar(add));
+  subtitleImport.append(targetField, languageRow,
+    group(switchRow('导入后分析字幕', '可选：生成分词、注音等学习内容',
+      () => analyzeImport ? 1 : 0, (v) => { analyzeImport = !!v; })), importNote, buttonBar(add));
   asrCard.append(subtitleImport);
 
   function clearResult() {

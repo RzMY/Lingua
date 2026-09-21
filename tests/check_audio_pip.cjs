@@ -103,6 +103,7 @@ const fixture = process.argv[4];
         assert.equal(await page.locator('video').count(), 1);
         assert.equal(await page.evaluate(() => !!document.pictureInPictureElement), false);
         await page.locator('#btnDisplay').click();
+        await page.getByRole('button', { name: /^系统字幕字号/ }).click();
         const row = page.locator('.row').filter({ has: page.locator('b', { hasText: /^系统字幕字号$/ }) });
         await row.locator('input').fill('28'); await row.locator('input').press('Tab');
         await page.waitForFunction(() => window.nativePipCalls.some(([name, value]) => name === 'update' && value.captionSize === 28));

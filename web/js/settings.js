@@ -6,6 +6,8 @@
  * 单音频字号覆盖也由 trackcfg.js 持有, 这里只负责合并字号并应用到 CSS。
  */
 
+import { normalizeVideo, videoOverrides } from './video-config.js';
+
 const KEY = 'linguatrack.settings.v1';
 
 export const FONT_SIZE_MIN = 8;
@@ -44,7 +46,7 @@ function legacyFonts(size) {
   ]));
 }
 
-export const settings = { ...DEFAULTS, fonts: {} };
+export const settings = { ...DEFAULTS, fonts: {}, video: normalizeVideo() };
 
 let onChange = () => {};
 let media = null;
@@ -82,11 +84,12 @@ export function setFontContext(code = '', overrides = {}) {
 
 export function initSettings(handler) {
   onChange = handler || onChange;
-  Object.assign(settings, DEFAULTS, { fonts: {} });
+  Object.assign(settings, DEFAULTS, { fonts: {}, video: normalizeVideo() });
   fontContext = { code: '', overrides: {} };
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
     if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
+      settings.video = normalizeVideo(saved.video);
       Object.assign(settings, legacyFonts(saved.size));
       for (const k of Object.keys(DEFAULTS)) {
         if (saved[k] === undefined) continue;
@@ -109,6 +112,12 @@ export function initSettings(handler) {
 
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(settings)); } catch { /* 隐私模式 */ }
+}
+
+export function setGlobalVideo(fields) {
+  settings.video = normalizeVideo({ ...settings.video, ...videoOverrides(fields) });
+  save();
+  onChange('video', settings.video, false);
 }
 
 export function applyTheme() {
