@@ -32,6 +32,9 @@
   background: #000;
 }
 .video-stage video { touch-action: none; user-select: none; -webkit-user-select: none; display: block; width: 100%; height: 100%; object-fit: var(--video-fit); }
+.is-audio-pip #video { visibility: hidden; }
+.is-audio-pip .video-pip-note { pointer-events: auto; }
+.tool[hidden] { display: none !important; }
 .video-status { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 8px 14px; border-radius: 14px; background: var(--sheet); color: var(--ink); pointer-events: none; }
 .has-video[data-video-subtitles="0"] .reader { visibility: hidden; pointer-events: none; }
 .has-video[data-video-subtitles="0"] .playback-content { grid-template-rows: minmax(0, 1fr); }

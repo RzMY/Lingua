@@ -6,9 +6,23 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { unzipSync } from 'fflate';
 import { parse } from 'yaml';
+import xcode from 'xcode';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const read = (path) => readFile(new URL('../' + path, import.meta.url));
+
+test('native caption plugin is included in the iOS target and registered by the bridge', async () => {
+  const project = xcode.project(fileURLToPath(new URL('../ios/App/App.xcodeproj/project.pbxproj', import.meta.url)));
+  project.parseSync();
+  const phase = project.pbxSourcesBuildPhaseObj('504EC3031FED79650016851F');
+  assert.ok(phase.files.some((file) => file.comment === 'CaptionPipPlugin.swift in Sources'));
+  assert.ok(phase.files.some((file) => file.comment === 'AudioPlayerPlugin.swift in Sources'));
+  assert.match((await read('ios/App/App/AppDelegate.swift')).toString(), /registerPluginInstance\(CaptionPipPlugin\(\)\)/);
+  assert.match((await read('ios/App/App/AppDelegate.swift')).toString(), /registerPluginInstance\(AudioPlayerPlugin\(\)\)/);
+  const plugin = (await read('ios/App/App/CaptionPipPlugin.swift')).toString();
+  assert.match(plugin, /AVPictureInPictureVideoCallViewController/);
+  assert.doesNotMatch(plugin, /AVPlayerLayer|AVSampleBufferDisplayLayer|setValue\(|forKey:|NSSelectorFromString/);
+});
 test('mobile release contains complete application assets and produces identical ZIP bytes twice', async () => {
   const build = () => execFileSync(process.execPath, ['mobile/scripts/build.mjs', '--release'], { cwd: root });
   build();
@@ -17,7 +31,7 @@ test('mobile release contains complete application assets and produces identical
   assert.equal(createHash('sha256').update(zip).digest('hex'), meta.checksum);
   assert.equal(zip.length, meta.size);
   const entries = unzipSync(zip);
-  for (const name of ['index.html', 'player.html', 'js/home.js', 'js/main.js', 'native.js', 'native-bundle.json']) {
+  for (const name of ['index.html', 'player.html', 'js/home.js', 'js/main.js', 'native.js', 'native-bundle.json', 'js/native-caption-pip.js', 'js/native-audio.js']) {
     assert.ok(entries[name], name);
   }
   for (const dir of ['css', 'js', 'js/vendor']) {
@@ -34,6 +48,8 @@ test('mobile release contains complete application assets and produces identical
   const browser = unzipSync(await read('web/mobile/Lingua-web.zip'));
   assert.ok(browser['index.html'] && browser['js/home.js']);
   assert.equal(browser['native.js'], undefined);
+  assert.equal(browser['assets/pip-black.mp4'], undefined);
+  assert.equal(browser['js/caption-video.js'], undefined);
   assert.doesNotMatch(Buffer.from(browser['index.html']).toString(), /await ready/);
 });
 test('GitHub workflow exposes Android, signed iOS and update artifacts with no credentials required for PR checks', async () => {

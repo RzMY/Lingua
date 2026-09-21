@@ -3,6 +3,7 @@ import { trackCfg, setVideoCfg } from './trackcfg.js';
 import { isIOS, toast } from './util.js';
 import { setupVideoGestures } from './video-gestures.js';
 import { setupVideoPip } from './video-pip.js';
+import { setupAudioPip } from './audio-pip.js';
 import { nativeApp } from './native.js';
 
 export function setupVideo({ app, video, engine, toggle, onLayout, overlayOpen, openSettings }) {
@@ -76,7 +77,7 @@ export function setupVideo({ app, video, engine, toggle, onLayout, overlayOpen, 
   };
   const syncLayout = () => {
     const active = app.classList.contains('has-video');
-    if (pip?.isActive()) forceLandscape = false;
+    if (pip?.isActive() || app.classList.contains('is-audio-pip')) forceLandscape = false;
     const rotated = active && forceLandscape && !landscape.matches;
     const signature = [active, rotated, innerWidth, innerHeight, isFullscreen()].join('|');
     if (signature !== layoutSignature) { gestures?.cancel(); layoutSignature = signature; }
@@ -85,7 +86,8 @@ export function setupVideo({ app, video, engine, toggle, onLayout, overlayOpen, 
     document.body.style.setProperty('--rotated-height', innerWidth + 'px');
     document.body.style.setProperty('--video-view-w', (rotated ? innerHeight : innerWidth) + 'px');
     document.body.style.setProperty('--video-view-h', (rotated ? innerWidth : innerHeight) + 'px');
-    const immersive = active && !pip?.isActive() && (landscape.matches || forceLandscape || isFullscreen());
+    const immersive = active && !pip?.isActive() && !app.classList.contains('is-audio-pip')
+      && (landscape.matches || forceLandscape || isFullscreen());
     const changed = immersive !== isImmersive();
     app.classList.toggle('is-immersive', immersive);
     if (changed) app.classList.remove('controls-visible');
@@ -171,7 +173,8 @@ export function setupVideo({ app, video, engine, toggle, onLayout, overlayOpen, 
   landscape.addEventListener('change', async () => {
     // A real rotation takes over from the manual CSS fallback, so turning back exits it.
     if (landscape.matches) forceLandscape = false;
-    if (landscape.matches && app.classList.contains('has-video') && !pip?.isActive() && !isFullscreen()) {
+    if (landscape.matches && app.classList.contains('has-video') && !pip?.isActive()
+      && !app.classList.contains('is-audio-pip') && !isFullscreen()) {
       try { await enterFullscreen(); } catch { /* iOS/PWA keeps the CSS immersive fallback */ }
     }
     syncLayout();
@@ -217,6 +220,18 @@ export function setupVideo({ app, video, engine, toggle, onLayout, overlayOpen, 
   });
   //  小窗的最后一步: 视频被搬进系统窗口后, 播放页只剩一块占位提示 (点它收回画面)。
   let pip = null;
+  const audioPip = setupAudioPip({ media: video, engine, app, releaseLandscape,
+    beforeOpen: () => pip?.isActive() ? pip.close() : true,
+    onStateChange: () => { paintPip(); paintAudioPip(); } });
+  const audioPipButton = document.getElementById('btnAudioPip');
+  if (audioPipButton) audioPipButton.hidden = !audioPip.supported();
+  const paintAudioPip = () => {
+    if (audioPipButton) audioPipButton.hidden = !audioPip.supported();
+    audioPipButton?.setAttribute('aria-busy', String(audioPip.isBusy()));
+    audioPipButton?.setAttribute('aria-pressed', String(audioPip.isActive()));
+    audioPipButton?.setAttribute('aria-label', audioPip.isActive() ? '关闭字幕画中画' : '字幕画中画');
+  };
+  audioPipButton?.addEventListener('click', () => audioPip.toggle());
   const paintPip = () => {
     const on = pip ? pip.isActive() : false;
     for (const button of [pipBtn, pipTool]) {
@@ -224,14 +239,18 @@ export function setupVideo({ app, video, engine, toggle, onLayout, overlayOpen, 
       button.setAttribute('aria-pressed', String(on));
       button.setAttribute('aria-label', on ? '关闭小窗' : '小窗播放');
     }
-    if (pipNote) pipNote.hidden = !app.classList.contains('is-pip');
+    if (pipNote) {
+      pipNote.hidden = !app.classList.contains('is-pip') && !audioPip.isActive();
+      pipNote.textContent = audioPip.isActive() ? '字幕小窗播放中 · 点这里收回' : '小窗播放中 · 点这里收回';
+    }
     syncLayout();
   };
   pip = setupVideoPip({ video, stage, app, engine, releaseLandscape,
-    onLayout, onStateChange: paintPip });
+    onLayout, onStateChange: paintPip, ownsActivity: audioPip.ownsActivity,
+    beforeOpen: () => audioPip.hasSession() ? audioPip.close() : true });
   pipBtn?.addEventListener('click', () => pip.toggle());
   pipTool?.addEventListener('click', () => pip.toggle());
-  pipNote?.addEventListener('click', () => pip.toggle());
+  pipNote?.addEventListener('click', () => audioPip.isActive() ? audioPip.close() : pip.toggle());
   paintPip();
   window.addEventListener('pagehide', () => { clearTimeout(chromeTimer); clearTimeout(hintTimer); });
   window.addEventListener('pagehide', releaseWakeLock);
@@ -243,6 +262,6 @@ export function setupVideo({ app, video, engine, toggle, onLayout, overlayOpen, 
   new MutationObserver(() => { if (themedImmersive && themeMeta) themeMeta.content = '#000000'; })
     .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   apply();
-  return { apply, syncLayout, showControls, media: video, isFullscreen, isImmersive, pip,
+  return { apply, syncLayout, showControls, media: video, isFullscreen, isImmersive, pip, audioPip,
     refreshPip: () => pip.refresh() };
 }

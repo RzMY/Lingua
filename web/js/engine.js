@@ -62,6 +62,7 @@ export class Engine {
     this._needV = true;
     this.repeat = 0;
     this.loopS = -1;
+    this._syncNativeLoop();
     this.shadow = 'off';
     this.kick();
   }
@@ -228,6 +229,7 @@ export class Engine {
     const tr = this.track;
     if (this.shadow !== 'off') { this._shadowStep(t, now); return; }
     if (this.repeat === 1 && this.loopS >= 0 && this.loopS < tr.S) {
+      if (this.audio.nativeAudio) return; // Native boundary handling keeps looping in the background.
       if (t >= tr.sEnd[this.loopS] - 0.008 || t < tr.sStart[this.loopS] - 0.2) {
         this.seek(tr.sStart[this.loopS]);
       }
@@ -277,6 +279,7 @@ export class Engine {
     if (i < 0 || i >= tr.S) return;
     this.seek(t != null ? t : tr.sStart[i]);
     if (this.repeat === 1) this.loopS = i;
+    if (this.repeat === 1) this._syncNativeLoop();
     if (this.shadow !== 'off') { this.shadowS = i; this.shadow = 'listen'; }
     this._userAt = 0;
     this._target = this.vlist.scrollTargetFor(i, FOLLOW_ALIGN);
@@ -290,6 +293,7 @@ export class Engine {
   setRepeat(mode) {
     this.repeat = mode;
     this.loopS = mode === 1 ? Math.max(0, this.reader.activeS) : -1;
+    this._syncNativeLoop();
     if (mode) this.setShadow(false);
     this.kick();
   }
@@ -304,11 +308,20 @@ export class Engine {
       return;
     }
     this.repeat = 0;
+    this._syncNativeLoop();
     this.shadowS = Math.max(0, this.reader.activeS);
     this.shadow = 'listen';
     this.seek(this.track.sStart[this.shadowS]);
     this.audio.play().catch(() => {});
     this.onShadowState && this.onShadowState('listen', this.shadowS, 0);
+  }
+
+  _syncNativeLoop() {
+    if (!this.audio.setLoop) return;
+    const i = this.loopS;
+    this.audio.setLoop({ all: this.repeat === 2,
+      start: this.repeat === 1 && i >= 0 && i < this.track.S ? this.track.sStart[i] : null,
+      end: this.repeat === 1 && i >= 0 && i < this.track.S ? this.track.sEnd[i] : null });
   }
 
   /** 上/下一句. */

@@ -18,7 +18,7 @@
  */
 
 import { trackCfg } from './trackcfg.js';
-import { toast } from './util.js';
+import { locate, toast } from './util.js';
 import { nativeApp } from './native.js';
 
 /**  折叠空白: 小窗只有一行位置, 换行和连续空格都不该撑高盒子.
@@ -55,13 +55,14 @@ export function pipCues(track, showTr = true) {
   return out;
 }
 
-export function setupVideoPip({ video, stage, app, engine, releaseLandscape, onLayout, onStateChange }) {
+export function setupVideoPip({ video, stage, app, engine, releaseLandscape, onLayout, onStateChange, beforeOpen, ownsActivity }) {
   const activityPip = nativeApp()?.activityPip;
   let activityActive = false;
   const activityStyle = document.createElement('style');
   activityStyle.textContent = `html.native-activity-pip body{padding:0!important}html.native-activity-pip #videoStage{position:fixed!important;inset:0!important;width:100vw!important;height:100dvh!important;max-height:none!important;z-index:99999!important;border-radius:0!important}html.native-activity-pip #videoStage video{width:100%!important;height:100%!important;object-fit:contain!important}html.native-activity-pip #videoStage button,html.native-activity-pip #videoStage .video-status{display:none!important}`;
   if (activityPip) document.head.append(activityStyle);
   window.addEventListener('native-pip', ({ detail }) => {
+    if (ownsActivity?.()) return;
     activityActive = detail.active;
     app.classList.toggle('is-pip', activityActive);
     if (activityActive) fillCues();
@@ -80,7 +81,6 @@ export function setupVideoPip({ video, stage, app, engine, releaseLandscape, onL
         || video.webkitSupportsPresentationMode('picture-in-picture'))) return 'webkit';
     return '';
   };
-  const reader = () => engine && engine.reader;
   const trOn = () => document.documentElement.dataset.tr !== '0';
 
   let pipWin = null;        // Document PiP 的系统小窗
@@ -113,8 +113,7 @@ export function setupVideoPip({ video, stage, app, engine, releaseLandscape, onL
   const sentence = () => {
     const track = engine && engine.track;
     if (!track || !track.S) return null;
-    const r = reader();
-    const i = r && r.activeS >= 0 ? r.activeS : 0;
+    const i = Math.max(0, locate(track.sStart, track.S, video.currentTime + 0.004, -1));
     return track.sentences[i] || null;
   };
 
@@ -260,14 +259,15 @@ export function setupVideoPip({ video, stage, app, engine, releaseLandscape, onL
   }
 
   async function close() {
-    if (activityActive) { toast('点击系统小窗的展开按钮返回应用'); return; }
-    if (pipWin) { unmountDocument(); return; }
+    if (activityActive) { toast('点击系统小窗的展开按钮返回应用'); return false; }
+    if (pipWin) { unmountDocument(); return true; }
     if (video === document.pictureInPictureElement && document.exitPictureInPicture) {
       try { await document.exitPictureInPicture(); } catch { /* 已经退出 */ }
     } else if (video.webkitPresentationMode === 'picture-in-picture') {
       try { video.webkitSetPresentationMode('inline'); } catch { /* 已经退出 */ }
     }
     syncClassic();
+    return !isActive();
   }
 
   /** 经典 PiP 的系统状态 → 页面状态 (字幕轨开合、占位提示、按钮态). */
@@ -310,7 +310,7 @@ export function setupVideoPip({ video, stage, app, engine, releaseLandscape, onL
   async function toggle() {
     try {
       if (isActive()) await close();
-      else await open();
+      else if (!beforeOpen || await beforeOpen()) await open();
     } catch (error) {
       console.warn('[pip]', error);
       toast('小窗没有打开, 再点一次试试');

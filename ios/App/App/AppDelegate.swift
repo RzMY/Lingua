@@ -61,6 +61,8 @@ class LinguaViewController: CAPBridgeViewController {
         webView?.backgroundColor = UIColor(red: 242/255, green: 242/255, blue: 234/255, alpha: 1)
         webView?.scrollView.backgroundColor = webView?.backgroundColor
         bridge?.registerPluginInstance(NativeShellPlugin())
+        bridge?.registerPluginInstance(CaptionPipPlugin())
+        bridge?.registerPluginInstance(AudioPlayerPlugin())
     }
 }
 

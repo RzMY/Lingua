@@ -26,15 +26,17 @@ import { Engine } from './engine.js';
 import { setupPlayer } from './player.js';
 import { mediaKind } from './media.js';
 import { setupVideo } from './video-player.js';
+import { setupAudioPip } from './audio-pip.js';
+import { NativeAudio } from './native-audio.js';
 import { initSettings, setSetting, settings } from './settings.js';
 import { initTrackCfg, trackCfg } from './trackcfg.js';
 import { config, loadConfig } from './config.js';
-import { nativeReady } from './native.js';
+import { nativeApp, nativeReady } from './native.js';
 import { sourceLangs } from './langs.js';
 import { createExplain, openSpeedSheet, openTrackSheet } from './ui.js';
 import { closeSheet, sheetOpen } from './sheet.js';
 import { analyze, ApiError } from './api.js';
-import { audioUrl, getTrack, patchTrack, saveAnalysis, setDuration, setPosition, trackData,
+import { audioBlob, audioUrl, getTrack, patchTrack, saveAnalysis, setDuration, setPosition, trackData,
   transcriptBlob, SUB_EXT, SUB_RE } from './library.js';
 import { openFileRepair } from './backup-ui.js';
 import { createTranslator } from './translate.js';
@@ -76,6 +78,7 @@ let record = null;                 // 当前音频的库记录 (library.js)
 let objUrl = '';                   // 当前 <audio> 用的 blob URL, 换曲要 revoke
 let videoReady = false;
 let videoPlayer = null;
+let audioPip = null;
 
 function syncVideoLayout() {
   const visible = videoReady && dom.setup.hidden;
@@ -249,6 +252,21 @@ function showSetup() {
 
 /** 原始音视频 Blob 直接挂到当前媒体元素, 共用字幕时间轴. */
 async function attachAudio(id) {
+  if (audio.nativeAudio) {
+    const blob = await audioBlob(id);
+    if (blob) {
+      dom.btnPlay.disabled = true;
+      showState('正在准备音频…', '首次打开时将音频传入本地播放器');
+      await audio.attach(blob, record);
+      audio.playbackRate = settings.rate || 1;
+      objUrl = audio.src;
+      clearState();
+    } else {
+      await audio.release(); objUrl = '';
+      record = { ...record, audio: { ...record.audio, missing: true } };
+    }
+    updateFileState(); return;
+  }
   const next = await audioUrl(id);
   if (objUrl) URL.revokeObjectURL(objUrl);
   objUrl = next;
@@ -305,6 +323,7 @@ async function load(id, forceSetup) {
     return false;
   }
   audio = mediaKind(record.audio) === 'video' ? $('video') : $('audio');
+  if (audio === $('audio') && nativeApp()?.audioPlayer) audio = new NativeAudio(nativeApp().audioPlayer);
   engine.audio = audio;
   player = setupPlayer({ audio, engine, dom, savePosition: setPosition });
   if (audio === $('video')) {
@@ -313,6 +332,18 @@ async function load(id, forceSetup) {
       openSettings: openDisplay });
     dom.btnDisplay.setAttribute('aria-label', '视频设置');
     dom.btnDisplay.querySelector('use').setAttribute('href', '#i-tune');
+    audioPip = videoPlayer.audioPip;
+  } else {
+    const button = $('btnAudioPip');
+    audioPip = setupAudioPip({ media: audio, engine, app: dom.app,
+      onStateChange: () => {
+        button.hidden = !audioPip.supported();
+        button.setAttribute('aria-busy', String(audioPip.isBusy()));
+        button.setAttribute('aria-pressed', String(audioPip.isActive()));
+        button.setAttribute('aria-label', audioPip.isActive() ? '关闭字幕画中画' : '字幕画中画');
+      } });
+    button.hidden = !audioPip.supported();
+    button.addEventListener('click', () => audioPip.toggle());
   }
   wireTools();
   audio.addEventListener('loadedmetadata', () => {
@@ -405,7 +436,7 @@ function applyTranslations(batch) {
   if (!reader) return;
   const list = [];
   for (const [i, text] of batch) if (reader.setTranslation(i, text)) list.push(i);
-  if (list.length) videoPlayer?.refreshPip?.();   // 小窗里的译文跟着补齐
+  if (list.length) { videoPlayer?.refreshPip?.(); audioPip?.refresh(); }   // 小窗里的译文跟着补齐
   if (!list.length || !vlist) return;
   if (document.documentElement.dataset.tr === '0') return;   // 没显示译文, 高度不变
   vlist.invalidate(list);
@@ -689,6 +720,7 @@ function onSetting(key, value, layout) {
 
 /** 本条音频的配置回调. */
 function onTrackCfg(key, value, layout) {
+  audioPip?.refresh();
   if (key === 'video') { videoPlayer?.apply(); return; }
   if (key === 'tr' || key === 'lang') { syncTranslate(); videoPlayer?.refreshPip?.(); }
   if (layout) relayout(true);

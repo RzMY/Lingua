@@ -10,6 +10,8 @@ import { nativeStyles } from './ui.js';
 import { CHANNELS, CHANNEL_KEY, OWN_KEY, DEV_KEY, normalizeSource, sourceKey, fetchSourceManifest } from './channels.js';
 
 const NativeMedia = registerPlugin('NativeMedia');
+const CaptionPip = registerPlugin('CaptionPip');
+const AudioPlayer = registerPlugin('AudioPlayer');
 const KEY = 'lingua.native.state';
 const NativeShell = registerPlugin('NativeShell');
 let source = { channel: 'stable', ownUrl: '', developmentUrl: '' };
@@ -231,9 +233,36 @@ async function initialize() {
   }
   manager = new UpdateManager({ updater: CapacitorUpdater, fetchManifest: (selected) => fetchSourceManifest(selected, getJson), save, state, currentVersion: version });
   let marked = false;
+  const audioPlayer = Capacitor.getPlatform() === 'ios' && Capacitor.isPluginAvailable('AudioPlayer') ? AudioPlayer : null;
+  if (audioPlayer) {
+    await audioPlayer.addListener('stateChanged', (detail) => window.dispatchEvent(new CustomEvent('native-audio-state', { detail })));
+  }
+  // The optional bridge requires a new IPA; old binaries must never pretend to support it.
+  let captionPip = null;
+  const captionPluginAvailable = Capacitor.getPlatform() === 'ios' && Capacitor.isPluginAvailable('CaptionPip');
+  let captionProbe = null;
+  const refreshCaptionPip = () => {
+    if (!captionPluginAvailable) return Promise.resolve();
+    if (!captionProbe) captionProbe = (async () => {
+      try { captionPip = (await CaptionPip.capabilities()).supported === true ? CaptionPip : null; }
+      catch { captionPip = null; }
+      if (window.LinguaNative) {
+        window.LinguaNative.captionPip = captionPip;
+        window.dispatchEvent(new Event('native-caption-capabilities'));
+      }
+    })().finally(() => { captionProbe = null; });
+    return captionProbe;
+  };
+  if (captionPluginAvailable) {
+    await CaptionPip.addListener('stateChanged', (detail) => window.dispatchEvent(new CustomEvent('native-caption-pip', { detail })));
+    await refreshCaptionPip();
+  }
   window.LinguaNative = {
     target, settings, checkUpdates: () => check(true), exportFile, channel: source.channel, platform: Capacitor.getPlatform(),
     activityPip: Capacitor.getPlatform() === 'android' ? NativeMedia : null,
+    captionPip,
+    audioPlayer,
+    refreshCaptionPip,
     async markReady() {
       if (marked) return; marked = true;
       await CapacitorUpdater.notifyAppReady();
@@ -290,6 +319,7 @@ async function initialize() {
   await App.addListener('appStateChange', async ({ isActive }) => {
     if (!isActive) return;
     syncPresentation(true);
+    void refreshCaptionPip();
     try {
       const changed = await readSource();
       if (sourceKey(changed) !== sourceKey(source)) {

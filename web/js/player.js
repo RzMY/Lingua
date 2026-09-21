@@ -119,7 +119,8 @@ export function setupPlayer(ctx) {
 
 /** 系统控制与页面按钮共用同一个 audio, 状态通过媒体事件同步。 */
 export function setupMediaSession({ audio, engine }) {
-  const ms = navigator.mediaSession;
+  // The native player owns lock-screen commands and Now Playing while WKWebView is suspended.
+  const ms = audio.nativeAudio ? null : navigator.mediaSession;
   let playRequest = 0;
 
   const sync = () => {
@@ -188,6 +189,7 @@ export function setupMediaSession({ audio, engine }) {
     pause,
     setTrack(track) {
       playRequest++;
+      if (audio.nativeAudio) audio.setMetadata(track);
       if (!ms) return;
       try {
         if (typeof window.MediaMetadata === 'function') {

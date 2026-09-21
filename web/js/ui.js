@@ -61,13 +61,11 @@ export function openTrackSheet(track, { trStats, video } = {}) {
       control('字幕背景透明度', 'transparency', '', 0, 100),
       stepRow('字幕背景模糊', '', () => cfg().blur, (blur) => setVideoCfg({ blur }),
         { min: 0, max: 30, step: 1, unit: 'px' }),
-      stepRow('系统字幕字号', '系统小窗里的字幕', () => cfg().captionSize,
-        (captionSize) => setVideoCfg({ captionSize }), { min: 12, max: 36, step: 1, unit: 'px' }),
     ];
     body.append(sectionTitle('字幕布局 · 当前视频'), group(...subtitleRows), buttonBar(button('重置字幕布局', {
       onPick: () => {
-        const { subtitles, position, width, height, transparency, blur, captionSize } = VIDEO_DEFAULTS;
-        setVideoCfg({ subtitles, position, width, height, transparency, blur, captionSize });
+        const { subtitles, position, width, height, transparency, blur } = VIDEO_DEFAULTS;
+        setVideoCfg({ subtitles, position, width, height, transparency, blur });
         subtitleRows.forEach((row) => row.refresh());
       },
     })));
@@ -89,6 +87,8 @@ export function openTrackSheet(track, { trStats, video } = {}) {
   }
 
   rows.push(navRow('字幕字号', video ? '' : '分别调节原文、注音、原形 / 转写与译文', { onPick: () => openFontSheet({ track }) }));
+  rows.push(stepRow('系统字幕字号', '纯音频画中画与系统字幕', () => trackCfg.video.captionSize,
+    (captionSize) => setVideoCfg({ captionSize }), { min: 12, max: 36, step: 1, unit: 'px' }));
   body.append(sectionTitle(video ? '字幕内容 · 当前视频' : '这条音频'), group(...rows));
   body.append(group(infoRow('源语言', track.langName)));
 

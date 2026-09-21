@@ -26,14 +26,16 @@ async function harness(saved = {}, options = {}) {
   for (const [key, value] of Object.entries(options.session || {})) window.sessionStorage.setItem(key, value);
   window.fetch = async () => ({ json: async () => ({ version: 'a'.repeat(64) }) });
   window.adapters = {
-    Capacitor: { isNativePlatform: () => true, getPlatform: () => options.platform || 'ios' },
+    Capacitor: { isNativePlatform: () => true, getPlatform: () => options.platform || 'ios',
+      isPluginAvailable: (name) => (name === 'CaptionPip' && !!options.captionPip) || (name === 'AudioPlayer' && !!options.audioPlayer) },
     CapacitorHttp: { get: async () => { calls.push('network'); if (options.response) return options.response(); throw Error('offline'); } },
     SystemBars: {
       hide: async (options) => { systemBars.push({ action: 'hide', ...options }); },
       show: async (options) => { systemBars.push({ action: 'show', ...options }); },
     },
     SystemBarType: { NavigationBar: 'NavigationBar' },
-    registerPlugin: () => ({ openDevelopment: async ({ url }) => { calls.push(['development', url]); },
+    registerPlugin: (name) => name === 'AudioPlayer' && options.audioPlayer ? options.audioPlayer
+      : name === 'CaptionPip' && options.captionPip ? options.captionPip : ({ openDevelopment: async ({ url }) => { calls.push(['development', url]); },
       setPresentation: async (value) => { presentations.push({ ...value }); }, addListener: async () => {} }),
     Preferences: { get: async ({ key }) => ({ value: values.get(key) ?? null }),
       set: async ({ key, value }) => { values.set(key, value); } },
@@ -61,6 +63,57 @@ const updateManifest = { schema: 1, appId: 'app.linguatrack.mobile', nativeRevis
   version: 'b'.repeat(64), checksum: 'c'.repeat(64), bundle: `bundle-${'b'.repeat(64)}.zip`, size: 100 };
 const updateResponse = async () => ({ status: 200, data: updateManifest });
 const clickText = (h, text) => [...h.window.document.querySelectorAll('button')].find((b) => b.textContent === text).click();
+
+test('native audio is independent of PiP support and forwards native events to the player', async (t) => {
+  let listener;
+  const bridge = { addListener: async (name, handler) => { assert.equal(name, 'stateChanged'); listener = handler; } };
+  const h = await harness({}, { audioPlayer: bridge }); t.after(h.close);
+  assert.ok(h.window.LinguaNative.audioPlayer); assert.equal(h.window.LinguaNative.captionPip, null);
+  let received;
+  h.window.addEventListener('native-audio-state', ({ detail }) => { received = detail; });
+  listener({ session: 'lesson', position: 15, paused: false });
+  assert.equal(received.position, 15); assert.equal(received.paused, false);
+  const browser = await harness({}, { platform: 'android', audioPlayer: bridge }); t.after(browser.close);
+  assert.equal(browser.window.LinguaNative.audioPlayer, null);
+});
+
+test('caption PiP is exposed only by an iOS binary reporting native support', async (t) => {
+  for (const [platform, available, supported] of [['ios', true, true], ['ios', true, false], ['ios', false, false], ['android', true, true]]) {
+    let listener, probes = 0;
+    const bridge = { capabilities: async () => { probes++; return { supported }; },
+      addListener: async (name, handler) => { assert.equal(name, 'stateChanged'); listener = handler; } };
+    const h = await harness({}, { platform, captionPip: available ? bridge : null }); t.after(h.close);
+    const exposed = platform === 'ios' && available && supported;
+    assert.equal(!!h.window.LinguaNative.captionPip, exposed);
+    assert.equal(probes, platform === 'ios' && available ? 1 : 0);
+    if (exposed) {
+      let event;
+      h.window.addEventListener('native-caption-pip', (value) => { event = value.detail; });
+      listener({ active: true, session: 'lesson' });
+      assert.equal(event.session, 'lesson'); assert.equal(event.active, true);
+    }
+  }
+});
+
+test('failed native capability detection leaves the player usable with its caption entry hidden', async (t) => {
+  const h = await harness({}, { captionPip: { addListener: async () => {}, capabilities: async () => { throw Error('unsupported'); } } }); t.after(h.close);
+  assert.equal(h.window.LinguaNative.captionPip, null);
+  await h.window.LinguaNative.markReady();
+  assert.ok(h.calls.includes('ready'));
+});
+
+test('foreground and playback probes can enable a temporarily unavailable native caption entry', async (t) => {
+  let supported = false, events = 0;
+  const h = await harness({}, { captionPip: { addListener: async () => {}, capabilities: async () => ({ supported }) } }); t.after(h.close);
+  assert.equal(h.window.LinguaNative.captionPip, null);
+  h.window.addEventListener('native-caption-capabilities', () => events++);
+  supported = true;
+  await h.window.LinguaNative.refreshCaptionPip();
+  assert.ok(h.window.LinguaNative.captionPip); assert.equal(events, 1);
+  supported = false;
+  await h.events.appStateChange({ isActive: true }); await flush();
+  assert.equal(h.window.LinguaNative.captionPip, null);
+});
 
 test('startup asks before downloading; later, foreground and document navigation stay quiet', async (t) => {
   let downloads = 0;
