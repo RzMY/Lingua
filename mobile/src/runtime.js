@@ -237,6 +237,12 @@ async function initialize() {
   if (audioPlayer) {
     await audioPlayer.addListener('stateChanged', (detail) => window.dispatchEvent(new CustomEvent('native-audio-state', { detail })));
   }
+  // Build 7 has audio only. Hot-updated JS must not send new video/volume
+  // commands to that binary, even though the AudioPlayer plugin exists.
+  let nativeVideoAudio = false;
+  if (audioPlayer) {
+    try { nativeVideoAudio = (await audioPlayer.capabilities()).videoAudio === true; } catch { /* Older IPA. */ }
+  }
   // The optional bridge requires a new IPA; old binaries must never pretend to support it.
   let captionPip = null;
   const captionPluginAvailable = Capacitor.getPlatform() === 'ios' && Capacitor.isPluginAvailable('CaptionPip');
@@ -262,6 +268,7 @@ async function initialize() {
     activityPip: Capacitor.getPlatform() === 'android' ? NativeMedia : null,
     captionPip,
     audioPlayer,
+    nativeVideoAudio,
     refreshCaptionPip,
     async markReady() {
       if (marked) return; marked = true;

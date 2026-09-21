@@ -6,13 +6,14 @@ import { fileURLToPath } from 'node:url';
 
 const { outputFiles } = await build({ stdin: { contents: `
   export { NativeAudio } from './web/js/native-audio.js';
+  export { NativeVideo } from './web/js/native-video.js';
   export { setupMediaSession } from './web/js/player.js';
   export { setupNativeCaptionPip } from './web/js/native-caption-pip.js';
   export { Engine } from './web/js/engine.js';`, resolveDir: fileURLToPath(new URL('../', import.meta.url)) },
   bundle: true, write: false, format: 'iife', globalName: 'NativeAudioTest' });
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
-function harness(t, overrides = {}) {
+function harness(t, overrides = {}, { video: withVideo = false } = {}) {
   const dom = new JSDOM('<html><body></body></html>', { url: 'https://localhost/player.html', runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window, calls = [], chunks = [];
   let state = {}, now = 1000, serial = 0;
@@ -39,9 +40,19 @@ function harness(t, overrides = {}) {
     ...overrides,
   };
   w.eval(outputFiles[0].text);
-  const audio = new w.NativeAudioTest.NativeAudio(bridge);
+  const video = w.document.createElement('video');
+  let visualPaused = true;
+  Object.defineProperties(video, { readyState: { value: 4 }, paused: { get: () => visualPaused },
+    duration: { value: 120 }, videoWidth: { value: 1280 }, videoHeight: { value: 720 } });
+  video.play = () => { if (visualPaused) { visualPaused = false; video.dispatchEvent(new w.Event('play')); } return Promise.resolve(); };
+  video.pause = () => { if (!visualPaused) { visualPaused = true; video.dispatchEvent(new w.Event('pause')); } };
+  video.load = () => {};
+  let blobID = 0;
+  w.URL.createObjectURL = () => 'blob:video-' + ++blobID;
+  w.URL.revokeObjectURL = () => {};
+  const audio = withVideo ? new w.NativeAudioTest.NativeVideo(bridge, video) : new w.NativeAudioTest.NativeAudio(bridge);
   t.after(async () => { await audio.release(); w.close(); });
-  return { w, audio, bridge, calls, chunks,
+  return { w, audio, video, bridge, calls, chunks,
     advance: (ms) => { now += ms; },
     state: () => state,
     emit(patch) {
@@ -172,4 +183,69 @@ test('loop settings are forwarded to native audio so background repetition does 
   assert.ok(h.calls.some(([name, value]) => name === 'command' && value.action === 'loop' && value.start === 10 && value.end === 20));
   engine.setRepeat(2); await flush(); assert.equal(h.calls.at(-1)[1].all, true);
   engine.setRepeat(0); await flush(); assert.equal(h.calls.at(-1)[1].all, false); assert.equal(h.calls.at(-1)[1].start, null);
+});
+
+test('native playback errors reach the user instead of being hidden by a synthetic pause', async (t) => {
+  const h = harness(t, { command: async () => { throw Error('AVAudioSession could not activate'); } });
+  await h.attach();
+  h.w.document.body.innerHTML = '<div id="toast"></div>';
+  const controls = h.w.NativeAudioTest.setupMediaSession({ audio: h.audio, engine: {} });
+  await controls.play();
+  assert.match(h.w.document.getElementById('toast').textContent, /AVAudioSession could not activate/);
+});
+
+test('video frames stay muted and background WebKit pauses never stop the native sound', async (t) => {
+  const h = harness(t, {}, { video: true }); await h.attach(); await flush();
+  await h.audio.play(); await flush();
+  assert.equal(h.video.muted, true); assert.equal(h.video.paused, false);
+  h.audio.currentTime = 12; h.audio.playbackRate = 1.5; await flush(); await flush();
+  assert.equal(h.video.currentTime, 12); assert.equal(h.video.playbackRate, 1.5);
+  Object.defineProperty(h.w.document, 'hidden', { configurable: true, value: true });
+  h.w.document.dispatchEvent(new h.w.Event('visibilitychange'));
+  assert.equal(h.video.paused, true); assert.equal(h.audio.paused, false);
+  h.advance(10000); assert.equal(h.audio.currentTime, 27);
+  assert.equal(h.calls.some(([name, value]) => name === 'command' && value.action === 'pause'), false);
+  h.state().position = 38;
+  Object.defineProperty(h.w.document, 'hidden', { configurable: true, value: false });
+  h.w.document.dispatchEvent(new h.w.Event('visibilitychange')); await flush();
+  assert.equal(h.video.currentTime, 38); assert.equal(h.video.paused, false);
+  h.audio.pause(); await flush(); assert.equal(h.video.paused, true);
+  h.audio.muted = true; await flush();
+  assert.equal(h.calls.at(-1)[1].action, 'volume'); assert.equal(h.calls.at(-1)[1].muted, true);
+  h.video.muted = false; h.video.dispatchEvent(new h.w.Event('volumechange'));
+  assert.equal(h.video.muted, true);
+});
+
+test('native video captions follow AVPlayer; repeated close/open leaves sound and frame ownership intact', async (t) => {
+  const h = harness(t, {}, { video: true }); await h.attach(); await flush(); await h.audio.play();
+  const payloads = [];
+  const pip = h.w.NativeAudioTest.setupNativeCaptionPip({ bridge: {
+    open: async (value) => payloads.push(value), update: async () => {}, close: async () => {},
+  }, media: h.audio, engine: { track: { sentences: [], sStart: [] } } });
+  for (let i = 0; i < 3; i++) {
+    await pip.open(); assert.equal(h.video.disablePictureInPicture, true);
+    assert.equal(payloads.at(-1).nativeAudioSession, h.audio.nativeSession);
+    await pip.close(); assert.equal(h.video.disablePictureInPicture, false);
+    assert.equal(h.audio.paused, false); assert.equal(h.video.muted, true);
+  }
+  assert.equal(new Set(payloads.map((p) => p.session)).size, 3);
+});
+
+test('video PiP controls reach native audio but returning inline cannot pause it', async (t) => {
+  const h = harness(t, {}, { video: true }); await h.attach(); await flush(); await h.audio.play(); await flush();
+  h.video.webkitPresentationMode = 'picture-in-picture';
+  h.video.dispatchEvent(new h.w.Event('webkitpresentationmodechanged'));
+  Object.defineProperty(h.w.document, 'hidden', { configurable: true, value: true });
+  h.w.document.dispatchEvent(new h.w.Event('visibilitychange'));
+  assert.equal(h.video.paused, false);
+  h.video.pause(); await flush(); assert.equal(h.audio.paused, true);
+  await h.video.play(); await flush(); assert.equal(h.audio.paused, false);
+  h.video.currentTime = 48; h.video.dispatchEvent(new h.w.Event('seeking')); await flush();
+  assert.equal(h.audio.currentTime, 48);
+  h.video.playbackRate = 2; h.video.dispatchEvent(new h.w.Event('ratechange')); await flush();
+  assert.equal(h.audio.playbackRate, 2);
+  h.video.webkitPresentationMode = 'inline';
+  h.video.dispatchEvent(new h.w.Event('webkitpresentationmodechanged'));
+  assert.equal(h.video.paused, true); assert.equal(h.audio.paused, false);
+  await h.audio.release(); assert.equal(h.video.getAttribute('src'), null); assert.equal(h.audio.src, '');
 });

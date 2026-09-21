@@ -69,12 +69,21 @@ test('native audio is independent of PiP support and forwards native events to t
   const bridge = { addListener: async (name, handler) => { assert.equal(name, 'stateChanged'); listener = handler; } };
   const h = await harness({}, { audioPlayer: bridge }); t.after(h.close);
   assert.ok(h.window.LinguaNative.audioPlayer); assert.equal(h.window.LinguaNative.captionPip, null);
+  assert.equal(h.window.LinguaNative.nativeVideoAudio, false);
   let received;
   h.window.addEventListener('native-audio-state', ({ detail }) => { received = detail; });
   listener({ session: 'lesson', position: 15, paused: false });
   assert.equal(received.position, 15); assert.equal(received.paused, false);
   const browser = await harness({}, { platform: 'android', audioPlayer: bridge }); t.after(browser.close);
   assert.equal(browser.window.LinguaNative.audioPlayer, null);
+});
+
+test('video audio is enabled only by binaries supporting the extended native API', async (t) => {
+  for (const supported of [false, true]) {
+    const h = await harness({}, { audioPlayer: { addListener: async () => {}, capabilities: async () => ({ videoAudio: supported }) } });
+    t.after(h.close);
+    assert.equal(h.window.LinguaNative.nativeVideoAudio, supported);
+  }
 });
 
 test('caption PiP is exposed only by an iOS binary reporting native support', async (t) => {

@@ -10,6 +10,7 @@ final class AudioPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
     let identifier = "AudioPlayerPlugin"
     let jsName = "AudioPlayer"
     let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "capabilities", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "begin", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "append", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "prepare", returnType: CAPPluginReturnPromise),
@@ -33,6 +34,10 @@ final class AudioPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
     private var remoteTargets: [(MPRemoteCommand, Any)] = []
     private var timeObserver: Any?
     private var appActive = true
+
+    @objc func capabilities(_ call: CAPPluginCall) {
+        call.resolve(["videoAudio": true])
+    }
 
     static func clock(session: String) -> (position: Double, duration: Double, rate: Double, paused: Bool)? {
         guard let audio = instance, audio.session == session, audio.player?.currentItem?.status == .readyToPlay else { return nil }
@@ -82,7 +87,7 @@ final class AudioPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
                     try? FileManager.default.removeItem(at: file)
                 }
                 let ext = call.getString("extension")?.lowercased() ?? "m4a"
-                let safeExt = ["mp3", "m4a", "mp4", "wav", "aac", "flac", "aiff", "aif", "caf", "ogg", "webm"].contains(ext) ? ext : "m4a"
+                let safeExt = ["mp3", "m4a", "mp4", "m4v", "mov", "wav", "aac", "flac", "aiff", "aif", "caf", "ogg", "webm"].contains(ext) ? ext : "m4a"
                 let file = folder.appendingPathComponent(id).appendingPathExtension(safeExt)
                 guard FileManager.default.createFile(atPath: file.path, contents: nil,
                     attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]) else {
@@ -154,6 +159,11 @@ final class AudioPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
     private func readyChanged(_ expected: AVPlayer) {
         guard player === expected else { return }
         if expected.currentItem?.status == .readyToPlay, let call = readyCall {
+            // WebKit renders the frames; this player owns only the sound and clock.
+            // Disable video tracks to avoid an invisible video presentation in background.
+            expected.currentItem?.tracks.forEach { track in
+                if track.assetTrack?.mediaType == .video { track.isEnabled = false }
+            }
             readyCall = nil; readyTimeout?.cancel(); readyTimeout = nil
             call.resolve(snapshot()); publish("loadedmetadata")
         } else if expected.currentItem?.status == .failed {
@@ -181,6 +191,11 @@ final class AudioPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
                     if self.desiredPlaying && !self.interrupted { self.player?.rate = self.desiredRate }
                     self.publish("ratechange")
                 case "metadata": self.title = call.getString("title") ?? self.title; self.updateNowPlaying()
+                case "volume":
+                    let volume = call.getDouble("volume") ?? 1
+                    guard volume.isFinite else { call.reject("音量无效"); return }
+                    self.player?.volume = Float(max(0, min(1, volume)))
+                    self.player?.isMuted = call.getBool("muted") ?? false
                 case "loop":
                     let start = call.getDouble("start"), end = call.getDouble("end")
                     if let start = start, let end = end, start.isFinite, end.isFinite, start >= 0,
@@ -195,9 +210,7 @@ final class AudioPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
     private func play() throws {
-        let audio = AVAudioSession.sharedInstance()
-        try audio.setCategory(.playback, mode: .spokenAudio, options: [.allowAirPlay])
-        try audio.setActive(true)
+        try PlaybackSession.activate()
         interrupted = false; desiredPlaying = true; ended = false
         if duration > 0 && position >= duration - 0.01 { seek(0) }
         else { player?.playImmediately(atRate: desiredRate) }

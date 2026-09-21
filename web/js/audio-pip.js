@@ -24,7 +24,7 @@ export function setupAudioPip({ media, engine, app, beforeOpen, releaseLandscape
   media.addEventListener('play', () => { void nativeApp()?.refreshCaptionPip?.(); });
 
   async function toggle() {
-    if (!supported() || opening) return;
+    if (!supported() || opening || isBusy()) return;
     if (isActive()) { await nativePip.close(); return; }
     if (media.error) { toast('媒体加载失败，请重新加载后再试字幕小窗'); return; }
     if (media.readyState < 2) { toast('媒体正在加载，请稍后再试字幕小窗'); return; }

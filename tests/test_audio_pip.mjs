@@ -232,6 +232,28 @@ test('queued clock updates preserve translations and use monotonic sequence numb
   assert.ok(updates.every((u, i) => !i || u.sequence > updates[i - 1].sequence));
 });
 
+test('system close animation blocks new requests, then multiple reopen cycles accept only their own callbacks', async (t) => {
+  const h = harness(t); await h.media.play();
+  let old = '';
+  for (let i = 0; i < 3; i++) {
+    await h.pip.toggle(); await flush();
+    const session = h.calls.filter(([name]) => name === 'open').at(-1)[1].session;
+    if (old) {
+      h.w.dispatchEvent(new h.w.CustomEvent('native-caption-pip', { detail: { session: old, active: false } }));
+      assert.equal(h.pip.isActive(), true);
+    }
+    h.w.dispatchEvent(new h.w.CustomEvent('native-caption-pip', { detail: { session, active: true, closing: true } }));
+    assert.equal(h.pip.isBusy(), true);
+    await h.pip.toggle();
+    assert.equal(h.calls.filter(([name]) => name === 'open').length, i + 1);
+    assert.equal(h.calls.filter(([name]) => name === 'close').length, 0);
+    h.w.dispatchEvent(new h.w.CustomEvent('native-caption-pip', { detail: { session, active: false } }));
+    assert.equal(h.pip.isBusy(), false); assert.equal(h.pip.hasSession(), false);
+    assert.equal(h.media.disablePictureInPicture, false); assert.equal(h.media.paused, false);
+    old = session;
+  }
+});
+
 test('both settings sheets expose a single persisted system caption size', (t) => {
   const h = harness(t);
   for (const video of [undefined, {}]) {

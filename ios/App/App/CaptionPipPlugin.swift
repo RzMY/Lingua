@@ -143,6 +143,7 @@ final class CaptionPipPlugin: CAPPlugin, CAPBridgedPlugin, AVPictureInPictureCon
     private var started = false
     private var willStart = false
     private var stopping = false
+    private var retiring = false
     private var session = ""
     private var lines: [Line] = []
     private var position = 0.0, duration = 0.0, rate = 1.0, anchoredAt = 0.0
@@ -224,7 +225,7 @@ final class CaptionPipPlugin: CAPPlugin, CAPBridgedPlugin, AVPictureInPictureCon
         if navigationAction.targetFrame?.isMainFrame == true {
             DispatchQueue.main.async {
                 self.finishProbe(false)
-                if self.controller != nil { self.stop() }
+                if self.controller != nil { self.retiring = true; self.stop() }
             }
         }
         return nil
@@ -232,7 +233,7 @@ final class CaptionPipPlugin: CAPPlugin, CAPBridgedPlugin, AVPictureInPictureCon
 
     @objc func open(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
-            guard self.session.isEmpty, self.pendingOpen == nil, !self.stopping else {
+            guard self.session.isEmpty, self.pendingOpen == nil, !self.stopping, !self.retiring else {
                 call.reject("字幕小窗正在打开或关闭，请稍后重试", "PIP_BUSY"); return
             }
             guard AVPictureInPictureController.isPictureInPictureSupported() else {
@@ -252,14 +253,10 @@ final class CaptionPipPlugin: CAPPlugin, CAPBridgedPlugin, AVPictureInPictureCon
             // This is a user-initiated PiP request, not a launch-time audio-focus grab.
             // The media keeps ownership after PiP closes; never deactivate its shared session.
             do {
-                let audio = AVAudioSession.sharedInstance()
-                if audio.category != .playback {
-                    try audio.setCategory(.playback, mode: .moviePlayback, options: [.allowAirPlay])
-                }
-                try audio.setActive(true)
+                try PlaybackSession.activate()
             } catch {
                 self.reject(call, message: "画中画音频会话未能就绪", code: "PIP_AUDIO_SESSION", error: error)
-                self.finish(); return
+                self.finish(reuse: true); return
             }
             self.pendingOpen = call
             self.scheduleStartTimeout()
@@ -371,26 +368,28 @@ final class CaptionPipPlugin: CAPPlugin, CAPBridgedPlugin, AVPictureInPictureCon
         stopping = true
         finishProbe(false)
         timeout?.cancel()
-        possibleObservation = nil
         pendingOpen?.reject("字幕小窗已取消")
         pendingOpen = nil
         if started || controller?.isPictureInPictureActive == true {
             // Late start callbacks are also stopped. Do not overlap two system controllers.
-            let expected = controller, expectedSession = session
-            let timeout = DispatchWorkItem { [weak self] in
-                guard let self = self, self.controller === expected, self.session == expectedSession else { return }
-                if self.controller?.isPictureInPictureActive == true {
-                    let calls = self.pendingClose; self.pendingClose = []; self.stopping = false
-                    // A system window still exists. Keep the page state truthful even if
-                    // the original open request had timed out before didStart arrived.
-                    self.confirmStarted()
-                    calls.forEach { $0.reject("请使用系统小窗的关闭按钮退出") }
-                } else { self.finish() }
-            }
-            self.timeout = timeout
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: timeout)
+            scheduleStopTimeout()
             controller?.stopPictureInPicture()
         } else { finish() }
+    }
+
+    private func scheduleStopTimeout() {
+        timeout?.cancel()
+        let expected = controller, expectedSession = session
+        let task = DispatchWorkItem { [weak self] in
+            guard let self = self, self.controller === expected, self.session == expectedSession else { return }
+            if self.controller?.isPictureInPictureActive == true {
+                let calls = self.pendingClose; self.pendingClose = []; self.stopping = false
+                self.confirmStarted()
+                calls.forEach { $0.reject("请使用系统小窗的关闭按钮退出") }
+            } else { self.finish() }
+        }
+        timeout = task
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: task)
     }
 
     private func fail(_ message: String, code: String) {
@@ -399,18 +398,25 @@ final class CaptionPipPlugin: CAPPlugin, CAPBridgedPlugin, AVPictureInPictureCon
         stop()
     }
 
-    private func finish() {
+    private func finish(reuse: Bool = false) {
         guard controller != nil else { return }
         let endedSession = session
         timeout?.cancel(); timeout = nil
         finishProbe(false)
         timer?.invalidate(); timer = nil
-        possibleObservation = nil
-        controller?.delegate = nil
-        controller?.contentSource = nil
-        controller = nil; content = nil
-        sourceView?.removeFromSuperview(); sourceView = nil
+        // A normal didStop ends the presentation, not the content source. Reuse the
+        // probed controller on the next click instead of creating a competing AVKit
+        // session from inside the previous controller's didStop callback.
+        if !reuse || retiring {
+            possibleObservation = nil
+            controller?.delegate = nil
+            controller?.contentSource = nil
+            controller = nil; content = nil
+            sourceView?.removeFromSuperview(); sourceView = nil
+        }
         started = false; willStart = false; stopping = false; session = ""; lines = []; audioSessionID = ""
+        retiring = false
+        lastSequence = -1; position = 0; duration = 0; paused = true
         pendingOpen?.reject("字幕小窗已关闭"); pendingOpen = nil
         let calls = pendingClose; pendingClose = []
         calls.forEach { $0.resolve() }
@@ -427,12 +433,12 @@ final class CaptionPipPlugin: CAPPlugin, CAPBridgedPlugin, AVPictureInPictureCon
 
     func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
         guard controller === pictureInPictureController else { return }
-        if stopping { pictureInPictureController.stopPictureInPicture(); return }
+        if stopping || session.isEmpty { pictureInPictureController.stopPictureInPicture(); return }
         confirmStarted()
     }
 
     private func confirmStarted() {
-        timeout?.cancel(); timeout = nil; possibleObservation = nil
+        timeout?.cancel(); timeout = nil
         finishProbe(true)
         timer?.invalidate()
         let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in self?.paint() }
@@ -440,10 +446,16 @@ final class CaptionPipPlugin: CAPPlugin, CAPBridgedPlugin, AVPictureInPictureCon
         RunLoop.main.add(timer, forMode: .common)
         paint()
         pendingOpen?.resolve(); pendingOpen = nil
-        notifyListeners("stateChanged", data: ["session": session, "active": true])
+        notifyListeners("stateChanged", data: ["session": session, "active": true, "closing": false])
     }
     func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        if controller === pictureInPictureController { finish() }
+        if controller === pictureInPictureController { finish(reuse: true) }
+    }
+    func pictureInPictureControllerWillStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        guard controller === pictureInPictureController else { return }
+        stopping = true
+        scheduleStopTimeout()
+        notifyListeners("stateChanged", data: ["session": session, "active": true, "closing": true])
     }
     func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, failedToStartPictureInPictureWithError error: Error) {
         guard controller === pictureInPictureController else { return }

@@ -23,6 +23,20 @@ test('native caption plugin is included in the iOS target and registered by the 
   assert.match(plugin, /AVPictureInPictureVideoCallViewController/);
   assert.doesNotMatch(plugin, /AVPlayerLayer|AVSampleBufferDisplayLayer|setValue\(|forKey:|NSSelectorFromString/);
 });
+
+test('iOS playback uses a valid shared audio category and retains the caption controller after normal stop', async () => {
+  const shell = (await read('ios/App/App/AppDelegate.swift')).toString();
+  const audio = (await read('ios/App/App/AudioPlayerPlugin.swift')).toString();
+  const captions = (await read('ios/App/App/CaptionPipPlugin.swift')).toString();
+  assert.match(shell, /setCategory\(\.playback, mode: \.moviePlayback, options: \[\]\)/);
+  for (const source of [shell, audio, captions]) assert.doesNotMatch(source, /options:\s*\[\.allowAirPlay\]/);
+  assert.match(audio, /try PlaybackSession.activate\(\)/);
+  assert.match(captions, /try PlaybackSession.activate\(\)/);
+  assert.match(audio, /audiovisualBackgroundPlaybackPolicy = \.continuesIfPossible/);
+  assert.match(audio, /mediaType == \.video \{ track.isEnabled = false/);
+  assert.match(captions, /pictureInPictureControllerDidStopPictureInPicture[\s\S]*?finish\(reuse: true\)/);
+  assert.match(captions, /if !reuse \|\| retiring \{/);
+});
 test('mobile release contains complete application assets and produces identical ZIP bytes twice', async () => {
   const build = () => execFileSync(process.execPath, ['mobile/scripts/build.mjs', '--release'], { cwd: root });
   build();

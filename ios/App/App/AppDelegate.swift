@@ -3,6 +3,21 @@ import Capacitor
 import AVFoundation
 import WebKit
 
+// Playback includes AirPlay implicitly. Explicit .allowAirPlay is only valid
+// with .playAndRecord and can make setCategory fail before playback starts.
+enum PlaybackSession {
+    static func configure() throws {
+        let audio = AVAudioSession.sharedInstance()
+        if audio.category != .playback || audio.mode != .moviePlayback {
+            try audio.setCategory(.playback, mode: .moviePlayback, options: [])
+        }
+    }
+    static func activate() throws {
+        try configure()
+        try AVAudioSession.sharedInstance().setActive(true)
+    }
+}
+
 // Kept in this existing Xcode source so native registration survives `cap sync`.
 @objc(LinguaViewController)
 class LinguaViewController: CAPBridgeViewController {
@@ -50,7 +65,7 @@ class LinguaViewController: CAPBridgeViewController {
 
     override func capacitorDidLoad() {
         // WebKit activates/deactivates the session with media playback. Do not grab audio focus on launch.
-        do { try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [.allowAirPlay]) }
+        do { try PlaybackSession.configure() }
         catch { NSLog("Lingua audio session: %@", error.localizedDescription) }
         webView?.allowsBackForwardNavigationGestures = true
         webView?.scrollView.bounces = false

@@ -28,6 +28,7 @@ import { mediaKind } from './media.js';
 import { setupVideo } from './video-player.js';
 import { setupAudioPip } from './audio-pip.js';
 import { NativeAudio } from './native-audio.js';
+import { NativeVideo } from './native-video.js';
 import { initSettings, setSetting, settings } from './settings.js';
 import { initTrackCfg, trackCfg } from './trackcfg.js';
 import { config, loadConfig } from './config.js';
@@ -296,7 +297,7 @@ function repairFiles() {
   openFileRepair([record], {
     onUpdate: async (updated) => {
       record = updated;
-      if ((audio === $('video')) !== (mediaKind(record.audio) === 'video')) {
+      if (!!videoPlayer !== (mediaKind(record.audio) === 'video')) {
         // A replacement may change media kind. Rebind all listeners on a fresh page.
         location.reload();
         return;
@@ -322,12 +323,14 @@ async function load(id, forceSetup) {
     showState('找不到这条媒体', '它可能已经被删掉了; 回首页重新导入一次');
     return false;
   }
-  audio = mediaKind(record.audio) === 'video' ? $('video') : $('audio');
+  const isVideo = mediaKind(record.audio) === 'video';
+  audio = isVideo ? $('video') : $('audio');
   if (audio === $('audio') && nativeApp()?.audioPlayer) audio = new NativeAudio(nativeApp().audioPlayer);
+  if (isVideo && nativeApp()?.nativeVideoAudio) audio = new NativeVideo(nativeApp().audioPlayer, $('video'));
   engine.audio = audio;
   player = setupPlayer({ audio, engine, dom, savePosition: setPosition });
-  if (audio === $('video')) {
-    videoPlayer = setupVideo({ app: dom.app, video: audio, engine, toggle: () => player.toggle(),
+  if (isVideo) {
+    videoPlayer = setupVideo({ app: dom.app, video: $('video'), media: audio, engine, toggle: () => player.toggle(),
       onLayout: () => relayout(false), overlayOpen: () => sheetOpen() || chatOpen() || isCardOpen(),
       openSettings: openDisplay });
     dom.btnDisplay.setAttribute('aria-label', '视频设置');
@@ -346,8 +349,8 @@ async function load(id, forceSetup) {
     button.addEventListener('click', () => audioPip.toggle());
   }
   wireTools();
-  audio.addEventListener('loadedmetadata', () => {
-    videoReady = audio === $('video') && audio.videoWidth > 0 && audio.videoHeight > 0;
+  (isVideo ? $('video') : audio).addEventListener('loadedmetadata', () => {
+    videoReady = isVideo && $('video').videoWidth > 0 && $('video').videoHeight > 0;
     syncVideoLayout();
   });
   // 显示层开关要在算高度之前写进 <html>, 免得首帧闪一下; 语言先用记录里的,

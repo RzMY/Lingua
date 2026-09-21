@@ -109,6 +109,7 @@ export function setupNativeCaptionPip({ bridge, media, engine, onStateChange }) 
     }
     else if (!disposed) {
       active = true;
+      if (typeof detail.closing === 'boolean') closing = detail.closing;
       if (!closing) opening = false;
       onStateChange?.();
     }

@@ -39,6 +39,7 @@ const fixture = process.argv[4];
     }, videoBytes);
     await page.addInitScript(() => {
       window.nativePipCalls = [];
+      window.nativeAudioCommands = [];
       const native = new URLSearchParams(location.search).get('native');
       if (!native) return;
       let state = {}, serial = 0, position = 0, anchor = performance.now();
@@ -51,6 +52,7 @@ const fixture = process.argv[4];
         },
         append: async () => {}, prepare: async () => { state.ready = true; return snap(); },
         command: async (value) => {
+          window.nativeAudioCommands.push(value);
           position = snap().position; anchor = performance.now(); state.revision = value.revision;
           if (value.action === 'play') state.paused = false;
           if (value.action === 'pause') state.paused = true;
@@ -63,13 +65,13 @@ const fixture = process.argv[4];
         open: async (value) => window.nativePipCalls.push(['open', value]),
         update: async (value) => window.nativePipCalls.push(['update', value]),
         close: async (value) => window.nativePipCalls.push(['close', value]),
-      } : null, audioPlayer: native === 'supported' ? audioPlayer : null };
+      } : null, audioPlayer: native === 'supported' ? audioPlayer : null, nativeVideoAudio: native === 'supported' };
     });
     for (const kind of videoBytes ? ['audio', 'video'] : ['audio']) {
       for (const native of ['', 'old', 'supported']) {
         await page.goto(base + '/player.html?track=pip-' + kind + '&debug&native=' + native);
         await page.waitForFunction(() => window.LT?.track && LT.engine.audio.readyState >= 2);
-        if (native === 'supported' && kind === 'audio') {
+        if (native === 'supported') {
           assert.equal(await page.evaluate(() => LT.engine.audio.nativeAudio), true);
           assert.equal(await page.locator('#audio').getAttribute('src'), null);
         }
@@ -82,6 +84,10 @@ const fixture = process.argv[4];
         await page.evaluate(() => { LT.engine.seek(12); LT.engine.audio.playbackRate = 1.5; });
         await page.locator('#btnPlay').click();
         await page.waitForFunction(() => !LT.engine.audio.paused && !LT.engine.audio.seeking && LT.engine.audio.readyState >= 2);
+        if (kind === 'video') {
+          await page.waitForFunction(() => document.getElementById('video').readyState >= 2);
+          assert.equal(await page.evaluate(() => document.getElementById('video').muted), true);
+        }
         await button.click();
         try { await page.waitForFunction(() => document.querySelector('#app.is-audio-pip')); }
         catch (error) {
@@ -105,6 +111,26 @@ const fixture = process.argv[4];
         await page.waitForFunction(() => !document.querySelector('#app.is-audio-pip'));
         assert.equal(await page.evaluate(() => LT.engine.audio.paused), false);
         assert.equal(await page.evaluate(() => LT.engine.audio.playbackRate), 1.5);
+        for (let repeat = 0; repeat < 2; repeat++) {
+          await button.click(); await page.waitForFunction(() => document.querySelector('#app.is-audio-pip'));
+          await button.click(); await page.waitForFunction(() => !document.querySelector('#app.is-audio-pip'));
+        }
+        if (kind === 'video') {
+          await page.evaluate(() => {
+            window.beforeBackgroundPauseCount = nativeAudioCommands.filter((v) => v.action === 'pause').length;
+            Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+            document.dispatchEvent(new Event('visibilitychange'));
+            document.getElementById('video').pause();
+          });
+          assert.equal(await page.evaluate(() => LT.engine.audio.paused), false);
+          assert.equal(await page.evaluate(() => nativeAudioCommands.filter((v) => v.action === 'pause').length),
+            await page.evaluate(() => window.beforeBackgroundPauseCount));
+          await page.evaluate(() => {
+            Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+            document.dispatchEvent(new Event('visibilitychange'));
+          });
+          await page.waitForFunction(() => !document.getElementById('video').paused);
+        }
         await page.screenshot({ path: path.join(output, kind + '-native-entry.png') });
       }
     }

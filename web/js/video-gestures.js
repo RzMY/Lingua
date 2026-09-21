@@ -5,12 +5,12 @@ export const doubleTapAction = (ratio) => ratio < 0.35 ? 'back' : ratio > 0.65 ?
 export const swipeTime = (start, dx, width, duration) =>
   clamp(start + dx / Math.max(1, width) * Math.min(120, duration), 0, duration);
 
-export function setupVideoGestures({ video, engine, toggle, singleTap, feedback, setVolume, toPoint }) {
+export function setupVideoGestures({ video, media = video, engine, toggle, singleTap, feedback, setVolume, toPoint }) {
   let pointer = null, holdTimer = 0, tapTimer = 0, previousTap = null, heldRate = null;
   let brightness = 100;
   const stopHold = () => {
     clearTimeout(holdTimer);
-    if (heldRate !== null) { video.playbackRate = heldRate; heldRate = null; feedback(''); }
+    if (heldRate !== null) { media.playbackRate = heldRate; heldRate = null; feedback(''); }
   };
   const stopTap = () => { clearTimeout(tapTimer); previousTap = null; };
   const cancel = () => {
@@ -27,17 +27,17 @@ export function setupVideoGestures({ video, engine, toggle, singleTap, feedback,
     if (!event.isPrimary || event.button !== 0 || !engine.track) { if (pointer) cancel(); return; }
     if (pointer) { cancel(); return; }
     const p = toPoint(event);
-    pointer = { id: event.pointerId, ...p, start: video.currentTime, volume: video.volume * 100,
+    pointer = { id: event.pointerId, ...p, start: media.currentTime, volume: media.volume * 100,
       brightness, mode: '', boosted: false };
     video.setPointerCapture(event.pointerId);
     event.preventDefault();
     holdTimer = setTimeout(() => {
-      if (!pointer || pointer.mode || video.paused) return;
+      if (!pointer || pointer.mode || media.paused) return;
       stopTap();
-      heldRate = video.playbackRate;
-      video.playbackRate = Math.max(2, heldRate);
+      heldRate = media.playbackRate;
+      media.playbackRate = Math.max(2, heldRate);
       pointer.boosted = true;
-      feedback(video.playbackRate + '× 快速播放');
+      feedback(media.playbackRate + '× 快速播放');
     }, 450);
   });
   video.addEventListener('pointermove', (event) => {
@@ -49,7 +49,7 @@ export function setupVideoGestures({ video, engine, toggle, singleTap, feedback,
       pointer.mode = Math.abs(dx) >= Math.abs(dy) ? 'seek' : pointer.x < pointer.width / 2 ? 'brightness' : 'volume';
     }
     if (pointer.mode === 'seek') {
-      const duration = Number.isFinite(video.duration) ? video.duration : engine.track.duration;
+      const duration = Number.isFinite(media.duration) ? media.duration : engine.track.duration;
       if (!(duration > 0)) return;
       engine.scrubbing = true;
       engine.scrubTime = swipeTime(pointer.start, dx, pointer.width, duration);
@@ -62,7 +62,7 @@ export function setupVideoGestures({ video, engine, toggle, singleTap, feedback,
     } else if (pointer.mode === 'volume') {
       const volume = clamp(pointer.volume - dy / pointer.height * 150, 0, 100);
       const changed = setVolume(volume);
-      feedback(changed ? '音量 ' + Math.round(video.volume * 100) + '%' : '请使用设备音量键');
+      feedback(changed ? '音量 ' + Math.round(media.volume * 100) + '%' : '请使用设备音量键');
     }
     event.preventDefault();
   });
@@ -81,9 +81,9 @@ export function setupVideoGestures({ video, engine, toggle, singleTap, feedback,
     const action = doubleTapAction(finished.x / finished.width), now = performance.now();
     if (previousTap && now - previousTap.at < 300 && previousTap.action === action) {
       stopTap();
-      if (action === 'toggle') { toggle(); feedback(video.paused ? '已暂停' : '继续播放', 700); }
+      if (action === 'toggle') { toggle(); feedback(media.paused ? '已暂停' : '继续播放', 700); }
       else {
-        engine.seek(video.currentTime + (action === 'back' ? -10 : 10));
+        engine.seek(media.currentTime + (action === 'back' ? -10 : 10));
         engine.scrollToActive();
         feedback(action === 'back' ? '快退 10 秒' : '快进 10 秒', 700);
       }
@@ -97,8 +97,8 @@ export function setupVideoGestures({ video, engine, toggle, singleTap, feedback,
   video.addEventListener('lostpointercapture', () => { if (pointer) cancel(); });
   video.addEventListener('contextmenu', (event) => event.preventDefault());
   video.addEventListener('dblclick', (event) => event.preventDefault());
-  video.addEventListener('pause', stopHold);
-  video.addEventListener('ended', cancel);
+  media.addEventListener('pause', stopHold);
+  media.addEventListener('ended', cancel);
   window.addEventListener('blur', cancel);
   window.addEventListener('pagehide', cancel);
   document.addEventListener('visibilitychange', () => { if (document.hidden) cancel(); });

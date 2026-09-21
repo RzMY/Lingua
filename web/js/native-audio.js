@@ -116,7 +116,10 @@ export class NativeAudio extends EventTarget {
   async play() {
     const session = this.src;
     try { await this._command('play'); }
-    catch (error) { if (session === this.src && error?.name !== 'AbortError') { this.paused = true; this._emit('pause'); } throw error; }
+    catch (error) {
+      if (session === this.src && error?.name !== 'AbortError' && !this.paused) { this.paused = true; this._emit('pause'); }
+      throw error;
+    }
   }
   pause() {
     this._position = this.currentTime; this._anchor = performance.now();

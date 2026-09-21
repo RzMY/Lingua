@@ -6,7 +6,7 @@ import { setupVideoPip } from './video-pip.js';
 import { setupAudioPip } from './audio-pip.js';
 import { nativeApp } from './native.js';
 
-export function setupVideo({ app, video, engine, toggle, onLayout, overlayOpen, openSettings }) {
+export function setupVideo({ app, video, media = video, engine, toggle, onLayout, overlayOpen, openSettings }) {
   const rotate = document.getElementById('btnVideoRotate');
   const toolFit = document.getElementById('btnToolFit');
   const fitText = document.getElementById('fitText');
@@ -145,8 +145,8 @@ export function setupVideo({ app, video, engine, toggle, onLayout, overlayOpen, 
     app.style.setProperty('--subtitle-blur', cfg.blur + 'px');
     //  经典 PiP 的字幕由系统画, 字号只能靠 ::cue 传进去, 所以写成一个可调变量。
     app.style.setProperty('--cue-size', cfg.captionSize + 'px');
-    if (!isIOS() && video.volume !== cfg.volume / 100) video.volume = cfg.volume / 100;
-    if (video.muted !== !!cfg.muted) video.muted = !!cfg.muted;
+    if ((!isIOS() || media.nativeAudio) && media.volume !== cfg.volume / 100) media.volume = cfg.volume / 100;
+    if (media.muted !== !!cfg.muted) media.muted = !!cfg.muted;
     toolCc.setAttribute('aria-pressed', String(!!cfg.subtitles));
     toolCc.setAttribute('aria-label', cfg.subtitles ? '隐藏字幕' : '显示字幕');
     const cover = cfg.fit === 'cover';
@@ -202,9 +202,9 @@ export function setupVideo({ app, video, engine, toggle, onLayout, overlayOpen, 
   const showStatus = (text) => { status.textContent = text; status.hidden = !text; };
   video.addEventListener('waiting', () => { if (!video.paused) showStatus('正在缓冲…'); });
   for (const event of ['playing', 'canplay', 'seeked', 'pause', 'ended', 'error']) video.addEventListener(event, () => showStatus(''));
-  video.addEventListener('play', scheduleHide);
-  video.addEventListener('volumechange', () => setVideoCfg({ volume: Math.round(video.volume * 100), muted: video.muted ? 1 : 0 }));
-  gestures = setupVideoGestures({ video, engine, toggle, feedback,
+  media.addEventListener('play', scheduleHide);
+  media.addEventListener('volumechange', () => setVideoCfg({ volume: Math.round(media.volume * 100), muted: media.muted ? 1 : 0 }));
+  gestures = setupVideoGestures({ video, media, engine, toggle, feedback,
     singleTap: () => { if (app.classList.contains('controls-visible')) hideControls(); else showControls(); },
     setVolume: (volume) => {
       if (isIOS()) return false;
@@ -220,7 +220,7 @@ export function setupVideo({ app, video, engine, toggle, onLayout, overlayOpen, 
   });
   //  小窗的最后一步: 视频被搬进系统窗口后, 播放页只剩一块占位提示 (点它收回画面)。
   let pip = null;
-  const audioPip = setupAudioPip({ media: video, engine, app, releaseLandscape,
+  const audioPip = setupAudioPip({ media, engine, app, releaseLandscape,
     beforeOpen: () => pip?.isActive() ? pip.close() : true,
     onStateChange: () => { paintPip(); paintAudioPip(); } });
   const audioPipButton = document.getElementById('btnAudioPip');

@@ -85,7 +85,8 @@ export function setupPlayer(ctx) {
   });
   audio.addEventListener('error', () => {
     if (!audio.src) return;                 // 还没挂上音频, 不是错误
-    toast('媒体解码失败: 浏览器不支持这个音视频格式，请换个文件重新导入');
+    toast(audio.nativeAudio ? (audio.error?.message || '原生媒体播放失败')
+      : '媒体解码失败: 浏览器不支持这个音视频格式，请换个文件重新导入');
   });
 
   const toggle = () => {
@@ -151,7 +152,7 @@ export function setupMediaSession({ audio, engine }) {
     } catch (err) {
       if (request !== playRequest || source !== audio.src) return;
       sync();
-      if (err?.name !== 'AbortError') toast('播放失败，请再点播放重试');
+      if (err?.name !== 'AbortError') toast(audio.nativeAudio && err?.message ? `播放失败：${err.message}` : '播放失败，请再点播放重试');
     }
   };
   const pause = () => {
