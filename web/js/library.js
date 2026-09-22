@@ -12,7 +12,7 @@
  * 也不再需要联网就能重听已经导入过的音频。
  */
 
-import { del, get, put, values, wipeTrack, wipeTrackAll, writeBatch } from './store.js';
+import { del, get, getMany, put, values, wipeTrack, wipeTrackAll, writeBatch } from './store.js';
 import { dropTrackCfg } from './trackcfg.js';
 import { randomId } from './util.js';
 import { isMediaFile } from './media.js';
@@ -44,10 +44,15 @@ export async function audioBlob(id) {
   const audio = await get('audio', id);
   if (!audio || audio.storage !== 'chunks-v1') return audio;
   const parts = [];
-  for (let i = 0; i < audio.count; i++) {
-    const bytes = await get('audioChunks', `${audio.prefix}|${i}`);
-    if (!(bytes instanceof ArrayBuffer)) throw new Error('音频数据不完整，请重新导入');
-    parts.push(new Blob([bytes]));
+  // One transaction per bounded batch, instead of one round trip per MiB.
+  for (let i = 0; i < audio.count; i += 8) {
+    const keys = Array.from({ length: Math.min(8, audio.count - i) }, (_, n) => `${audio.prefix}|${i + n}`);
+    const batch = await getMany('audioChunks', keys);
+    for (const key of keys) {
+      const bytes = batch.get(key);
+      if (!(bytes instanceof ArrayBuffer)) throw new Error('音频数据不完整，请重新导入');
+      parts.push(new Blob([bytes]));
+    }
   }
   return new Blob(parts, { type: audio.type });
 }

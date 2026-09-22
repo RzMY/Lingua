@@ -1,18 +1,27 @@
 /** AVPlayer owns sound/time; the permanently muted video renders foreground/PiP frames. */
 import { NativeAudio } from './native-audio.js';
+import { extractMp4Audio } from './mp4-audio.js';
+
+const SEEK_INTERVAL = 1500;
+const SOFT_DRIFT = 0.08;
+const HARD_DRIFT = 1;
 
 export class NativeVideo extends NativeAudio {
   constructor(bridge, video) {
     super(bridge);
     this.video = video; this._url = ''; this._volume = 1; this._muted = false;
     this._visualPlaying = false; this._visualRequest = null; this._visualSeek = null;
+    this._visualRate = 1; this._needsAlign = true; this._settleUntil = 0;
+    this._refreshing = false; this._resumeEpoch = 0;
     video.muted = true;
     for (const event of ['timeupdate', 'play', 'pause', 'seeking', 'seeked', 'ratechange', 'ended', 'waiting', 'playing']) {
-      this.addEventListener(event, () => this._syncVideo());
+      this.addEventListener(event, () => {
+        if (event === 'seeking' || event === 'seeked') this._needsAlign = true;
+        this._syncVideo();
+      });
     }
     video.addEventListener('loadedmetadata', () => this._syncVideo());
     video.addEventListener('canplay', () => this._syncVideo());
-    document.addEventListener('visibilitychange', () => this._syncVideo());
     for (const event of ['enterpictureinpicture', 'leavepictureinpicture', 'webkitpresentationmodechanged']) {
       video.addEventListener(event, () => this._syncVideo());
     }
@@ -28,9 +37,14 @@ export class NativeVideo extends NativeAudio {
       const internal = this._visualSeek !== null && Math.abs(video.currentTime - this._visualSeek) < 0.2;
       if (this._inVideoPip() && !internal) this.currentTime = video.currentTime;
     });
-    video.addEventListener('seeked', () => { this._visualSeek = null; });
+    video.addEventListener('seeked', () => {
+      this._visualSeek = null;
+      // Give the decoder time to render after a seek before judging clock drift.
+      this._settleUntil = performance.now() + SEEK_INTERVAL;
+      this._syncVideo();
+    });
     video.addEventListener('ratechange', () => {
-      if (this._inVideoPip() && video.playbackRate !== this.playbackRate) this.playbackRate = video.playbackRate;
+      if (this._inVideoPip() && video.playbackRate !== this._visualRate) this.playbackRate = video.playbackRate;
     });
     video.addEventListener('volumechange', () => { if (!video.muted) video.muted = true; });
   }
@@ -49,6 +63,20 @@ export class NativeVideo extends NativeAudio {
   _inVideoPip() {
     return document.pictureInPictureElement === this.video || this.video.webkitPresentationMode === 'picture-in-picture';
   }
+  async _visibilityChanged() {
+    const epoch = ++this._resumeEpoch;
+    if (document.hidden) {
+      if (!this._inVideoPip()) { this._visualSeek = null; this._visualRequest = null; }
+      this._refreshing = false; this._syncVideo(); return;
+    }
+    // performance.now() and the WebKit decoder may have stopped while AVPlayer
+    // continued. Never seek to an extrapolated pre-background snapshot.
+    this._refreshing = true; this._needsAlign = true;
+    this._syncVideo();
+    await this.refresh();
+    if (epoch !== this._resumeEpoch) return;
+    this._refreshing = false; this._syncVideo();
+  }
   _playVideo() {
     if (!this.video.paused || this._visualRequest) return;
     let pending;
@@ -59,21 +87,51 @@ export class NativeVideo extends NativeAudio {
   }
   _syncVideo() {
     if (!this._url || !this.video.readyState) return;
-    const showFrames = !document.hidden || this._inVideoPip();
+    const showFrames = (!document.hidden || this._inVideoPip()) && !this._refreshing;
     this._visualPlaying = showFrames && !this.paused && !this.ended && !this._waiting && !this.seeking;
     if (showFrames) {
-      const position = this.currentTime;
-      if (!this.video.seeking && Math.abs(this.video.currentTime - position) > 0.2) {
-        this._visualSeek = position; this.video.currentTime = position;
+      const position = this.currentTime, drift = position - this.video.currentTime, now = performance.now();
+      let rate = this.playbackRate;
+      if (!this.seeking && !this.video.seeking && this._visualSeek === null) {
+        // Explicit seeks/resume align once. During playback, small discrepancies
+        // are corrected by rate, not repeated currentTime writes every 100 ms.
+        if (this._needsAlign || (Math.abs(drift) > HARD_DRIFT && now >= this._settleUntil)) {
+          this._needsAlign = false;
+          if (Math.abs(drift) > 0.04) {
+            this._visualSeek = position; this._settleUntil = now + SEEK_INTERVAL;
+            this.video.currentTime = position;
+          }
+        } else if (this._visualPlaying && now >= this._settleUntil && Math.abs(drift) > SOFT_DRIFT) {
+          rate *= 1 + Math.max(-0.05, Math.min(0.05, drift * 0.1));
+        }
       }
-      if (this.video.playbackRate !== this.playbackRate) this.video.playbackRate = this.playbackRate;
+      this._visualRate = rate;
+      if (this.video.playbackRate !== rate) this.video.playbackRate = rate;
+    } else if (!this._inVideoPip()) {
+      this._needsAlign = true;
     }
     if (this._visualPlaying) this._playVideo();
-    else this.video.pause();
+    else if (!this.video.paused) this.video.pause();
   }
-  async attach(blob, record) {
+  async _playbackSource(blob, record, signal) {
+    const original = await super._playbackSource(blob, record);
+    if (!/^(mp4|m4v|mov)$/i.test(original.extension) && !/^video\/(mp4|quicktime)$/i.test(blob.type)) return original;
+    try {
+      // Keep the original video for WebKit. AVPlayer only needs the lossless
+      // audio track, so video bytes never cross the base64 plugin bridge.
+      const { file } = await extractMp4Audio(new File([blob], record.audio?.name || 'video.mp4', { type: blob.type }), { signal });
+      if (file.size < blob.size) return { blob: file, extension: 'm4a' };
+    } catch (error) {
+      if (signal.aborted) throw error;
+      // Fragmented MP4 / other codecs still use AVPlayer's original-file path.
+    }
+    return original;
+  }
+  async attach(blob, record = {}) {
     if (this._url) URL.revokeObjectURL(this._url);
     const url = this._url = URL.createObjectURL(blob);
+    this._needsAlign = true; this._visualSeek = null; this._settleUntil = 0;
+    this._visualRequest = null;
     this.video.muted = true; this.video.src = this._url;
     try {
       await super.attach(blob, record);
@@ -90,6 +148,7 @@ export class NativeVideo extends NativeAudio {
     try { await super.play(); } finally { this._syncVideo(); }
   }
   _clearVideo() {
+    ++this._resumeEpoch; this._refreshing = false; this._visualRequest = null; this._needsAlign = true;
     this._visualPlaying = false; this._visualSeek = null; this.video.pause(); this.video.removeAttribute('src'); this.video.load();
     if (this._url) URL.revokeObjectURL(this._url);
     this._url = '';

@@ -18,8 +18,9 @@ export class NativeAudio extends EventTarget {
     this._position = 0; this._rate = 1; this._waiting = false; this._anchor = performance.now();
     this._revision = 0; this._serial = 0; this._generation = 0; this._queue = Promise.resolve();
     this._blob = null; this._record = null; this._detached = false; this._loop = { start: null, end: null, all: false };
+    this._sourceAbort = null;
     window.addEventListener('native-audio-state', ({ detail }) => this._accept(detail));
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) void this.refresh(); });
+    document.addEventListener('visibilitychange', () => this._visibilityChanged());
     window.addEventListener('pagehide', () => { this._detached = true; void this.release(); });
     window.addEventListener('pageshow', () => {
       if (!this._detached || !this._blob) return;
@@ -31,6 +32,7 @@ export class NativeAudio extends EventTarget {
     });
   }
   get nativeSession() { return this.src; }
+  _visibilityChanged() { if (!document.hidden) void this.refresh(); }
   get currentTime() {
     const advance = !this.paused && !this._waiting && !this.seeking ? (performance.now() - this._anchor) / 1000 * this._rate : 0;
     return clamp(this._position + advance, 0, Number.isFinite(this.duration) ? this.duration : Infinity);
@@ -65,7 +67,7 @@ export class NativeAudio extends EventTarget {
     if (before.rate !== this._rate) this._emit('ratechange');
     if (before.paused !== this.paused) this._emit(this.paused ? 'pause' : 'play');
     if (before.waiting !== this._waiting) this._emit(this._waiting ? 'waiting' : 'playing');
-    if (before.seeking && !this.seeking) this._emit('seeked');
+    if (before.seeking !== this.seeking) this._emit(this.seeking ? 'seeking' : 'seeked');
     if (!before.ended && this.ended) this._emit('ended');
     this._emit('timeupdate');
   }
@@ -86,6 +88,8 @@ export class NativeAudio extends EventTarget {
   }
   async attach(blob, record = {}) {
     const generation = ++this._generation;
+    this._sourceAbort?.abort();
+    const controller = this._sourceAbort = new AbortController();
     const old = this.src; this.src = ''; this.readyState = 0;
     if (old) await this.bridge.release({ session: old });
     if (generation !== this._generation) return;
@@ -98,11 +102,18 @@ export class NativeAudio extends EventTarget {
     const current = () => { if (generation !== this._generation) throw new DOMException('Audio changed', 'AbortError'); };
     this._emit('loadstart');
     try {
-      await this.bridge.begin({ session, size: blob.size, title: record.title || 'Lingua',
-        extension: (record.audio?.name || 'audio.m4a').split('.').pop() });
-      for (let offset = 0; offset < blob.size; offset += CHUNK) {
+      const source = await this._playbackSource(blob, record, controller.signal); current();
+      await this.bridge.begin({ session, size: source.blob.size, title: record.title || 'Lingua',
+        extension: source.extension });
+      // Encode the next bounded chunk while the bridge writes the current one.
+      // Keep writes ordered and retain at most two chunks, even for large files.
+      let next = source.blob.size ? base64(source.blob.slice(0, CHUNK)) : null;
+      for (let offset = 0; offset < source.blob.size; offset += CHUNK) {
         current();
-        const data = await base64(blob.slice(offset, offset + CHUNK)); current();
+        const data = await next; current();
+        next = offset + CHUNK < source.blob.size ? base64(source.blob.slice(offset + CHUNK, offset + CHUNK * 2)) : null;
+        // A bridge failure can leave this read unconsumed; still observe its rejection.
+        next?.catch(() => {});
         await this.bridge.append({ session, offset, data });
       }
       current(); const state = await this.bridge.prepare({ session }); current();
@@ -112,6 +123,9 @@ export class NativeAudio extends EventTarget {
       if (generation === this._generation) { this.src = ''; this.readyState = 0; this.error = error; }
       throw error;
     }
+  }
+  async _playbackSource(blob, record) {
+    return { blob, extension: (record.audio?.name || 'audio.m4a').split('.').pop() };
   }
   async play() {
     const session = this.src;
@@ -139,6 +153,7 @@ export class NativeAudio extends EventTarget {
   }
   async release() {
     this._position = this.currentTime; ++this._generation;
+    this._sourceAbort?.abort(); this._sourceAbort = null;
     const session = this.src; this.src = ''; this.readyState = 0; this.paused = true;
     if (session) await this.bridge.release({ session }).catch(() => {});
   }

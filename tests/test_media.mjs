@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mediaKind, isMediaFile, MEDIA_ACCEPT } from '../web/js/media.js';
 import { createTrack, audioBlob, getTrack } from '../web/js/library.js';
+import { put, del } from '../web/js/store.js';
 
 test('video detection honors MIME types and falls back to container extensions', () => {
   for (const name of ['lesson.MP4', 'lesson.webm', 'lesson.mov', 'lesson.m4v', 'lesson.ogv', 'lesson.mkv']) {
@@ -25,4 +26,15 @@ test('direct video import preserves original bytes and metadata for playback', a
   assert.deepEqual(new Uint8Array(await (await audioBlob(record.id)).arrayBuffer()), bytes);
   await assert.rejects(createTrack(new File(['text'], 'not-media.txt')), /音频或视频/);
   await assert.rejects(createTrack(new File([], 'empty.mp4')), /非空/);
+});
+
+test('batched media reads preserve numeric chunk order and reject missing chunks', async () => {
+  const id = 'batched-media', prefix = `${id}|source`;
+  await put('audio', id, { storage: 'chunks-v1', prefix, count: 19, type: 'video/mp4', size: 19 });
+  for (let i = 0; i < 19; i++) await put('audioChunks', `${prefix}|${i}`, new Uint8Array([i]).buffer);
+  const blob = await audioBlob(id);
+  assert.equal(blob.type, 'video/mp4');
+  assert.deepEqual(new Uint8Array(await blob.arrayBuffer()), Uint8Array.from({ length: 19 }, (_, i) => i));
+  await del('audioChunks', `${prefix}|9`);
+  await assert.rejects(audioBlob(id), /数据不完整/);
 });

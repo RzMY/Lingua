@@ -277,19 +277,19 @@ function showSetup() {
 
 /** 原始音视频 Blob 直接挂到当前媒体元素, 共用字幕时间轴. */
 async function attachAudio(id) {
+  dom.btnPlay.disabled = true;
   if (audio.nativeAudio) {
+    showState('正在加载…');
     const blob = await audioBlob(id);
     if (blob) {
-      dom.btnPlay.disabled = true;
-      showState('正在准备音频…', '首次打开时将音频传入本地播放器');
       await audio.attach(blob, record);
       audio.playbackRate = settings.rate || 1;
       objUrl = audio.src;
-      clearState();
     } else {
       await audio.release(); objUrl = '';
       record = { ...record, audio: { ...record.audio, missing: true } };
     }
+    clearState();
     updateFileState(); return;
   }
   const next = await audioUrl(id);
@@ -340,7 +340,7 @@ function repairFiles() {
  * @param {boolean} forceSetup 从首页菜单点「重新分析」进来的
  */
 async function load(id, forceSetup) {
-  showState('正在载入…', id);
+  showState('正在加载…');
   record = await getTrack(id);
   if (!record) {
     dom.player.hidden = true;
@@ -396,7 +396,7 @@ async function openTrack() {
   syncVideoLayout();
   dom.setup.textContent = '';
   dom.player.hidden = false;
-  showState('正在载入…', record.title || record.id);
+  showState('正在加载…');
   audio.pause();
   let data = await trackData(record.id);
   if (!data || !Array.isArray(data.sentences)) {

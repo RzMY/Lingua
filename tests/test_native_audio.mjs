@@ -16,6 +16,13 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
 function harness(t, overrides = {}, { video: withVideo = false } = {}) {
   const dom = new JSDOM('<html><body></body></html>', { url: 'https://localhost/player.html', runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window, calls = [], chunks = [];
+  w.Blob.prototype.arrayBuffer = function () {
+    return new Promise((resolve, reject) => {
+      const reader = new w.FileReader();
+      reader.onload = () => resolve(reader.result); reader.onerror = () => reject(reader.error);
+      reader.readAsArrayBuffer(this);
+    });
+  };
   let state = {}, now = 1000, serial = 0;
   Object.defineProperty(w.performance, 'now', { value: () => now });
   const snapshot = (patch = {}) => ({ ...state, ...patch, serial: ++serial });
@@ -41,9 +48,20 @@ function harness(t, overrides = {}, { video: withVideo = false } = {}) {
   };
   w.eval(outputFiles[0].text);
   const video = w.document.createElement('video');
-  let visualPaused = true;
+  let visualPaused = true, visualPosition = 0, visualSeeking = false, seekVersion = 0;
+  const seeks = [];
   Object.defineProperties(video, { readyState: { value: 4 }, paused: { get: () => visualPaused },
-    duration: { value: 120 }, videoWidth: { value: 1280 }, videoHeight: { value: 720 } });
+    duration: { value: 120 }, videoWidth: { value: 1280 }, videoHeight: { value: 720 },
+    seeking: { get: () => visualSeeking },
+    currentTime: { get: () => visualPosition, set: (value) => {
+      visualPosition = value; visualSeeking = true; seeks.push(value);
+      const version = ++seekVersion;
+      video.dispatchEvent(new w.Event('seeking'));
+      queueMicrotask(() => {
+        if (version !== seekVersion) return;
+        visualSeeking = false; video.dispatchEvent(new w.Event('seeked'));
+      });
+    } } });
   video.play = () => { if (visualPaused) { visualPaused = false; video.dispatchEvent(new w.Event('play')); } return Promise.resolve(); };
   video.pause = () => { if (!visualPaused) { visualPaused = true; video.dispatchEvent(new w.Event('pause')); } };
   video.load = () => {};
@@ -52,7 +70,8 @@ function harness(t, overrides = {}, { video: withVideo = false } = {}) {
   w.URL.revokeObjectURL = () => {};
   const audio = withVideo ? new w.NativeAudioTest.NativeVideo(bridge, video) : new w.NativeAudioTest.NativeAudio(bridge);
   t.after(async () => { await audio.release(); w.close(); });
-  return { w, audio, video, bridge, calls, chunks,
+  return { w, audio, video, bridge, calls, chunks, seeks,
+    frame: (position) => { visualPosition = position; },
     advance: (ms) => { now += ms; },
     state: () => state,
     emit(patch) {
@@ -248,4 +267,127 @@ test('video PiP controls reach native audio but returning inline cannot pause it
   h.video.dispatchEvent(new h.w.Event('webkitpresentationmodechanged'));
   assert.equal(h.video.paused, true); assert.equal(h.audio.paused, false);
   await h.audio.release(); assert.equal(h.video.getAttribute('src'), null); assert.equal(h.audio.src, '');
+});
+
+test('resume waits for fresh native time and decoder latency does not cause repeated seeks', async (t) => {
+  const h = harness(t, {}, { video: true }); await h.attach(); await h.audio.play(); await flush();
+  const visibility = (hidden) => {
+    Object.defineProperty(h.w.document, 'hidden', { configurable: true, value: hidden });
+    h.w.document.dispatchEvent(new h.w.Event('visibilitychange'));
+  };
+  visibility(true); h.advance(30000);
+  let resolveState;
+  const readState = h.bridge.state;
+  h.bridge.state = () => new Promise((resolve) => { resolveState = async () => resolve(await readState()); });
+  h.state().position = 45;
+  const before = h.seeks.length;
+  visibility(false);
+  assert.equal(h.seeks.length, before, 'do not seek to the old extrapolated 30s clock');
+  assert.equal(h.video.paused, true);
+  await resolveState(); await flush();
+  assert.deepEqual(h.seeks.slice(before), [45]);
+  assert.equal(h.video.paused, false);
+  // Frames resume 300ms behind the native clock, at its 10Hz update cadence.
+  for (let i = 1; i <= 40; i++) {
+    h.advance(100); h.frame(45 + i / 10 - 0.3);
+    h.emit({ position: 45 + i / 10 });
+  }
+  assert.equal(h.seeks.length, before + 1, 'small drift must not repeatedly reset the decoder');
+  assert.ok(h.video.playbackRate > 1 && h.video.playbackRate <= 1.05);
+  assert.equal(h.audio.playbackRate, 1, 'visual correction must not alter sound speed');
+  h.frame(49);
+  h.emit({ position: 49 });
+  assert.equal(h.video.playbackRate, 1);
+  // Explicit seeks still align immediately, even within the recovery cooldown.
+  h.audio.currentTime = 70; await flush();
+  assert.equal(h.video.currentTime, 70);
+});
+
+test('large visual drift has a seek cooldown and native loop jumps still align immediately', async (t) => {
+  const h = harness(t, {}, { video: true }); await h.attach(); await h.audio.play(); await flush();
+  h.advance(2000); h.frame(0); h.emit({ position: 10 }); await flush();
+  const count = h.seeks.length;
+  for (let i = 0; i < 10; i++) {
+    h.advance(100); h.frame(0); h.emit({ position: 10 + i / 10 });
+  }
+  assert.equal(h.seeks.length, count);
+  h.emit({ position: 3, seeking: true });
+  h.emit({ position: 3, seeking: false }); await flush();
+  assert.equal(h.video.currentTime, 3);
+});
+
+test('a foreground refresh completed after backgrounding again cannot restart frames', async (t) => {
+  const h = harness(t, {}, { video: true }); await h.attach(); await h.audio.play(); await flush();
+  const visibility = (hidden) => {
+    Object.defineProperty(h.w.document, 'hidden', { configurable: true, value: hidden });
+    h.w.document.dispatchEvent(new h.w.Event('visibilitychange'));
+  };
+  visibility(true);
+  const readState = h.bridge.state;
+  let finish;
+  h.bridge.state = () => new Promise((resolve) => { finish = async () => resolve(await readState()); });
+  visibility(false); visibility(true);
+  await finish(); await flush();
+  assert.equal(h.video.paused, true); assert.equal(h.audio.paused, false);
+  h.bridge.state = readState; h.state().position = 25;
+  visibility(false); await flush();
+  assert.equal(h.video.currentTime, 25); assert.equal(h.video.paused, false);
+});
+
+test('a play promise suspended by WebKit does not block frames on the next foreground', async (t) => {
+  const h = harness(t, {}, { video: true }); await h.attach();
+  const play = h.video.play;
+  let finish;
+  h.video.play = () => new Promise((resolve) => { finish = resolve; });
+  await h.audio.play();
+  Object.defineProperty(h.w.document, 'hidden', { configurable: true, value: true });
+  h.w.document.dispatchEvent(new h.w.Event('visibilitychange'));
+  h.video.play = play;
+  Object.defineProperty(h.w.document, 'hidden', { configurable: true, value: false });
+  h.w.document.dispatchEvent(new h.w.Event('visibilitychange')); await flush();
+  assert.equal(h.video.paused, false); assert.equal(h.audio.paused, false);
+  finish(); await flush();
+});
+
+test('visual rate correction in system PiP never changes the native playback rate', async (t) => {
+  const h = harness(t, {}, { video: true }); await h.attach(); await h.audio.play(); await flush();
+  h.video.webkitPresentationMode = 'picture-in-picture';
+  h.advance(2000); h.frame(1.7); h.emit({ position: 2 });
+  assert.ok(h.video.playbackRate > 1);
+  h.video.dispatchEvent(new h.w.Event('ratechange')); await flush();
+  assert.equal(h.audio.playbackRate, 1);
+  h.video.playbackRate = 1.5; h.video.dispatchEvent(new h.w.Event('ratechange')); await flush();
+  assert.equal(h.audio.playbackRate, 1.5);
+});
+
+test('MP4 video transfers only its lossless audio track and unsupported remux falls back', async (t) => {
+  const h = harness(t, {}, { video: true });
+  const atom = (type, ...parts) => {
+    const body = Buffer.concat(parts), b = Buffer.alloc(body.length + 8);
+    b.writeUInt32BE(b.length); b.write(type, 4); body.copy(b, 8); return b;
+  };
+  const words = (...values) => {
+    const b = Buffer.alloc(values.length * 4); values.forEach((v, i) => b.writeUInt32BE(v, i * 4)); return b;
+  };
+  const ftyp = atom('ftyp', Buffer.from('isom0000'));
+  const audioBytes = Buffer.from([7, 8, 9, 10]);
+  const entry = Buffer.alloc(28); entry.writeUInt16BE(2, 16); entry.writeUInt32BE(48000 * 65536, 24);
+  const audioTrack = atom('trak', atom('mdia', atom('mdhd', words(0, 0, 0, 48000, 1024)),
+    atom('hdlr', words(0, 0), Buffer.from('soun')), atom('minf', atom('stbl',
+      atom('stsd', words(0, 1), atom('mp4a', entry)), atom('stsz', words(0, 4, 1)),
+      atom('stsc', words(0, 1, 1, 1, 1)), atom('stco', words(0, 1, ftyp.length + 8))))));
+  const videoTrack = atom('trak', atom('mdia', atom('hdlr', words(0, 0), Buffer.from('vide'))));
+  const bytes = Buffer.concat([ftyp, atom('mdat', audioBytes, Buffer.alloc(2 * 1024 * 1024)),
+    atom('moov', atom('mvhd', Buffer.alloc(100)), videoTrack, audioTrack)]);
+  await h.audio.attach(new h.w.Blob([bytes], { type: 'video/mp4' }), { audio: { name: 'movie.mp4' } });
+  const transferred = Buffer.concat(h.chunks);
+  assert.ok(transferred.length < 1024, `${bytes.length} video bytes must not cross the bridge`);
+  assert.equal(h.calls.find(([name]) => name === 'begin')[1].extension, 'm4a');
+  assert.equal(transferred.includes(Buffer.from('vide')), false);
+  assert.deepEqual(transferred.subarray(-4), audioBytes);
+  const fragmented = Buffer.concat([ftyp, atom('moof'), atom('mdat', audioBytes)]);
+  h.chunks.length = 0;
+  await h.audio.attach(new h.w.Blob([fragmented]), { audio: { name: 'fragmented.mp4' } });
+  assert.deepEqual(Buffer.concat(h.chunks), fragmented);
+  assert.equal(h.calls.filter(([name]) => name === 'begin').at(-1)[1].extension, 'mp4');
 });
