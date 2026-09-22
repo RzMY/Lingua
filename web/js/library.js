@@ -16,7 +16,6 @@ import { del, get, getMany, put, values, wipeTrack, wipeTrackAll, writeBatch } f
 import { dropTrackCfg } from './trackcfg.js';
 import { randomId } from './util.js';
 import { isMediaFile } from './media.js';
-import { subtitleTrack } from './subtitles.js';
 export { MEDIA_ACCEPT as AUDIO_ACCEPT } from './media.js'; // legacy name used by file repair
 
 const now = () => new Date().toISOString();
@@ -186,6 +185,7 @@ export async function savePreparedTranscript(id, file, lang) {
   const record = await getTrack(id);
   if (!record) throw new Error('找不到这条音频，请重新选择');
   if (!(file instanceof Blob) || !file.size || !SUB_RE.test(file.name)) throw new Error('请选择 JSON / SRT / VTT 字幕');
+  const { subtitleTrack } = await import('./subtitles.js');
   const data = await subtitleTrack({ ...record, lang: lang || record.lang }, file);
   const next = await saveAnalysis(id, data, { transcriptName: file.name, transcriptFile: file });
   await wipeTrack(id);

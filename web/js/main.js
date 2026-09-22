@@ -17,7 +17,8 @@
  * * **讲解**: 工具条的「讲解」开 2/3 屏对话框; 长按句子仍是本地逐词拆解。
  */
 
-import { $, debounce, el, fmtTime, isIOS, rafOnce, toast } from './util.js';
+import { $, debounce, el, fmtTime, fmtSize, icon, isIOS, rafOnce, toast } from './util.js';
+import { enterView } from './motion.js';
 import { Track } from './track.js';
 import { Metrics } from './metrics.js';
 import { Reader } from './reader.js';
@@ -148,20 +149,35 @@ function showSetup() {
   const box = dom.setup;
   box.textContent = '';
   box.hidden = false;
+  box.removeAttribute('aria-busy');
 
   const head = el('div', 'setup-h');
   syncVideoLayout();
-  head.append(el('b', null, '导入字幕'));
-  head.append(el('span', null,
-    '可选：只导入字幕即可显示原文；分析后可使用分词、注音等学习功能。'));
+  const emblem = el('span', 'setup-emblem');
+  emblem.append(icon('i-doc'));
+  const intro = el('div');
+  intro.append(el('span', 'setup-kicker', '让每一句，都看得懂'), el('h1', null, '导入字幕'));
+  head.append(emblem, intro);
+  const subtitle = el('p', 'setup-intro', '为这段媒体添加文字，跟着声音读下去。');
+  head.append(subtitle);
   box.append(head);
+
+  const fields = el('fieldset', 'setup-fields');
+  const card = el('div', 'setup-card');
+  const label = el('div', 'setup-section');
+  label.append(el('span', 'setup-step', '01'), el('h2', null, '选择字幕'));
+  card.append(label);
+  fields.append(card);
+  box.append(fields);
 
   const flags = { estimate: false, split: true, merge: true };
   let lang = record.lang || config.importLang || 'ja';
   const analysisOptions = el('details', 'setup-options');
-  analysisOptions.append(el('summary', null, '分析选项（可选）'), group(
-    segRow('源语言', '决定用哪套分词器与注音层', () => lang, (v) => { lang = v; },
-      sourceLangs().map((l) => [l.code, l.name]), { wrap: true }),
+  const summary = el('summary');
+  const summaryCopy = el('span');
+  summaryCopy.append(el('b', null, '分析选项'), el('span', null, '拆句、分词与时间戳'));
+  summary.append(icon('i-tune', 'ic ic-sm'), summaryCopy, icon('i-chev-d', 'ic ic-sm setup-chevron'));
+  analysisOptions.append(summary, group(
     switchRow('自动拆句', '一段字幕里有多句时按标点切开',
       () => (flags.split ? 1 : 0), (v) => { flags.split = !!v; }),
     switchRow('合并分词', '把被拆开的缩写与连字符词合回一个词',
@@ -169,7 +185,6 @@ function showSetup() {
     switchRow('估算词级时间戳', '字幕只有句级时间时, 按字数摊给每个词',
       () => (flags.estimate ? 1 : 0), (v) => { flags.estimate = !!v; }),
   ));
-  box.append(analysisOptions);
 
   const input = el('input');
   input.type = 'file';
@@ -177,44 +192,89 @@ function showSetup() {
   //  让用户在 Files 里随便挑, 再由下面的后缀校验兜住。
   if (!isIOS()) input.accept = SUB_EXT.map((e) => '.' + e).join(',');
   input.hidden = true;
-  const name = el('div', 'setup-file', '还没选择文件');
+  input.setAttribute('aria-label', '选择字幕文件');
+  const name = el('b', 'setup-file', '点击选择或拖入字幕');
+  const fileHint = el('span', 'setup-file-hint', '支持 SRT、VTT、WebVTT、JSON');
+  const fileCopy = el('span', 'setup-file-copy');
+  fileCopy.append(name, fileHint);
+  const fileIcon = el('span', 'setup-file-icon');
+  fileIcon.append(icon('i-doc'));
+  const choose = el('button', 'setup-pick');
+  choose.type = 'button';
+  choose.setAttribute('aria-label', '选择字幕文件');
+  choose.append(fileIcon, fileCopy, icon('i-plus', 'ic ic-sm'));
+  choose.addEventListener('click', () => input.click());
+  card.append(input, choose);
+
+  const languageCard = el('div', 'setup-card');
+  const languageLabel = el('div', 'setup-section');
+  languageLabel.append(el('span', 'setup-step', '02'), el('h2', null, '设置字幕语言'));
+  languageCard.append(languageLabel, group(
+    segRow('源语言', '选择字幕原文的语言', () => lang, (v) => { lang = v; },
+      sourceLangs().map((l) => [l.code, l.name]), { wrap: true })), analysisOptions);
+  fields.append(languageCard);
+
   const bar = el('div', 'setup-bar');
   bar.append(el('i'));
   bar.hidden = true;
   const log = el('pre', 'setup-log');
   log.hidden = true;
+  log.setAttribute('role', 'log');
+  log.setAttribute('aria-live', 'polite');
 
   const go = button('开始分析', { main: true, glyph: 'i-check', onPick: () => start() });
   go.disabled = true;
   const only = button('只导入字幕', { glyph: 'i-doc', onPick: () => start(false) });
   only.disabled = true;
-  const choose = button('选择文件', { glyph: 'i-doc', onPick: () => input.click() });
   const back = button(record.transcript ? '返回播放' : '跳过，直接播放',
     { glyph: 'i-play', onPick: () => openTrack() });
-  const bottom = buttonBar(choose, only, go, back);
-  box.append(input, name, bottom, bar, log);
+  back.classList.add('setup-back');
+  const bottom = buttonBar(only, go);
+  bottom.classList.add('setup-actions');
+  fields.append(bottom, el('p', 'setup-help', '只导入即可阅读原文；分析后解锁分词、注音等学习功能。'));
+  box.append(bar, log, back);
   dom.scroller.scrollTop = 0;
+  enterView(box);
 
-  let file = null;
-  transcriptBlob(record.id).then((saved) => {
-    if (!saved || file || !name.isConnected || box.hidden) return;
-    file = new File([saved], record.transcript?.name || 'transcript.json', { type: saved.type });
-    name.textContent = file.name;
-    go.disabled = false;
-    only.disabled = false;
-  });
-  input.addEventListener('change', () => {
-    const picked = (input.files || [])[0] || null;
-    // 没给 accept 的那条路 (iOS) 靠这里挡住选错的文件, 后缀集合与后端一致
-    if (picked && !SUB_RE.test(picked.name)) {
-      input.value = '';
+  let file = null, busy = false;
+  function selectFile(picked, saved = false) {
+    if (!picked || busy) return;
+    if (!SUB_RE.test(picked.name)) {
       toast('只认 ' + SUB_EXT.join(' / ') + ' 文件');
       return;
     }
     file = picked;
-    name.textContent = file ? file.name : '还没选择文件';
-    go.disabled = !file;
-    only.disabled = !file;
+    name.textContent = file.name;
+    fileHint.textContent = `${fmtSize(file.size)} · ${saved ? '已保存的字幕' : '已选择'} · 点击更换`;
+    choose.classList.add('has-file');
+    choose.setAttribute('aria-label', '更换字幕文件：' + file.name);
+    choose.lastElementChild.querySelector('use').setAttribute('href', '#i-check');
+    go.disabled = false;
+    only.disabled = false;
+  }
+  transcriptBlob(record.id).then((saved) => {
+    if (!saved || file || !name.isConnected || box.hidden) return;
+    selectFile(new File([saved], record.transcript?.name || 'transcript.json', { type: saved.type }), true);
+  }).catch(() => { if (name.isConnected) toast('已保存的字幕读取失败，请重新选择文件'); });
+  input.addEventListener('change', () => {
+    const picked = (input.files || [])[0] || null;
+    // 没给 accept 的那条路 (iOS) 靠这里挡住选错的文件, 后缀集合与后端一致
+    selectFile(picked);
+    input.value = '';
+  });
+  card.addEventListener('dragover', (event) => {
+    event.preventDefault();
+    if (!busy) choose.classList.add('is-dragging');
+  });
+  card.addEventListener('dragleave', (event) => {
+    if (!card.contains(event.relatedTarget)) choose.classList.remove('is-dragging');
+  });
+  card.addEventListener('drop', (event) => {
+    event.preventDefault();
+    choose.classList.remove('is-dragging');
+    const files = event.dataTransfer?.files;
+    if (files?.length > 1) { toast('一次请选择一个字幕文件'); return; }
+    selectFile(files?.[0]);
   });
 
   const write = (text) => {
@@ -224,7 +284,10 @@ function showSetup() {
   };
 
   async function start(withAnalysis = true) {
-    if (!file) return;
+    if (!file || busy) return;
+    busy = true;
+    fields.disabled = true;
+    box.setAttribute('aria-busy', 'true');
     go.disabled = true;
     choose.disabled = true;
     only.disabled = true;
@@ -250,7 +313,7 @@ function showSetup() {
         merge: flags.merge,
         estimate: flags.estimate,
       });
-      for (const line of resp.log || []) write(line);
+      if (resp.log?.length) write(resp.log.join('\n'));
       if (!resp.track || !Array.isArray(resp.track.sentences)) throw new Error('后端没有返回分析结果');
       record = await saveAnalysis(record.id, resp.track, { transcriptName: file.name, transcriptFile: file });
       updateFileState();
@@ -268,7 +331,11 @@ function showSetup() {
       only.disabled = false;
       back.disabled = false;
     } finally {
+      busy = false;
+      fields.disabled = false;
+      box.removeAttribute('aria-busy');
       bar.classList.remove('is-busy');
+      bar.hidden = true;
     }
   }
 }
@@ -412,6 +479,9 @@ async function openTrack() {
   }
   apply(Track.fromData(data, objUrl));
   engine.setSuspended(false);
+  // Immersive video uses transforms to center these elements; preserve that layout.
+  enterView(dom.scroller, 'fade');
+  enterView(dom.player, 'fade');
   return true;
 }
 

@@ -6,6 +6,7 @@
  */
 
 import { el, icon } from './util.js';
+import { enterView } from './motion.js';
 
 let sheetEl = null;
 let scrimEl = null;
@@ -102,6 +103,7 @@ export function openSheet(title, body, opts = {}) {
   bodyEl.textContent = '';
   if (body) bodyEl.append(body);
   bodyEl.scrollTop = 0;
+  enterView(bodyEl);
 
   // 头部额外按钮 (如讲解的「…」) 插在关闭按钮前面
   while (actsEl.children.length > 1) actsEl.firstChild.remove();

@@ -17,13 +17,10 @@ import {
   PROMPT_META, DEFAULT_PROMPTS, resetPrompt, DEFAULTS, LANG_DEFAULTS, onConfigChange,
 } from './config.js';
 import { initSettings, settings, setSetting } from './settings.js';
-import { openFontSheet } from './font-settings.js';
-import { openVideoSheet, openCaptionSheet } from './video-settings.js';
 import { featureKeys, featureText, mergeCatalog, sourceLangs, sourceName, sourceSpec } from './langs.js';
 import { ApiError, baseLabel, health } from './api.js';
 import { createTrack, listTracks, patchTrack, removeTrack } from './library.js';
 import { MEDIA_ACCEPT, isMediaFile, mediaKind } from './media.js';
-import { openBackupExport, openBackupImport, openMissingFiles, openFileRepair } from './backup-ui.js';
 import { probe, LLMError } from './llm.js';
 import { openSheet, closeSheet, openConfirm, openMenu } from './sheet.js';
 import {
@@ -32,10 +29,22 @@ import {
 } from './rows.js';
 import { stats, clearAll, wipeTrack, isDegraded, usage } from './store.js';
 import { el, icon, toast, fmtTime, fmtSize, dayKey, debounce } from './util.js';
-import { mountWorkbench } from './workbench.js';
+import { enterView } from './motion.js';
+import { createKeyedList } from './keyed-list.js';
 import { nativeApp, nativeReady } from './native.js';
 
 const $ = (id) => document.getElementById(id);
+
+// Optional editors and media processing stay out of the initial module graph.
+const lazyAction = (load, name) => (...args) => load().then((module) => module[name](...args))
+  .catch((err) => toast('加载失败，请重试：' + err.message));
+const openFontSheet = lazyAction(() => import('./font-settings.js'), 'openFontSheet');
+const openVideoSheet = lazyAction(() => import('./video-settings.js'), 'openVideoSheet');
+const openCaptionSheet = lazyAction(() => import('./video-settings.js'), 'openCaptionSheet');
+const openBackupExport = lazyAction(() => import('./backup-ui.js'), 'openBackupExport');
+const openBackupImport = lazyAction(() => import('./backup-ui.js'), 'openBackupImport');
+const openMissingFiles = lazyAction(() => import('./backup-ui.js'), 'openMissingFiles');
+const openFileRepair = lazyAction(() => import('./backup-ui.js'), 'openFileRepair');
 
 const dom = {
   list: $('trackList'),
@@ -49,6 +58,7 @@ const dom = {
 const VIEWS = ['viewHome', 'viewWorkbench', 'viewSet'];
 dom.file.accept = MEDIA_ACCEPT;
 let workbench;
+let workbenchLoading = null;
 let currentView = 'viewHome';
 const experimentsEnabled = () => config.experimental === 1;
 
@@ -65,6 +75,7 @@ let tracks = [];
 let pending = [];        // 正在写入库的文件 (还没有 track 记录)
 let listErr = '';
 let query = '';
+const paintList = createKeyedList(dom.list);
 
 /* ------------------------------------------------------------------ 列表 */
 
@@ -171,28 +182,31 @@ function paintBlank() {
 }
 
 function render() {
-  const list = dom.list;
+  const entries = [];
   const key = query.trim().toLowerCase();
   const rows = key
     ? tracks.filter((t) => ((t.title || '') + ' ' + t.id).toLowerCase().includes(key))
     : tracks;
 
-  list.textContent = '';
   //  存储不可用时 (隐私模式 / file:// 打开) 一切都只在内存里, 刷新就丢 —— 这事
   //  必须说在最显眼的地方, 不然用户会以为导入的音频丢了。
   if (isDegraded()) {
-    list.append(el('div', 'warn',
+    entries.push({ key: 'warning', value: '', create: () => el('div', 'warn',
       '浏览器存储不可用 (可能是隐私模式, 或用 file:// 打开的): 导入的音频与分析结果'
-      + '只在本次会话里有效, 刷新就会丢。'));
+      + '只在本次会话里有效, 刷新就会丢。') });
   }
-  for (const u of pending) list.append(pendingCardOf(u));
+  pending.forEach((u, i) => entries.push({ key: 'pending:' + i, value: u, create: () => pendingCardOf(u) }));
 
   let day = '';
   for (const t of rows) {
     const d = dayKey(t.createdAt || t.updatedAt || '');
-    if (d && d !== day) { day = d; list.append(el('div', 'day', d)); }
-    list.append(cardOf(t));
+    if (d && d !== day) {
+      day = d;
+      entries.push({ key: 'day:' + t.id, value: d, create: () => el('div', 'day', d) });
+    }
+    entries.push({ key: 'track:' + t.id, value: [t, sourceName(t.lang)], create: () => cardOf(t) });
   }
+  paintList(entries);
 
   if (!rows.length && !pending.length) paintBlank();
   else dom.blank.hidden = true;
@@ -334,11 +348,30 @@ function cardMenu(anchor, t) {
 
 /* ------------------------------------------------------------------ 视图切换 */
 
+function ensureWorkbench() {
+  if (workbench || workbenchLoading) return;
+  const root = $('workbenchBody');
+  const note = el('div', 'pane-note', '正在载入工作台…');
+  note.setAttribute('role', 'status');
+  root.replaceChildren(note);
+  workbenchLoading = import('./workbench.js').then(({ mountWorkbench }) => {
+    if (!experimentsEnabled()) { root.replaceChildren(); return; }
+    root.replaceChildren();
+    workbench = mountWorkbench(root, { onImport: refresh });
+    if (currentView === 'viewWorkbench') enterView(root);
+  }).catch(() => {
+    root.replaceChildren(el('p', 'pane-note', '工作台加载失败，请重试。'),
+      button('重新加载', { onPick: ensureWorkbench }));
+  }).finally(() => { workbenchLoading = null; });
+}
+
 function go(id) {
   if (!VIEWS.includes(id) || (id === 'viewWorkbench' && !experimentsEnabled())) id = 'viewHome';
+  const previous = currentView;
   currentView = id;
-  if (id === 'viewWorkbench' && !workbench) workbench = mountWorkbench($('workbenchBody'), { onImport: refresh });
+  if (id === 'viewWorkbench') ensureWorkbench();
   for (const v of VIEWS) $(v).hidden = v !== id;
+  if (id !== previous) enterView($(id), VIEWS.indexOf(id) < VIEWS.indexOf(previous) ? 'back' : 'forward');
   for (const b of document.querySelectorAll('.nav-i')) {
     const on = b.dataset.go === id;
     b.classList.toggle('is-on', on);

@@ -45,6 +45,7 @@ const base = process.argv[3] || 'http://127.0.0.1:5184';
     await page.getByRole('button', { name: '设置', exact: true }).click();
     await page.getByRole('button', { name: '实验性功能', exact: true }).click();
     await page.getByRole('button', { name: '工作台', exact: true }).click();
+    await page.locator('.workbench-subtitle-import').waitFor(); // The workbench module loads on first entry.
     assert.equal(await page.locator('.workbench-subtitle-import').isVisible(), true);
     assert.equal(await page.getByRole('button', { name: '导入字幕到对应音频', exact: true }).isDisabled(), true);
     assert.equal(await page.getByRole('button', { name: '刷新音频列表', exact: true }).count(), 0);

@@ -640,5 +640,29 @@ html[data-theme="dark"] .menu-i.is-danger .ic { color: #ef9c8e; }
 html[data-theme="dark"] .switch::after { background: #e8ecdc; }
 
 @media (prefers-reduced-motion: reduce) {
-  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0s !important;
+    transition-duration: .01ms !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Native document transitions also cover back/forward without delaying links.
+   Only the viewport snapshot is animated, never each sentence or media frame. */
+@view-transition { navigation: auto; }
+::view-transition-old(root) { animation: page-leave 140ms ease-out both; }
+::view-transition-new(root) { animation: page-arrive 220ms var(--ease) both; }
+@keyframes page-leave { to { opacity: 0; } }
+@keyframes page-arrive { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Entry fallback for browsers without cross-document View Transitions. */
+@media (prefers-reduced-motion: no-preference) {
+  .home, .playback-content { animation: page-arrive 220ms var(--ease); }
+  .finder:not([hidden]), .setup-options[open] > .rows { animation: page-arrive 180ms var(--ease); }
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
 }

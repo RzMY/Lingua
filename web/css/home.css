@@ -121,6 +121,8 @@
   border-radius: var(--radius-card);
   padding: 9px;
   margin-bottom: 14px;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 190px;
 }
 .card-in {
   position: relative;
