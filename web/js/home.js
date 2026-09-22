@@ -18,7 +18,7 @@ import {
 } from './config.js';
 import { initSettings, settings, setSetting } from './settings.js';
 import { openFontSheet } from './font-settings.js';
-import { openVideoSheet } from './video-settings.js';
+import { openVideoSheet, openCaptionSheet } from './video-settings.js';
 import { featureKeys, featureText, mergeCatalog, sourceLangs, sourceName, sourceSpec } from './langs.js';
 import { ApiError, baseLabel, health } from './api.js';
 import { createTrack, listTracks, patchTrack, removeTrack } from './library.js';
@@ -322,9 +322,11 @@ function cardMenu(anchor, t) {
           `将从这台浏览器删除「${t.title || t.id}」的媒体文件、分析结果与全部缓存, 不可撤销。`,
           { ok: '删除', danger: true });
         if (!ok) return;
-        await removeTrack(t.id);
-        await refresh();
-        toast('已删除');
+        try {
+          await removeTrack(t.id);
+          await refresh();
+          toast('已删除');
+        } catch (error) { toast('删除失败：' + (error?.message || '请重试')); }
       },
     },
   ]);
@@ -396,7 +398,8 @@ function paintSettings() {
       navRow('语言默认值', '',
         { value: sourceLangs().length + ' 种', onPick: langsPane }),
       navRow('字幕字号', '', { onPick: () => openFontSheet() }),
-      navRow('视频设置', '字幕布局与系统字幕字号', { onPick: () => openVideoSheet() }),
+      navRow('系统字幕字号', '画中画示例', { onPick: () => openCaptionSheet() }),
+      navRow('视频设置', '字幕布局', { onPick: () => openVideoSheet() }),
       segRow('主题', '', () => settings.theme, (v) => setSetting('theme', v), THEMES),
     ),
     sectionTitle('数据管理'),

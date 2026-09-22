@@ -28,6 +28,7 @@ export class Engine {
     this.track = null;
 
     this.follow = true;
+    this.suspended = false;
     this.followAlign = FOLLOW_ALIGN;
     this.repeat = 0;          // 0 关 / 1 单句 / 2 全部
     this.loopS = -1;
@@ -70,6 +71,7 @@ export class Engine {
   // ------------------------------------------------------------ 循环控制
 
   kick() {
+    if (this.suspended) return;
     this._lastKick = performance.now();
     if (!this._raf) {
       this._prev = this._lastKick;
@@ -82,11 +84,17 @@ export class Engine {
     this._raf = 0;
   }
 
+  setSuspended(on) {
+    this.suspended = on;
+    if (on) this.stop(); else this.kick();
+  }
+
   markScrollDirty() { this._needV = true; this.kick(); }
 
-  noteUserScroll() {
+  noteUserScroll({ unpin = false } = {}) {
     this._userAt = performance.now();
     this._target = -1;
+    if (unpin) this.setFollow(false);
   }
 
   setRailWidth(w) { this._railW = w; this._pct = -1; }
@@ -286,8 +294,11 @@ export class Engine {
   }
 
   setFollow(on) {
+    const changed = this.follow !== on;
     this.follow = on;
     if (on) this.scrollToActive();
+    else this._target = -1;
+    if (changed) this.onFollowChange?.(on);
   }
 
   setRepeat(mode) {

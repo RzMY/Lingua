@@ -51,7 +51,10 @@ export async function audioBlob(id) {
   }
   return new Blob(parts, { type: audio.type });
 }
-export const transcriptBlob = (id) => get('transcripts', id);
+export async function transcriptBlob(id) {
+  const saved = await get('transcripts', id);
+  return saved instanceof ArrayBuffer ? new Blob([saved]) : saved;
+}
 
 /** 播放页拿到的是 blob URL; 用完记得 `URL.revokeObjectURL`. */
 export async function audioUrl(id) {
@@ -130,7 +133,7 @@ export async function saveAnalysis(id, track, { transcriptName = '', transcriptF
     data: [{ key: id, value: track, track: id }],
     tracks: [{ key: id, value: next, track: id }],
   };
-  if (transcriptFile) batches.transcripts = [{ key: id, value: transcriptFile, track: id }];
+  if (transcriptFile) batches.transcripts = [{ key: id, value: await transcriptFile.arrayBuffer(), track: id }];
   await writeBatch(batches);
   return next;
 }
@@ -209,19 +212,44 @@ export async function attachFiles(id, files) {
   if (!record) throw new Error('找不到这条音频');
   const next = { ...record, updatedAt: now() };
   const batches = {};
-  for (const kind of ['audio', 'transcript']) {
-    const file = files[kind];
-    if (!file) continue;
-    if (!(file instanceof Blob) || !file.name || !file.size) throw new Error('请选择非空文件');
-    if (kind === 'transcript' && !SUB_RE.test(file.name)) throw new Error('请选择 JSON / SRT / VTT 字幕');
-    if (kind === 'audio' && !isMediaFile(file)) {
-      throw new Error('请选择音频或视频文件');
+  const staged = [];
+  const previousAudio = files.audio ? await get('audio', id) : null;
+  try {
+    for (const kind of ['audio', 'transcript']) {
+      const file = files[kind];
+      if (!file) continue;
+      if (!(file instanceof Blob) || !file.name || !file.size) throw new Error('请选择非空文件');
+      if (kind === 'transcript' && !SUB_RE.test(file.name)) throw new Error('请选择 JSON / SRT / VTT 字幕');
+      if (kind === 'audio' && !isMediaFile(file)) {
+        throw new Error('请选择音频或视频文件');
+      }
+      next[kind] = { name: file.name, size: file.size, type: file.type, missing: false };
+      if (kind === 'audio') {
+        // Reuse the existing chunk manifest: WebKit can stall while preparing file-provider Blobs.
+        const prefix = `${id}|${randomId()}`, chunkSize = 1024 * 1024;
+        for (let p = 0, i = 0; p < file.size; p += chunkSize, i++) {
+          const key = `${prefix}|${i}`, bytes = await file.slice(p, p + chunkSize).arrayBuffer();
+          staged.push(key);
+          await writeBatch({ audioChunks: [{ key, value: bytes, track: id }] },
+            { persistent: true, addOnly: true, timeoutMs: 15000 });
+        }
+        batches.audio = [{ key: id, track: id, value: {
+          storage: 'chunks-v1', prefix, count: staged.length, type: file.type, size: file.size,
+        } }];
+      } else {
+        if (file.size > 64 * 1024 * 1024) throw new Error('字幕文件不能超过 64 MiB');
+        batches.transcripts = [{ key: id, value: await file.arrayBuffer(), track: id }];
+      }
     }
-    next[kind] = { name: file.name, size: file.size, type: file.type, missing: false };
-    batches[kind === 'audio' ? 'audio' : 'transcripts'] = [{ key: id, value: file, track: id }];
+    batches.tracks = [{ key: id, value: next, track: id }];
+    await writeBatch(batches, { persistent: true, timeoutMs: 15000 });
+  } catch (error) {
+    for (const key of staged) await del('audioChunks', key);
+    throw error;
   }
-  batches.tracks = [{ key: id, value: next, track: id }];
-  await writeBatch(batches, { persistent: true });
+  if (previousAudio?.storage === 'chunks-v1') {
+    for (let i = 0; i < previousAudio.count; i++) await del('audioChunks', `${previousAudio.prefix}|${i}`);
+  }
   return next;
 }
 
@@ -253,8 +281,6 @@ export async function setPosition(id, seconds) {
 export async function removeTrack(id) {
   if (!id) return 0;
   const n = await wipeTrackAll(id);
-  // 老记录可能没带 track 索引 (v1 时代), 按主键再删一次兜底
-  for (const store of ['tracks', 'audio', 'data', 'transcripts']) await del(store, id);
   dropTrackCfg(id);
   return n;
 }

@@ -9,6 +9,7 @@ export const CHANNELS = [
 export const CHANNEL_KEY = 'lingua.channel';
 export const OWN_KEY = 'lingua.own-url';
 export const DEV_KEY = 'lingua.development-url';
+export const PREVIOUS_CHANNEL_KEY = 'lingua.previous-channel';
 export const DEFAULT_SOURCE = { channel: 'stable', ownUrl: '', developmentUrl: '' };
 
 export function normalizeTarget(raw) {

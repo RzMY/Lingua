@@ -379,9 +379,8 @@ const fixture = process.argv[4];
     const blur = page.getByRole('spinbutton', { name: '字幕背景模糊 (px)', exact: true });
     await blur.fill('18'); await blur.press('Tab');
     // 系统小窗里的字幕由系统画, 字号只能靠 ::cue 传进去 —— 默认给一个能读的值, 并且可调。
-    await page.getByRole('button', { name: /^系统字幕字号/ }).click();
-    const cueSize = page.getByRole('spinbutton', { name: '系统字幕字号 (px)', exact: true });
-    await cueSize.fill('26'); await cueSize.press('Tab');
+    assert.equal(await page.getByRole('button', { name: /^系统字幕字号/ }).count(), 0);
+    await page.evaluate(async () => (await import('/js/trackcfg.js')).setVideoCfg({ captionSize: 26 }));
     assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('#app'))
       .getPropertyValue('--cue-size').trim()), '26px');
     await page.keyboard.press('Escape');

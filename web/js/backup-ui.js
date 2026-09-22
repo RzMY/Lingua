@@ -159,10 +159,10 @@ export function openFileRepair(records, { onUpdate, onClose, imported = false } 
           onPick: () => pick.click() });
         choose.setAttribute('aria-label', '补充' + label + ' ' + item.name);
         choose.disabled = busy;
-        pick.addEventListener('change', () => {
+        pick.addEventListener('change', async () => {
           const file = pick.files?.[0];
-          pick.value = '';
-          if (file) save([{ ...item, file }]);
+          try { if (file) await save([{ ...item, file }]); }
+          finally { pick.value = ''; }
         });
         row.append(text, choose, pick);
         section.append(row);
@@ -174,32 +174,43 @@ export function openFileRepair(records, { onUpdate, onClose, imported = false } 
   async function save(matches, extra = '') {
     if (busy) return;
     busy = true;
-    render();
+    // Keep the original inputs mounted and selected until WebKit has committed every File.
+    // Clearing a picker or replacing its DOM can release iOS file-provider access mid-batch.
+    body.querySelectorAll('button, input').forEach((control) => { control.disabled = true; });
     note.textContent = '正在补充文件…';
     let saved = 0;
     const errors = [];
+    const updates = new Map();
     for (const item of matches) {
       try {
         const updated = await attachFiles(item.id, { [item.kind]: item.file });
         records = records.map((t) => t.id === item.id ? updated : t);
         saved++;
-        if (onUpdate) await onUpdate(updated);
+        updates.set(item.id, updated);
       } catch (err) { errors.push(item.file.name + ': ' + errorText(err)); }
     }
     busy = false;
+    body.querySelectorAll('button, input').forEach((control) => { control.disabled = false; });
     render();
     note.textContent = [`已补充 ${saved} 个文件`, extra, ...errors].filter(Boolean).join('\n');
+    // A player callback may reload the page after replacing its media type.
+    // Invoke it only once all selected files have been committed.
+    for (const updated of updates.values()) {
+      try { if (onUpdate) await onUpdate(updated); }
+      catch (err) { note.textContent += '\n刷新失败: ' + errorText(err); }
+    }
   }
 
-  input.addEventListener('change', () => {
+  input.addEventListener('change', async () => {
     const files = [...(input.files || [])];
-    input.value = '';
     if (!files.length) return;
     const { matches, ambiguous, unmatched } = matchFiles(records, files);
     const extra = [ambiguous.length ? `${ambiguous.length} 个同名文件待逐项选择: ${ambiguous.join('、')}` : '',
       unmatched.length ? `${unmatched.length} 个文件名不匹配: ${unmatched.join('、')}` : ''].filter(Boolean).join('\n');
-    if (matches.length) save(matches, extra);
-    else note.textContent = extra || '没有待补充的文件';
+    try {
+      if (matches.length) await save(matches, extra);
+      else note.textContent = extra || '没有待补充的文件';
+    } finally { input.value = ''; }
   });
   body.append(count, input, buttonBar(batch, done), list, note);
   render();

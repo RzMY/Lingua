@@ -7,7 +7,7 @@ import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import { UpdateManager } from './update.js';
 import { nativeStyles } from './ui.js';
-import { CHANNELS, CHANNEL_KEY, OWN_KEY, DEV_KEY, normalizeSource, sourceKey, fetchSourceManifest } from './channels.js';
+import { CHANNELS, CHANNEL_KEY, OWN_KEY, DEV_KEY, PREVIOUS_CHANNEL_KEY, normalizeSource, sourceKey, fetchSourceManifest } from './channels.js';
 
 const NativeMedia = registerPlugin('NativeMedia');
 const CaptionPip = registerPlugin('CaptionPip');
@@ -57,8 +57,13 @@ function clearImplicitBackendToken() {
 async function changeSource(next) {
   if (manager?.busy || updating) throw Error('请等待更新完成后再切换分支');
   next = normalizeSource(next);
-  if (sourceKey(next) !== sourceKey(source)) clearImplicitBackendToken();
-  await save({ source: next, pending: null });
+  if (next.channel === 'development') {
+    // The remote view is temporary: retain the local bundle, pending update and source.
+    if (source.channel !== 'development') await Preferences.set({ key: PREVIOUS_CHANNEL_KEY, value: source.channel });
+  } else {
+    if (sourceKey(next) !== sourceKey(source)) clearImplicitBackendToken();
+    await save({ source: next, pending: null });
+  }
   await Preferences.set({ key: OWN_KEY, value: next.ownUrl });
   await Preferences.set({ key: DEV_KEY, value: next.developmentUrl });
   await Preferences.set({ key: CHANNEL_KEY, value: next.channel });
@@ -214,6 +219,7 @@ async function initialize() {
     await NativeShell.openDevelopment({ url: source.developmentUrl });
     await new Promise(() => {});
   }
+  await Preferences.set({ key: PREVIOUS_CHANNEL_KEY, value: source.channel });
   target = source.channel === 'own' ? source.ownUrl : '';
   if (!state.source || sourceKey(state.source) !== sourceKey(source)) {
     clearImplicitBackendToken();

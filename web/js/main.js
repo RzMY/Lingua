@@ -133,7 +133,13 @@ function clearState() {
  */
 function showSetup() {
   audio.pause();
+  engine.setSuspended(true);
+  engine.noteUserScroll();
+  explain.close();
+  closeWordCard();
+  closeChat();
   clearState();
+  dom.viewport.hidden = true;
   dom.player.hidden = true;
   const title = record.title || record.id;
   dom.trackTitle.textContent = title;
@@ -187,6 +193,7 @@ function showSetup() {
     { glyph: 'i-play', onPick: () => openTrack() });
   const bottom = buttonBar(choose, only, go, back);
   box.append(input, name, bottom, bar, log);
+  dom.scroller.scrollTop = 0;
 
   let file = null;
   transcriptBlob(record.id).then((saved) => {
@@ -385,6 +392,7 @@ async function load(id, forceSetup) {
 
 async function openTrack() {
   dom.setup.hidden = true;
+  dom.viewport.hidden = false;
   syncVideoLayout();
   dom.setup.textContent = '';
   dom.player.hidden = false;
@@ -403,6 +411,7 @@ async function openTrack() {
     data ||= plainTrack(record);
   }
   apply(Track.fromData(data, objUrl));
+  engine.setSuspended(false);
   return true;
 }
 
@@ -469,7 +478,7 @@ function applyTranslations(batch) {
   const list = [];
   for (const [i, text] of batch) if (reader.setTranslation(i, text)) list.push(i);
   if (list.length) { videoPlayer?.refreshPip?.(); audioPip?.refresh(); }   // 小窗里的译文跟着补齐
-  if (!list.length || !vlist) return;
+  if (!dom.setup.hidden || !list.length || !vlist) return;
   if (document.documentElement.dataset.tr === '0') return;   // 没显示译文, 高度不变
   vlist.invalidate(list);
   engine.markScrollDirty();
@@ -477,7 +486,7 @@ function applyTranslations(batch) {
 
 /** 视口内优先翻; 滚动与句子切换都会触发, 140ms 合并一次. */
 const wantVisible = debounce(() => {
-  if (!translator || !vlist || !trackCfg.tr) return;
+  if (!dom.setup.hidden || !translator || !vlist || !trackCfg.tr) return;
   const st = dom.scroller.scrollTop;
   const vh = dom.scroller.clientHeight;
   //  焦点句 = 正在朗读的那句 (没在放就是视口第一句): 队列从它往后出队,
@@ -506,7 +515,7 @@ let pendingForce = false;
 const runRelayout = rafOnce(() => {
   const force = pendingForce;
   pendingForce = false;
-  if (!track || !vlist) return;
+  if (!dom.setup.hidden || !track || !vlist) return;
   syncFollowAlign();
   const changed = metrics.sync(dom.viewport.clientWidth);
   if (!changed && !force) { engine.markScrollDirty(); return; }
@@ -525,7 +534,7 @@ function relayout(force) {
 
 /** Immersive subtitles are one non-wrapping line; follow the spoken word horizontally. */
 const followSubtitleX = rafOnce(() => {
-  if (!videoPlayer || !dom.app.classList.contains('is-immersive')) return;
+  if (!videoPlayer || !engine.follow || !dom.app.classList.contains('is-immersive')) return;
   const word = dom.scroller.querySelector('.s.is-active .w.is-cur');
   if (!word) return;
   const wr = word.getBoundingClientRect();
@@ -608,9 +617,25 @@ function wireReader() {
     if (on !== stuck) { stuck = on; dom.topbar.classList.toggle('is-stuck', on); }
   }, { passive: true });
   sc.addEventListener('wheel', cancelPress, { passive: true });
-  for (const ev of ['wheel', 'touchstart', 'pointerdown']) {
+  for (const ev of ['touchstart', 'pointerdown']) {
     sc.addEventListener(ev, () => engine.noteUserScroll(), { passive: true });
   }
+  for (const ev of ['wheel', 'touchmove']) {
+    sc.addEventListener(ev, () => engine.noteUserScroll({ unpin: true }), { passive: true });
+  }
+  sc.addEventListener('pointerdown', (event) => {
+    // Scrollbar dragging is manual scrolling too; ordinary subtitle taps retain follow.
+    const rect = sc.getBoundingClientRect();
+    if (sc.offsetWidth > sc.clientWidth && event.clientX >= rect.left + sc.clientWidth) {
+      engine.noteUserScroll({ unpin: true });
+    }
+  }, { passive: true });
+  sc.addEventListener('keydown', (event) => {
+    if (event.target.closest('input, textarea, select, button, [contenteditable]')) return;
+    if (['PageUp', 'PageDown', 'Home', 'End'].includes(event.key)) {
+      engine.noteUserScroll({ unpin: true });
+    }
+  });
   new ResizeObserver(() => relayout(false)).observe(sc);
   document.addEventListener('visibilitychange', () => engine.kick());
 
@@ -687,10 +712,10 @@ function paintShadow(kind, i, until) {
 }
 
 function wireTools() {
+  engine.onFollowChange = (on) => dom.btnPin.setAttribute('aria-pressed', String(on));
   dom.btnPin.addEventListener('click', () => {
     if (!track) return;
-    const on = dom.btnPin.getAttribute('aria-pressed') !== 'true';
-    dom.btnPin.setAttribute('aria-pressed', on ? 'true' : 'false');
+    const on = !engine.follow;
     engine.setFollow(on);
     toast(on ? '自动跟随已开' : '自动跟随已关，可自由翻阅');
   });
@@ -722,7 +747,7 @@ function wireTools() {
     explain.cursor(s, w, changed);
     if (changed) {
       wantVisible();
-      if (dom.app.classList.contains('is-immersive')) dom.scroller.scrollLeft = 0;
+      if (engine.follow && dom.app.classList.contains('is-immersive')) dom.scroller.scrollLeft = 0;
     }
     followSubtitleX();
   };

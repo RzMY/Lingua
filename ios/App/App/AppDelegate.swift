@@ -121,7 +121,7 @@ private class DevelopmentPresentationHandler: NSObject, WKScriptMessageHandler {
     }
 }
 
-class DevelopmentViewController: UIViewController, WKNavigationDelegate {
+class DevelopmentViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
     let url: URL?
     private var web: WKWebView!
     private let bubble = UIButton(type: .system)
@@ -153,6 +153,7 @@ class DevelopmentViewController: UIViewController, WKNavigationDelegate {
         config.userContentController.add(presentationHandler, name: "linguaPresentation")
         web = WKWebView(frame: .zero, configuration: config)
         web.navigationDelegate = self
+        web.uiDelegate = self
         web.scrollView.contentInsetAdjustmentBehavior = .never
         web.scrollView.bounces = false
         web.isOpaque = false
@@ -170,7 +171,7 @@ class DevelopmentViewController: UIViewController, WKNavigationDelegate {
         menu.layer.shadowOffset = CGSize(width: 0, height: 6); menu.isHidden = true
         errorLabel.font = .systemFont(ofSize: 14); errorLabel.numberOfLines = 0; errorLabel.isHidden = true
         menu.addArrangedSubview(errorLabel)
-        for (title, action) in [("刷新网页", #selector(reloadPage)), ("返回正式分支", #selector(returnToApp))] {
+        for (title, action) in [("刷新网页", #selector(reloadPage)), ("返回上一个分支", #selector(returnToApp))] {
             let button = UIButton(type: .system)
             button.setTitle(title, for: .normal); button.titleLabel?.font = .systemFont(ofSize: 15, weight: .medium)
             button.contentHorizontalAlignment = .leading
@@ -266,8 +267,28 @@ class DevelopmentViewController: UIViewController, WKNavigationDelegate {
         web.load(URLRequest(url: target, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30))
     }
     @objc private func returnToApp() {
-        UserDefaults.standard.set("stable", forKey: "CapacitorStorage.lingua.channel")
+        let defaults = UserDefaults.standard
+        let previous = defaults.string(forKey: "CapacitorStorage.lingua.previous-channel") ?? "stable"
+        let channel = ["stable", "own", "preview"].contains(previous) ? previous : "stable"
+        defaults.set(channel, forKey: "CapacitorStorage.lingua.channel")
         view.window?.rootViewController = LinguaViewController()
+    }
+    func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
+        // A remote page may use window.confirm instead of the bundled sheet implementation.
+        // WKWebView silently cancels it when no UI delegate handles the request.
+        let dialog = UIAlertController(title: webView.url?.host, message: message, preferredStyle: .alert)
+        dialog.addAction(UIAlertAction(title: "取消", style: .cancel) { _ in completionHandler(false) })
+        dialog.addAction(UIAlertAction(title: "确定", style: .default) { _ in completionHandler(true) })
+        guard presentedViewController == nil, view.window != nil else { completionHandler(false); return }
+        present(dialog, animated: true)
+    }
+    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
+        let dialog = UIAlertController(title: webView.url?.host, message: message, preferredStyle: .alert)
+        dialog.addAction(UIAlertAction(title: "确定", style: .default) { _ in completionHandler() })
+        guard presentedViewController == nil, view.window != nil else { completionHandler(); return }
+        present(dialog, animated: true)
     }
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         errorLabel.isHidden = true; setPresentation(dark: dark, immersive: false)

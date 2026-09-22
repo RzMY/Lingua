@@ -147,7 +147,7 @@
   color: var(--ink);
 }
 .card-video .art { border-radius: 50%; background: var(--accent-soft); color: var(--accent-2); }
-.card-video .card-wm { width: 124px; height: 124px; right: 16px; color: var(--accent); opacity: .14; transform: translateY(-46%) rotate(-9deg); }
+.card-video .card-wm { color: var(--accent); opacity: .14; }
 
 .card-hit {
   position: absolute;

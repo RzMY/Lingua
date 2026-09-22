@@ -21,7 +21,7 @@ public class MainActivity extends BridgeActivity {
         }
         if (Intent.ACTION_APPLICATION_PREFERENCES.equals(getIntent().getAction())
                 && getSharedPreferences("CapacitorStorage", MODE_PRIVATE).getString("lingua.channel", "stable").equals("development")) {
-            getSharedPreferences("CapacitorStorage", MODE_PRIVATE).edit().putString("lingua.channel", "stable").apply();
+            DevelopmentActivity.restorePreviousChannel(this);
         }
         super.load();
     }

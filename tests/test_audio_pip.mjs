@@ -254,12 +254,13 @@ test('system close animation blocks new requests, then multiple reopen cycles ac
   }
 });
 
-test('both settings sheets expose a single persisted system caption size', (t) => {
+test('audio and video expose caption overrides next to subtitle fonts', (t) => {
   const h = harness(t);
   for (const video of [undefined, {}]) {
     h.api.openTrackSheet(h.track, { video });
     const rows = [...h.doc.querySelectorAll('.row')].filter((row) => row.querySelector('b')?.textContent === '系统字幕字号');
     assert.equal(rows.length, 1);
+    assert.equal(rows[0].previousElementSibling.querySelector('b').textContent, '字幕字号');
     rows[0].click();
     assert.ok(h.doc.querySelector('.caption-preview'));
     const input = h.doc.querySelector('.sheet input'); input.value = '28'; input.dispatchEvent(new h.w.Event('change'));

@@ -244,6 +244,36 @@ test('development gate opens remote native view without local entry, updater or 
   assert.deepEqual(h.calls, [['development', url]]);
   assert.equal(h.window.LinguaNative, undefined);
 });
+
+for (const channel of ['stable', 'own', 'preview']) {
+  test(`development remembers ${channel} and retains its local update state and credentials`, async (t) => {
+    const source = { channel, ownUrl: 'https://site.example/', developmentUrl: '' };
+    const pending = { id: 'pending', version: 'b'.repeat(64), checksum: 'c'.repeat(64) };
+    const h = await harness({ 'lingua.channel': channel, 'lingua.own-url': source.ownUrl,
+      'lingua.native.state': JSON.stringify({ source, pending }) },
+    { updater: { list: async () => ({ bundles: [pending] }) } });
+    t.after(h.close);
+    h.window.localStorage.setItem('linguatrack.config.v1', JSON.stringify({ apiToken: 'saved-token' }));
+    h.window.LinguaNative.settings();
+    const dialog = h.window.document.querySelector('dialog');
+    const select = dialog.querySelector('select');
+    select.value = 'development'; select.dispatchEvent(new h.window.Event('change'));
+    const input = dialog.querySelector('input');
+    input.value = 'http://192.168.1.2:5173/'; input.dispatchEvent(new h.window.Event('input'));
+    dialog.querySelector('.native-button-primary').click(); await flush();
+    assert.equal(h.values.get('lingua.previous-channel'), channel);
+    assert.equal(h.values.get('lingua.channel'), 'development');
+    assert.deepEqual(JSON.parse(h.values.get('lingua.native.state')), { source, pending });
+    assert.equal(JSON.parse(h.window.localStorage.getItem('linguatrack.config.v1')).apiToken, 'saved-token');
+    assert.ok(!h.calls.includes('reset'));
+    // Native return restores just the channel. Initialization must keep the downloaded bundle.
+    const returned = await harness({ ...Object.fromEntries(h.values), 'lingua.channel': channel },
+      { updater: { current: async () => ({ bundle: { id: 'downloaded' } }), list: async () => ({ bundles: [pending] }) } });
+    t.after(returned.close);
+    assert.equal(returned.window.LinguaNative.channel, channel);
+    assert.ok(!returned.calls.includes('reset'));
+  });
+}
 test('legacy target migrates to own channel without a first-run popup', async (t) => {
   const h = await harness({ 'lingua.target': 'https://legacy.example/' }); t.after(h.close);
   assert.equal(h.values.get('lingua.channel'), 'own');

@@ -3,7 +3,7 @@ import { beforeEach, test } from 'node:test';
 import { BACKUP_FORMAT, BACKUP_VERSION, BACKUP_STORES, GLOBAL_KEYS,
   exportBackup, parseBackup, prepareImport, applyLocalData, importBackup } from '../web/js/backup.js';
 import { STORES, snapshot, writeBatch, put, get, del } from '../web/js/store.js';
-import { matchFiles, missingFiles, removeTrack, saveAnalysis } from '../web/js/library.js';
+import { matchFiles, missingFiles, removeTrack, saveAnalysis, transcriptBlob } from '../web/js/library.js';
 import { plainTrack } from '../web/js/subtitles.js';
 
 const empty = () => Object.fromEntries(BACKUP_STORES.map((name) => [name, []]));
@@ -295,7 +295,7 @@ test('new analysis persists subtitle bytes and deleting a track removes them wit
   const file = new File(['1\n00:00:00,000 --> 00:00:01,000\nHello.'], 'lesson.srt');
   const record = await saveAnalysis('lesson', fixture().stores.data[0].value, { transcriptName: file.name, transcriptFile: file });
   assert.equal(record.transcript.missing, false);
-  assert.equal(await (await get('transcripts', 'lesson')).text(), await file.text());
+  assert.equal(await (await transcriptBlob('lesson')).text(), await file.text());
   await removeTrack('lesson');
   assert.equal(await get('transcripts', 'lesson'), undefined);
   assert.equal(await (await get('transcripts', 'other')).text(), 'keep');

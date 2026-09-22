@@ -109,7 +109,7 @@ public class DevelopmentActivity extends Activity {
         menu.setElevation(dp(12)); menu.setVisibility(View.GONE);
         errorLabel = new TextView(this); errorLabel.setTextSize(14); errorLabel.setPadding(dp(8), dp(8), dp(8), dp(8)); errorLabel.setVisibility(View.GONE);
         reload = action("刷新网页", () -> { menu.setVisibility(View.GONE); if (web.getUrl() == null) loadPage(); else web.reload(); });
-        back = action("返回正式分支", this::returnToApp);
+        back = action("返回上一个分支", this::returnToApp);
         menu.addView(errorLabel); menu.addView(reload); menu.addView(back);
         root.addView(menu, new FrameLayout.LayoutParams(dp(208), -2));
         bubble = new Button(this); bubble.setText("‹/›"); bubble.setTextSize(18); bubble.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
@@ -177,10 +177,24 @@ public class DevelopmentActivity extends Activity {
     private void loadPage() { if (validUrl(url)) web.loadUrl(url); else showError("开发地址无效"); }
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
-        if (request == 100 && files != null) { files.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(result, data)); files = null; }
+        if (request == 100 && files != null) {
+            Uri[] selected = null;
+            if (result == RESULT_OK && data != null && data.getClipData() != null) {
+                android.content.ClipData clip = data.getClipData();
+                selected = new Uri[clip.getItemCount()];
+                for (int i = 0; i < selected.length; i++) selected[i] = clip.getItemAt(i).getUri();
+            } else selected = WebChromeClient.FileChooserParams.parseResult(result, data);
+            files.onReceiveValue(selected); files = null;
+        }
+    }
+    static void restorePreviousChannel(android.content.Context context) {
+        android.content.SharedPreferences prefs = context.getSharedPreferences("CapacitorStorage", MODE_PRIVATE);
+        String previous = prefs.getString("lingua.previous-channel", "stable");
+        if (!java.util.Arrays.asList("stable", "own", "preview").contains(previous)) previous = "stable";
+        prefs.edit().putString("lingua.channel", previous).apply();
     }
     private void returnToApp() {
-        getSharedPreferences("CapacitorStorage", MODE_PRIVATE).edit().putString("lingua.channel", "stable").apply();
+        restorePreviousChannel(this);
         startActivity(new Intent(this, MainActivity.class).setAction(Intent.ACTION_APPLICATION_PREFERENCES)); finish();
     }
     @Override public void onBackPressed() {

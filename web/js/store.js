@@ -247,9 +247,42 @@ export async function wipeTrack(track) {
 /** 删掉某条音频的全部数据 (音频 / 分析结果 / 元数据 / 缓存). */
 export async function wipeTrackAll(track) {
   if (!track) return 0;
-  let n = 0;
-  for (const store of STORES) n += await sweep(store, track);
-  return n;
+  let db;
+  if (!degraded) {
+    try { db = await open(); } catch { /* Existing memory-only sessions still support deletion. */ }
+  }
+  if (!db) {
+    let count = 0;
+    for (const store of STORES) count += await sweep(store, track);
+    return count;
+  }
+  // One transaction avoids a partially deleted library and waits for durable completion.
+  // Older stores can lack the track index or contain rows without its indexed field.
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORES, 'readwrite');
+    let count = 0;
+    transaction.oncomplete = () => resolve(count);
+    transaction.onabort = () => reject(transaction.error || new Error('删除未完成，请重试'));
+    for (const store of STORES) {
+      const os = transaction.objectStore(store);
+      const deleted = new Set();
+      const remove = (key) => {
+        if (deleted.has(key)) return;
+        deleted.add(key); os.delete(key); count++;
+      };
+      // Key-only reads avoid materializing large media Blobs just to delete them.
+      os.getKey(track).onsuccess = (event) => {
+        if (event.target.result !== undefined) remove(event.target.result);
+      };
+      const cursors = [os.openKeyCursor(IDBKeyRange.bound(track + '|', track + '|\uffff'))];
+      if (os.indexNames.contains('track')) cursors.push(os.index('track').openKeyCursor(IDBKeyRange.only(track)));
+      for (const request of cursors) request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) return;
+        remove(cursor.primaryKey); cursor.continue();
+      };
+    }
+  });
 }
 
 /** 每个 store 的条数, 设置页里显示. */

@@ -1,10 +1,10 @@
 import { el } from './util.js';
 import { openSheet } from './sheet.js';
-import { group, infoRow, navRow, sectionTitle, stepRow, switchRow, buttonBar, button } from './rows.js';
+import { group, sectionTitle, stepRow, switchRow, buttonBar, button } from './rows.js';
 import { settings, setGlobalVideo, fontSizes, applyFontSizes } from './settings.js';
 import { trackCfg, setVideoCfg, resetVideoCfg } from './trackcfg.js';
 import { VIDEO_DEFAULTS } from './video-config.js';
-import { previewSentence, openFontSheet } from './font-settings.js';
+import { previewSentence } from './font-settings.js';
 import { videoPreview, captionPreview } from './video-preview.js';
 import { sourceSpec } from './langs.js';
 import { config } from './config.js';
@@ -63,10 +63,7 @@ export function openVideoSheet({ track = null } = {}) {
       if (track) resetVideoCfg(LAYOUT_KEYS);
       else setGlobalVideo(Object.fromEntries(LAYOUT_KEYS.map((key) => [key, VIDEO_DEFAULTS[key]])));
       rows.forEach((row) => row.refresh()); preview.update();
-    } })), group(
-      navRow('视频字幕字号', '原文、注音、转写与译文', { onPick: () => openFontSheet({ track, video: true }) }),
-      navRow('系统字幕字号', '画中画示例', { value: get().captionSize + 'px', onPick: () => openCaptionSheet({ track }) }),
-    ), infoRow('字幕字号', '沿用各语言的字幕字号设置'));
+    } })));
   openSheet(track ? '视频布局 · 当前媒体' : '视频设置 · 全局', body,
     { cls: 'sheet-tall', onClose: () => preview.dispose() });
   preview.update();
