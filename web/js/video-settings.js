@@ -11,7 +11,7 @@ import { config } from './config.js';
 
 const LAYOUT_KEYS = ['subtitles', 'position', 'width', 'height', 'transparency', 'blur'];
 
-export function openCaptionSheet({ track = null } = {}) {
+export function openCaptionSheet({ track = null, onBack } = {}) {
   const body = el('div', 'font-pane');
   const spec = sourceSpec(track?.lang || config.importLang);
   const example = previewSentence(spec, null, ['text', 'tr']);
@@ -32,10 +32,10 @@ export function openCaptionSheet({ track = null } = {}) {
       row.refresh(); preview.update(get());
     } })));
   preview.update(get());
-  openSheet(track ? '系统字幕字号 · 当前媒体' : '系统字幕字号 · 全局', body);
+  openSheet(track ? '系统字幕字号 · 当前媒体' : '系统字幕字号 · 全局', body, { onBack });
 }
 
-export function openVideoSheet({ track = null } = {}) {
+export function openVideoSheet({ track = null, onBack } = {}) {
   const body = el('div', 'font-pane');
   const get = () => track ? trackCfg.video : settings.video;
   const spec = sourceSpec(track?.lang || config.importLang);
@@ -64,6 +64,6 @@ export function openVideoSheet({ track = null } = {}) {
       rows.forEach((row) => row.refresh()); preview.update();
     } })));
   openSheet(track ? '视频布局 · 当前媒体' : '视频设置 · 全局', body,
-    { cls: 'sheet-tall', onClose: () => preview.dispose() });
+    { cls: 'sheet-tall', onBack, onClose: () => preview.dispose() });
   preview.update();
 }

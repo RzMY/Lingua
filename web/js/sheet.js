@@ -16,6 +16,7 @@ let actsEl = null;
 let bodyEl = null;
 let footEl = null;
 let closeCb = null;
+let backCb = null;
 let returnFocus = null;
 let focusFrame = 0;
 // 打开状态用变量记, 不看 `.is-open` 类: 那个类是下一帧才加的, 后台标签页里
@@ -115,13 +116,14 @@ function dragToClose(handle) {
 /**
  * @param {string} title
  * @param {Node} body
- * @param {object|Function} [opts] `{onClose, footer, cls, actions:[Node]}`; 传函数等价于 onClose
+ * @param {object|Function} [opts] `{onClose, onBack, footer, cls, actions:[Node]}`; 传函数等价于 onClose
+ * onClose 负责清理; onBack 只在用户关闭时返回上一级, 被其他浮层替换时不调用。
  */
 export function openSheet(title, body, opts = {}) {
   ensureSheet();
   const opener = sheetEl.contains(document.activeElement) ? returnFocus : document.activeElement;
   const o = typeof opts === 'function' ? { onClose: opts } : (opts || {});
-  closeSheet();
+  dismissSheet(false);
   sheetEl.className = 'sheet' + (o.cls ? ' ' + o.cls : '');
   titleEl.textContent = title;
   bodyEl.textContent = '';
@@ -138,6 +140,7 @@ export function openSheet(title, body, opts = {}) {
   if (o.footer) footEl.append(o.footer);
 
   closeCb = o.onClose || null;
+  backCb = o.onBack || null;
   returnFocus = opener;
   openFlag = true;
   sheetEl.inert = false;
@@ -157,7 +160,15 @@ export function openSheet(title, body, opts = {}) {
 }
 
 export function closeSheet() {
+  dismissSheet(true);
+}
+
+function dismissSheet(back) {
   if (!sheetEl || !openFlag) return;
+  const cleanup = closeCb;
+  const restore = back ? backCb : null;
+  closeCb = null;
+  backCb = null;
   openFlag = false;
   cancelAnimationFrame(focusFrame);
   focusFrame = 0;
@@ -170,11 +181,8 @@ export function closeSheet() {
   document.documentElement.classList.remove('sheet-open');
   sheetEl.classList.remove('is-open');
   scrimEl.classList.remove('is-open');
-  if (closeCb) {
-    const cb = closeCb;
-    closeCb = null;
-    cb();
-  }
+  cleanup?.();
+  restore?.();
 }
 
 export const sheetOpen = () => openFlag;

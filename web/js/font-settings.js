@@ -81,7 +81,7 @@ export function previewSentence(spec, track, layers) {
  * 头部只留「关闭」那一枚 X: 二级菜单不需要第二个能离开本页的图标按钮
  * (以前那枚返回箭头在设置页里做的就是同一件事, 两个按钮挨在一起只会让人犹豫).
  */
-export function openFontSheet({ track = null, video = false, onClose } = {}) {
+export function openFontSheet({ track = null, video = false, onClose, onBack } = {}) {
   const list = sourceLangs();
   let code = list.find((spec) => spec.code === config.importLang)?.code || list[0].code;
   const body = el('div', 'font-pane');
@@ -164,7 +164,7 @@ export function openFontSheet({ track = null, video = false, onClose } = {}) {
     scheduleFit();
   });
   openSheet(track ? '字幕字号 · 当前媒体' : '字幕字号', body, {
-    cls: 'sheet-tall', onClose: () => {
+    cls: 'sheet-tall', onBack, onClose: () => {
       landscape?.dispose();
       observer.disconnect();
       cancelAnimationFrame(fitFrame);

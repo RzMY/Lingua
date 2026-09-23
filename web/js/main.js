@@ -743,7 +743,7 @@ function toggleChat() {
 
 /** Topbar and the immersive toolbar share one settings entry. */
 function openDisplay() {
-  if (track) openTrackSheet(track, { trStats: () => translator.stats(), video: videoPlayer,
+  if (track) openTrackSheet(track, { translator, video: videoPlayer,
     onSubtitles: () => { closeSheet(); showSetup(); } });
 }
 

@@ -23,7 +23,11 @@ export function videoPreview(sentence, getConfig) {
     scene.style.transform = `scale(${scale})`;
     frame.style.height = height * scale + 'px';
   };
-  const observer = new ResizeObserver(fit);
+  let fitFrame = 0;
+  const observer = new ResizeObserver(() => {
+    // Updating the observed frame's height inside its callback can loop in WebKit.
+    if (!fitFrame) fitFrame = requestAnimationFrame(() => { fitFrame = 0; fit(); });
+  });
   observer.observe(frame);
   return { element: frame, update() {
     const cfg = getConfig();
@@ -33,7 +37,7 @@ export function videoPreview(sentence, getConfig) {
     overlay.style.background = `rgb(10 14 9 / ${1 - cfg.transparency / 100})`;
     overlay.style.backdropFilter = overlay.style.webkitBackdropFilter = `blur(${cfg.blur}px)`;
     fit();
-  }, dispose() { observer.disconnect(); } };
+  }, dispose() { observer.disconnect(); cancelAnimationFrame(fitFrame); } };
 }
 
 export function captionPreview(text, translation) {

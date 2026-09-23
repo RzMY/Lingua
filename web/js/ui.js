@@ -45,12 +45,13 @@ function legendCard(track) {
 /**
  * 当前音频的配置入口.
  * @param {object} track
- * @param {object} [o] `{trStats}` —— 翻译进度的读取回调
+ * @param {object} [o] `{translator, video, onSubtitles}`
  */
-export function openTrackSheet(track, { trStats, video, onSubtitles } = {}) {
+export function openTrackSheet(track, { translator, video, onSubtitles } = {}) {
+  const onBack = () => openTrackSheet(track, { translator, video, onSubtitles });
   const body = document.createDocumentFragment();
   if (video) {
-    body.append(group(navRow('视频字幕布局', '', { onPick: () => openVideoSheet({ track }) })));
+    body.append(group(navRow('视频字幕布局', '', { onPick: () => openVideoSheet({ track, onBack }) })));
   }
   const langRow = segRow('译文语言', '',
     () => trackCfg.lang, (v) => setTrackCfg('lang', v),
@@ -68,16 +69,14 @@ export function openTrackSheet(track, { trStats, video, onSubtitles } = {}) {
     if (key === 'tr') rows.push(langRow);
   }
 
-  rows.push(navRow('字幕字号', '', { onPick: () => openFontSheet({ track, video: !!video }) }));
-  rows.push(navRow('系统字幕字号', '', { value: trackCfg.video.captionSize + ' px', onPick: () => openCaptionSheet({ track }) }));
+  rows.push(navRow('字幕字号', '', { onPick: () => openFontSheet({ track, video: !!video, onBack }) }));
+  rows.push(navRow('系统字幕字号', '', { value: trackCfg.video.captionSize + ' px', onPick: () => openCaptionSheet({ track, onBack }) }));
   if (onSubtitles) rows.push(navRow('字幕管理', '', { onPick: onSubtitles }));
   body.append(sectionTitle(video ? '当前视频' : '当前音频'), group(...rows));
   body.append(group(infoRow('源语言', track.langName)));
 
-  if (trStats) {
-    const st = trStats();
-    body.append(group(infoRow('翻译进度', st.total ? `${st.done} / ${st.total} 句` : '—')));
-  }
+  const progress = translator ? infoRow('翻译进度', '—') : null;
+  if (progress) body.append(group(progress));
 
   body.append(
     sectionTitle('全局'),
@@ -87,7 +86,13 @@ export function openTrackSheet(track, { trStats, video, onSubtitles } = {}) {
   );
   const legend = legendCard(track);
   if (legend) body.append(sectionTitle('图例'), legend);
-  openSheet(video ? '视频设置' : '音频配置', body, { cls: 'sheet-tall' });
+  let unsubscribe;
+  openSheet(video ? '视频设置' : '音频配置', body, {
+    cls: 'sheet-tall', onClose: () => unsubscribe?.(),
+  });
+  if (progress) unsubscribe = translator.onProgress((done, total) => {
+    progress.setValue(total ? `${done} / ${total} 句` : '—');
+  });
 }
 
 /** 倍速; 选中项由最接近的档位决定 (可能被键盘微调过). */

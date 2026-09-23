@@ -65,12 +65,18 @@ export function createTranslator(track, hooks = {}) {
   const queued = new Set();       // hot ∪ cold, 查重用
   const tries = new Map();        // i -> 失败次数
   const done = new Set();         // 已有译文的句子
+  const progressListeners = new Set();
   let running = 0;
   let sweeping = false;
   let warned = false;
 
   let buf = new Map();
   let flushing = false;
+
+  function reportProgress() {
+    hooks.onProgress?.(done.size, total);
+    for (const listener of progressListeners) listener(done.size, total);
+  }
 
   function flushSoon() {
     if (flushing) return;
@@ -81,7 +87,7 @@ export function createTranslator(track, hooks = {}) {
       const batch = buf;
       buf = new Map();
       if (hooks.onApply) hooks.onApply(batch);
-      if (hooks.onProgress) hooks.onProgress(done.size, total);
+      reportProgress();
     });
   }
 
@@ -215,6 +221,7 @@ export function createTranslator(track, hooks = {}) {
     tries.clear();
     done.clear();
     warned = false;
+    reportProgress();
   }
 
   async function sweep() {
@@ -239,6 +246,13 @@ export function createTranslator(track, hooks = {}) {
     get lang() { return lang; },
     get enabled() { return enabled; },
     stats: () => ({ done: done.size, total }),
+
+    /** 订阅时立即给出当前进度; 关闭设置时取消订阅。 */
+    onProgress(listener) {
+      progressListeners.add(listener);
+      listener(done.size, total);
+      return () => progressListeners.delete(listener);
+    },
 
     /** 开关 + 目标语言一起设; 关的时候中断所有在飞请求. */
     setEnabled(on, nextLang) {

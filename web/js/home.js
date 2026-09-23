@@ -371,7 +371,7 @@ function ensureWorkbench() {
     if (!experimentsEnabled()) { root.replaceChildren(); return; }
     root.replaceChildren();
     workbench = mountWorkbench(root, { onImport: refresh });
-    if (currentView === 'viewWorkbench') enterView(root);
+    // go() owns the horizontal entrance, including the first lazy mount.
   }).catch(() => {
     root.replaceChildren(el('p', 'pane-note', '工作台加载失败，请重试。'),
       button('重新加载', { onPick: ensureWorkbench }));
