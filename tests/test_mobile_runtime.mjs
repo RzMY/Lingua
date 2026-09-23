@@ -219,7 +219,8 @@ test('offline startup is silent while manual checks expose a recoverable error',
   h.window.LinguaNative.settings();
   assert.equal(h.window.document.querySelector('[data-native-status]').textContent, '');
   await h.window.LinguaNative.checkUpdates();
-  assert.match(h.window.document.querySelector('#native-update').textContent, /暂时无法检查更新.*offline/);
+  assert.match(h.window.document.querySelector('#native-update').textContent, /无法检查更新.*检查网络.*重试/);
+  assert.doesNotMatch(h.window.document.querySelector('#native-update').textContent, /offline/);
   assert.ok(!h.calls.includes('reset'));
 });
 test('changing channel clears pending and implicit backend token while retaining user model configuration', async (t) => {

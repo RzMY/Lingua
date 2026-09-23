@@ -35,6 +35,18 @@
   padding: 24px;
 }
 
+.reader-state:has(> .btn) {
+  color: var(--ink-3);
+}
+
+.reader-state > .btn {
+  justify-self: center;
+  min-width: 180px;
+  min-height: 46px;
+  justify-content: center;
+  border-radius: 14px;
+}
+
 /* Raw subtitles keep their original spacing; fragments are only for wrapping. */
 html[data-subtitle-mode="plain"] .s-words { column-gap: 0; }
 html[data-subtitle-mode="plain"] .w { padding-inline: 0; }

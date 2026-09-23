@@ -15,6 +15,7 @@
  */
 
 import { config, endpointOf, setConfig } from './config.js';
+import { errorMessage } from './errors.js';
 
 const FENCE = /^\s*```(?:json)?\s*|\s*```\s*$/gi;
 const CAP_MAX = 8192;                    // 自动加倍 max_tokens 的天花板
@@ -34,24 +35,55 @@ const contentOf = (data) => {
   const msg = choice && choice.message;
   return (msg && msg.content) || '';
 };
-const msgOf = (err) => (err && err.message) || '请求失败';
+const msgOf = (err) => errorMessage(err, '模型请求失败，请重试');
+
+function responseError(status) {
+  const messages = {
+    400: '模型请求参数不受支持，请检查模型、JSON 模式和调用参数',
+    401: '模型身份验证失败，请在「设置 → 大模型」检查 API Key',
+    403: '模型接口拒绝访问，请检查模型使用权限',
+    404: '模型或接口不存在，请在「设置 → 大模型」检查地址和模型名',
+    408: '模型请求超时，请稍后重试',
+    413: '模型请求内容过长，请减少每批句数或上下文句数',
+    422: '模型请求参数无效，请检查调用参数',
+    429: '模型请求受限，请检查可用额度或稍后重试',
+  };
+  return new LLMError(messages[status] || `模型服务暂时不可用（HTTP ${status}），请稍后重试`, status);
+}
+
+async function responseJSON(resp) {
+  try { return await resp.json(); }
+  catch (err) {
+    if (err?.name === 'AbortError') throw err;
+    throw new LLMError('模型返回格式异常，请检查接口配置后重试', 422);
+  }
+}
+
+function requireContent(text) {
+  if (typeof text !== 'string' || !text.trim()) {
+    throw new LLMError('模型未返回内容，请重试或更换模型', 422);
+  }
+  return text;
+}
 
 function ensureReady() {
-  if (!String(config.baseUrl).trim()) throw new LLMError('还没配置大模型地址: 设置 → 大模型');
-  if (!String(config.model).trim()) throw new LLMError('还没配置模型名: 设置 → 大模型');
+  if (!String(config.baseUrl).trim()) throw new LLMError('请在「设置 → 大模型」填写接口地址');
+  if (!String(config.model).trim()) throw new LLMError('请在「设置 → 大模型」填写模型名');
 }
 
 /** 把外部 signal 和超时并成一个 signal. */
 function linkAbort(outer, ms) {
   const ctl = new AbortController();
+  let timedOut = false;
   const onAbort = () => ctl.abort();
   if (outer) {
     if (outer.aborted) ctl.abort();
     else outer.addEventListener('abort', onAbort, { once: true });
   }
-  const timer = ms > 0 ? setTimeout(() => ctl.abort(), ms) : 0;
+  const timer = ms > 0 ? setTimeout(() => { timedOut = true; ctl.abort(); }, ms) : 0;
   return {
     signal: ctl.signal,
+    get timedOut() { return timedOut; },
     clear() {
       if (timer) clearTimeout(timer);
       if (outer) outer.removeEventListener('abort', onAbort);
@@ -74,20 +106,18 @@ async function send(body, signal) {
     return await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body), signal });
   } catch (err) {
     if (err && err.name === 'AbortError') throw err;
-    throw new LLMError(`连不上模型接口: ${msgOf(err)}${hintFor(endpoint)}`);
+    throw new LLMError(hintFor(endpoint));
   }
 }
 
 /** 按页面与模型地址的协议差异, 给一句具体的排查建议. */
 function hintFor(endpoint) {
   let url = null;
-  try { url = new URL(endpoint); } catch { return ' (地址填错了?)'; }
-  if (location.protocol === 'https:' && url.protocol === 'http:') {
-    return ' —— 本页是 https, 浏览器会拦掉 http 的模型地址 (混合内容);'
-      + ' 请给模型服务配 https, 或改用 http 打开本站';
+  try { url = new URL(endpoint); } catch { return '模型接口地址无效，请在「设置 → 大模型」检查地址'; }
+  if (globalThis.location?.protocol === 'https:' && url.protocol === 'http:') {
+    return '当前页面无法访问 HTTP 模型接口，请使用 HTTPS 接口地址';
   }
-  return ' —— 浏览器直连模型接口需要对方允许跨源 (CORS);'
-    + ' 请在模型服务/网关上放开本页的来源 ' + location.origin;
+  return '无法连接模型接口，请检查网络、接口地址及服务的跨域访问（CORS）设置';
 }
 
 /**
@@ -117,13 +147,11 @@ export async function chat({
       if (resp.status === 400 && body.response_format) {
         delete body.response_format;
         setConfig({ jsonMode: 0 });
+        attempt--;
         continue;
       }
-      if (!resp.ok) {
-        const text = (await resp.text().catch(() => '')).slice(0, 300);
-        throw new LLMError(`模型接口 ${resp.status}: ${text || '无响应体'}`, resp.status);
-      }
-      const data = await resp.json();
+      if (!resp.ok) throw responseError(resp.status);
+      const data = await responseJSON(resp);
       const text = contentOf(data);
       const choice = choiceOf(data);
       // 推理型模型会先写 reasoning_content; 上限太小就只剩思考、正文为空。
@@ -136,12 +164,12 @@ export async function chat({
           attempt--;
           continue;
         }
-        throw new LLMError('输出被 max_tokens 截断, 额度全花在思考上了: 把「单条最多输出」调大些', 422);
+        throw new LLMError('模型输出达到上限，请在「设置 → 调用参数」提高输出上限', 422);
       }
-      return text;
+      return requireContent(text);
     } catch (err) {
       if (signal && signal.aborted) throw new DOMException('aborted', 'AbortError');
-      last = err;
+      last = link.timedOut ? new LLMError('模型请求超时，请重试或在「设置 → 调用参数」延长超时') : err;
       // 4xx 基本是配置/额度问题, 重试没意义
       if (err instanceof LLMError && err.status >= 400 && err.status < 500) break;
       if (attempt < retries) await sleep(600 * 2 ** attempt);
@@ -167,7 +195,7 @@ export async function chatJSON(opts) {
   const text = await chat({ ...opts, json: true });
   const data = parseLoose(text);
   if (!data || typeof data !== 'object') {
-    throw new LLMError('模型没有返回可解析的 JSON: ' + String(text || '').slice(0, 80));
+    throw new LLMError('模型返回的数据格式无效，请重试或更换支持 JSON 输出的模型');
   }
   return data;
 }
@@ -184,20 +212,21 @@ export async function chatStream({ messages, onDelta, temperature, signal } = {}
   let out = '';
   try {
     const resp = await send(body, link.signal);
-    if (!resp.ok) {
-      const text = (await resp.text().catch(() => '')).slice(0, 300);
-      throw new LLMError(`模型接口 ${resp.status}: ${text || '无响应体'}`, resp.status);
-    }
+    if (!resp.ok) throw responseError(resp.status);
     const ctype = resp.headers.get('content-type') || '';
     // 有的网关会忽略 stream:true, 直接回整包 JSON
-    if (!resp.body || ctype.includes('application/json')) {
-      const data = await resp.json().catch(() => null);
-      out = data ? contentOf(data) : '';
-      if (out && onDelta) onDelta(out, out);
+    if (!resp.body || !ctype.includes('text/event-stream')) {
+      const data = await responseJSON(resp);
+      out = requireContent(data ? contentOf(data) : '');
+      if (onDelta) onDelta(out, out);
       return out;
     }
     out = await pump(resp.body.getReader(), onDelta);
-    return out;
+    return requireContent(out);
+  } catch (err) {
+    if (signal?.aborted) throw new DOMException('已取消', 'AbortError');
+    if (link.timedOut) throw new LLMError('讲解请求超时，请重试或在「设置 → 调用参数」延长超时');
+    throw err instanceof LLMError ? err : new LLMError(msgOf(err));
   } finally {
     link.clear();
   }
@@ -210,8 +239,8 @@ async function pump(reader, onDelta) {
   let out = '';
   for (;;) {
     const { value, done } = await reader.read();
-    if (done) break;
-    buf += dec.decode(value, { stream: true });
+    buf += done ? dec.decode() : dec.decode(value, { stream: true });
+    if (done && buf && !buf.endsWith('\n')) buf += '\n';
     let cut;
     while ((cut = buf.indexOf('\n')) >= 0) {
       const line = buf.slice(0, cut).trim();
@@ -221,13 +250,15 @@ async function pump(reader, onDelta) {
       if (!payload || payload === '[DONE]') continue;
       let chunk = null;
       try { chunk = JSON.parse(payload); } catch { continue; }
-      const choice = chunk.choices && chunk.choices[0];
+      if (chunk?.error) throw new LLMError('讲解生成中断，请重试');
+      const choice = chunk?.choices?.[0];
       const piece = (choice && ((choice.delta && choice.delta.content) ||
         (choice.message && choice.message.content))) || '';
-      if (!piece) continue;
+      if (typeof piece !== 'string' || !piece) continue;
       out += piece;
       if (onDelta) onDelta(piece, out);
     }
+    if (done) break;
   }
   return out;
 }
@@ -242,7 +273,7 @@ export async function probe(signal) {
     // 512 是给推理型模型留的余量: 32 那种小上限会被思考吃光
     json: true, retries: 0, maxTokens: 512, signal,
   });
-  return String(text || '').trim().slice(0, 120) || '(空响应)';
+  return text.trim().slice(0, 120);
 }
 
 /** 同 key 的并发请求共用一个 Promise —— 缓存之外的第二道去重. */
@@ -254,4 +285,3 @@ export function once(key, factory) {
   inflight.set(key, task);
   return task;
 }
-

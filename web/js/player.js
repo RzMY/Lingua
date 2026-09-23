@@ -1,6 +1,7 @@
 /** 播放控制: HTMLMediaElement、进度条拖拽、快捷键、播放进度续播. */
 
 import { clamp, fmtTime, toast } from './util.js';
+import { errorMessage } from './errors.js';
 
 const SAVE_EVERY = 5000;   // ms: 播放中最多每 5 秒写一次进度
 const RESUME_GAP = 3;      // s: 距开头 / 结尾这么近就不值得续播
@@ -85,8 +86,7 @@ export function setupPlayer(ctx) {
   });
   audio.addEventListener('error', () => {
     if (!audio.src) return;                 // 还没挂上音频, 不是错误
-    toast(audio.nativeAudio ? (audio.error?.message || '原生媒体播放失败')
-      : '媒体解码失败: 浏览器不支持这个音视频格式，请换个文件重新导入');
+    toast(errorMessage(audio.error, '媒体加载失败，请检查文件格式或重新导入'));
   });
 
   const toggle = () => {
@@ -152,7 +152,7 @@ export function setupMediaSession({ audio, engine }) {
     } catch (err) {
       if (request !== playRequest || source !== audio.src) return;
       sync();
-      if (err?.name !== 'AbortError') toast(audio.nativeAudio && err?.message ? `播放失败：${err.message}` : '播放失败，请再点播放重试');
+      if (err?.name !== 'AbortError') toast(errorMessage(err, '播放失败，请重试'));
     }
   };
   const pause = () => {
@@ -266,6 +266,7 @@ function setupSeek({ audio, engine, dom }) {
 
 function setupKeys({ engine, dom }, toggle) {
   window.addEventListener('keydown', (e) => {
+    if (e.defaultPrevented) return;
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const tag = document.activeElement && document.activeElement.tagName;
     if (e.key !== 'Escape' && (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT')) return;

@@ -52,7 +52,7 @@ const fixture = process.argv[4];
     assert.match(await page.locator('.card-video .card-in').evaluate((el) => getComputedStyle(el).backgroundImage), /gradient/);
     await page.screenshot({ path: path.resolve('.cache/video-player-qa/home.png') });
     await page.getByRole('button', { name: 'Video lesson · 打开', exact: true }).click();
-    await page.getByRole('button', { name: '导入字幕（可选）', exact: true }).click();
+    await page.getByRole('button', { name: '导入字幕', exact: true }).click();
     await page.locator('#setup input[type=file]').setInputFiles({ name: 'lesson.srt', mimeType: 'text/plain',
       buffer: Buffer.from('1\n00:00:00,000 --> 00:00:04,000\nWelcome to the video lesson.\n') });
     await page.getByRole('button', { name: '开始分析', exact: true }).click();
@@ -215,7 +215,7 @@ const fixture = process.argv[4];
       }
       return state;
     });
-    assert.deepEqual(refused, { mini: 0, toast: '这个宿主没有系统小窗接口', inStage: true, pressed: 'false' });
+    assert.deepEqual(refused, { mini: 0, toast: '当前环境不支持画中画', inStage: true, pressed: 'false' });
     if (!trBefore) await page.evaluate(async () => (await import('/js/trackcfg.js')).setTrackCfg('tr', 0));
     await page.locator('#btnPlay').click();
     await page.waitForFunction(() => document.querySelector('#video').currentTime > 0.3);

@@ -13,7 +13,9 @@ export const PREVIOUS_CHANNEL_KEY = 'lingua.previous-channel';
 export const DEFAULT_SOURCE = { channel: 'stable', ownUrl: '', developmentUrl: '' };
 
 export function normalizeTarget(raw) {
-  const url = new URL(String(raw || '').trim());
+  let url;
+  try { url = new URL(String(raw || '').trim()); }
+  catch { throw Error('请输入有效的 HTTPS 站点地址'); }
   if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) {
     throw Error('自有分支需要 HTTPS 站点地址，不含账号、查询参数或锚点');
   }
@@ -23,7 +25,9 @@ export function normalizeTarget(raw) {
 }
 
 export function developmentUrl(raw) {
-  const url = new URL(String(raw || '').trim());
+  let url;
+  try { url = new URL(String(raw || '').trim()); }
+  catch { throw Error('请输入有效的 HTTP 或 HTTPS 调试地址'); }
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
     throw Error('请输入 HTTP 或 HTTPS 调试地址');
   }

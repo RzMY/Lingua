@@ -25,7 +25,7 @@ export function openCaptionSheet({ track = null } = {}) {
     preview.update(get());
   };
   const row = stepRow('系统字幕字号', '', get, set, { min: 12, max: 36, step: 1, unit: 'px' });
-  body.append(preview.element, el('p', 'pane-note', '原文与译文实时预览；实际小窗会随系统窗口尺寸缩放。'),
+  body.append(preview.element,
     group(row), buttonBar(button(track ? '恢复全局字号' : '恢复默认字号', { onPick: () => {
       if (track) resetVideoCfg(['captionSize']);
       else setGlobalVideo({ captionSize: VIDEO_DEFAULTS.captionSize });
@@ -57,7 +57,6 @@ export function openVideoSheet({ track = null } = {}) {
     control('字幕背景模糊', 'blur', 0, 30, 'px', 1),
   ];
   body.append(preview.element,
-    el('p', 'pane-note', track ? '仅调整当前媒体；未修改的项目继承全局设置。' : '作为所有媒体的默认值，单条媒体可独立调整。'),
     sectionTitle('横屏字幕'), group(...rows),
     buttonBar(button(track ? '恢复全局字幕布局' : '恢复默认字幕布局', { onPick: () => {
       if (track) resetVideoCfg(LAYOUT_KEYS);

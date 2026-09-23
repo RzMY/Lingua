@@ -44,7 +44,7 @@ export async function encodeAsrMp3(decoded, name, { signal, onStage = () => {} }
   const writer = await mp3Writer(name, decoded.numberOfChannels, signal);
   try {
     for (let start = 0; start < decoded.length; start += ASR_RATE * 12) {
-      onStage(`正在压制 MP3… ${Math.round(start / decoded.length * 100)}%`);
+      onStage(`正在生成 MP3… ${Math.round(start / decoded.length * 100)}%`);
       await writer.write(Array.from({ length: decoded.numberOfChannels }, (_, i) =>
         decoded.getChannelData(i).subarray(start, Math.min(start + ASR_RATE * 12, decoded.length))));
     }

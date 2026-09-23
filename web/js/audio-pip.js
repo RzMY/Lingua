@@ -2,6 +2,7 @@
 import { nativeApp } from './native.js';
 import { setupNativeCaptionPip } from './native-caption-pip.js';
 import { toast } from './util.js';
+import { errorMessage } from './errors.js';
 
 export function setupAudioPip({ media, engine, app, beforeOpen, releaseLandscape, onStateChange }) {
   const getBridge = () => nativeApp()?.platform === 'ios' ? nativeApp().captionPip : null;
@@ -35,7 +36,7 @@ export function setupAudioPip({ media, engine, app, beforeOpen, releaseLandscape
         if (!(result?.then ? await result : result)) return;
       }
       await nativePip.open();
-    } catch (error) { toast(error?.message || '字幕小窗启动失败，请重试'); }
+    } catch (error) { toast(errorMessage(error, '字幕小窗启动失败，请重试')); }
     finally { opening = false; }
   }
   return { toggle, close: () => nativePip?.close() ?? Promise.resolve(true),

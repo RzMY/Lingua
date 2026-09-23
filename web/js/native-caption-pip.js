@@ -70,7 +70,7 @@ export function setupNativeCaptionPip({ bridge, media, engine, onStateChange }) 
     } catch (error) {
       if (session !== current || closing || disposed) return;
       // Native failure may arrive before its stop animation finishes. Wait for cleanup
-      // before offering a retry, and keep the original stage/error visible to the user.
+      // before offering a retry. The UI maps the preserved error code to actionable guidance.
       closing = true;
       onStateChange?.();
       try {
@@ -96,7 +96,7 @@ export function setupNativeCaptionPip({ bridge, media, engine, onStateChange }) 
       if (session === current) clear(); return true;
     } catch (error) {
       if (session === current) { closing = false; onStateChange?.(); }
-      toast(error?.message || '请使用系统小窗的关闭按钮退出'); return false;
+      toast('无法关闭字幕小窗，请使用系统小窗的关闭按钮'); return false;
     }
   }
 

@@ -77,7 +77,8 @@ const base = process.argv[3] || 'http://127.0.0.1:5187';
       const sizes = await page.locator('.card-wm').evaluateAll((nodes) => nodes.map((n) => {
         const r = n.getBoundingClientRect(); return [r.width, r.height];
       }));
-      assert.deepEqual(sizes, [[96, 96], [96, 96]]);
+      assert.equal(sizes.length, 2);
+      assert.ok(sizes.flat().every((size) => Math.abs(size - 96) < 0.01));
       await page.screenshot({ path: path.join(shots, type.name() + '-home.png') });
       const replacement = await page.evaluate(async (id) => {
         const { attachFiles, audioBlob, getTrack } = await import('/js/library.js');

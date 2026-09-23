@@ -91,7 +91,7 @@ test('ready media without a PiP interface still reports unsupported; media error
   const h = harness(t);
   h.video.webkitSetPresentationMode = undefined;
   await h.player.pip.toggle();
-  assert.match(h.doc.getElementById('toast').textContent, /没有系统小窗接口/);
+  assert.match(h.doc.getElementById('toast').textContent, /不支持画中画/);
   Object.defineProperty(h.video, 'error', { value: { code: 3 } });
   await h.player.pip.toggle();
   assert.match(h.doc.getElementById('toast').textContent, /视频加载失败/);

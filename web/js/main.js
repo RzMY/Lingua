@@ -37,7 +37,8 @@ import { nativeApp, nativeReady } from './native.js';
 import { sourceLangs } from './langs.js';
 import { createExplain, openSpeedSheet, openTrackSheet } from './ui.js';
 import { closeSheet, sheetOpen } from './sheet.js';
-import { analyze, ApiError } from './api.js';
+import { analyze } from './api.js';
+import { errorMessage } from './errors.js';
 import { audioBlob, audioUrl, getTrack, patchTrack, saveAnalysis, setDuration, setPosition, trackData,
   transcriptBlob, savePreparedTranscript, SUB_EXT, SUB_RE } from './library.js';
 import { plainTrack } from './subtitles.js';
@@ -156,10 +157,8 @@ function showSetup() {
   const emblem = el('span', 'setup-emblem');
   emblem.append(icon('i-doc'));
   const intro = el('div');
-  intro.append(el('span', 'setup-kicker', '让每一句，都看得懂'), el('h1', null, '导入字幕'));
+  intro.append(el('h1', null, '导入字幕'));
   head.append(emblem, intro);
-  const subtitle = el('p', 'setup-intro', '为这段媒体添加文字，跟着声音读下去。');
-  head.append(subtitle);
   box.append(head);
 
   const fields = el('fieldset', 'setup-fields');
@@ -175,14 +174,14 @@ function showSetup() {
   const analysisOptions = el('details', 'setup-options');
   const summary = el('summary');
   const summaryCopy = el('span');
-  summaryCopy.append(el('b', null, '分析选项'), el('span', null, '拆句、分词与时间戳'));
+  summaryCopy.append(el('b', null, '分析选项'));
   summary.append(icon('i-tune', 'ic ic-sm'), summaryCopy, icon('i-chev-d', 'ic ic-sm setup-chevron'));
   analysisOptions.append(summary, group(
-    switchRow('自动拆句', '一段字幕里有多句时按标点切开',
+    switchRow('自动拆句', '按标点拆分字幕',
       () => (flags.split ? 1 : 0), (v) => { flags.split = !!v; }),
-    switchRow('合并分词', '把被拆开的缩写与连字符词合回一个词',
+    switchRow('合并分词', '合并缩写与连字符词',
       () => (flags.merge ? 1 : 0), (v) => { flags.merge = !!v; }),
-    switchRow('估算词级时间戳', '字幕只有句级时间时, 按字数摊给每个词',
+    switchRow('估算词级时间戳', '按字数分配时间，可能与实际发音不同步',
       () => (flags.estimate ? 1 : 0), (v) => { flags.estimate = !!v; }),
   ));
 
@@ -193,7 +192,7 @@ function showSetup() {
   if (!isIOS()) input.accept = SUB_EXT.map((e) => '.' + e).join(',');
   input.hidden = true;
   input.setAttribute('aria-label', '选择字幕文件');
-  const name = el('b', 'setup-file', '点击选择或拖入字幕');
+  const name = el('b', 'setup-file', '选择或拖入字幕文件');
   const fileHint = el('span', 'setup-file-hint', '支持 SRT、VTT、WebVTT、JSON');
   const fileCopy = el('span', 'setup-file-copy');
   fileCopy.append(name, fileHint);
@@ -210,7 +209,7 @@ function showSetup() {
   const languageLabel = el('div', 'setup-section');
   languageLabel.append(el('span', 'setup-step', '02'), el('h2', null, '设置字幕语言'));
   languageCard.append(languageLabel, group(
-    segRow('源语言', '选择字幕原文的语言', () => lang, (v) => { lang = v; },
+    segRow('源语言', '', () => lang, (v) => { lang = v; },
       sourceLangs().map((l) => [l.code, l.name]), { wrap: true })), analysisOptions);
   fields.append(languageCard);
 
@@ -226,12 +225,12 @@ function showSetup() {
   go.disabled = true;
   const only = button('只导入字幕', { glyph: 'i-doc', onPick: () => start(false) });
   only.disabled = true;
-  const back = button(record.transcript ? '返回播放' : '跳过，直接播放',
+  const back = button('返回播放',
     { glyph: 'i-play', onPick: () => openTrack() });
   back.classList.add('setup-back');
   const bottom = buttonBar(only, go);
   bottom.classList.add('setup-actions');
-  fields.append(bottom, el('p', 'setup-help', '只导入即可阅读原文；分析后解锁分词、注音等学习功能。'));
+  fields.append(bottom);
   box.append(bar, log, back);
   dom.scroller.scrollTop = 0;
   enterView(box);
@@ -240,12 +239,12 @@ function showSetup() {
   function selectFile(picked, saved = false) {
     if (!picked || busy) return;
     if (!SUB_RE.test(picked.name)) {
-      toast('只认 ' + SUB_EXT.join(' / ') + ' 文件');
+      toast('请选择 SRT、VTT、WebVTT 或 JSON 字幕文件');
       return;
     }
     file = picked;
     name.textContent = file.name;
-    fileHint.textContent = `${fmtSize(file.size)} · ${saved ? '已保存的字幕' : '已选择'} · 点击更换`;
+    fileHint.textContent = `${fmtSize(file.size)}${saved ? ' · 已保存' : ''}`;
     choose.classList.add('has-file');
     choose.setAttribute('aria-label', '更换字幕文件：' + file.name);
     choose.lastElementChild.querySelector('use').setAttribute('href', '#i-check');
@@ -295,7 +294,7 @@ function showSetup() {
     bar.hidden = false;
     bar.classList.add('is-busy');
     log.textContent = '';
-    write('· 正在' + (withAnalysis ? '分析 ' : '导入 ') + file.name + ' …');
+    write(withAnalysis ? '正在分析字幕…' : '正在导入字幕…');
     try {
       if (!withAnalysis) {
         record = await savePreparedTranscript(record.id, file, lang);
@@ -313,24 +312,24 @@ function showSetup() {
         merge: flags.merge,
         estimate: flags.estimate,
       });
-      if (resp.log?.length) write(resp.log.join('\n'));
-      if (!resp.track || !Array.isArray(resp.track.sentences)) throw new Error('后端没有返回分析结果');
+      if (!resp.track || !Array.isArray(resp.track.sentences)) throw new Error('未收到字幕分析结果，请重试');
       record = await saveAnalysis(record.id, resp.track, { transcriptName: file.name, transcriptFile: file });
       updateFileState();
-      write('✓ 分析完成, 正在载入…');
+      write('分析完成，正在加载…');
       await openTrack();
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : (err && err.message) || '分析失败';
-      write('! ' + msg);
+      const msg = errorMessage(err, withAnalysis ? '字幕分析失败，请重试' : '字幕导入失败，请重试');
+      write(msg);
       // 之前已经分析过的就别把状态打回失败, 用户还能「先看现有内容」
       if (!['ready', 'subtitles'].includes(record.status)) {
-        record = (await patchTrack(record.id, { status: 'failed', error: msg })) || record;
+        try { record = (await patchTrack(record.id, { status: 'failed', error: msg })) || record; }
+        catch (saveError) { toast(errorMessage(saveError, '无法保存分析状态，请重试')); }
       }
+    } finally {
       go.disabled = false;
       choose.disabled = false;
       only.disabled = false;
       back.disabled = false;
-    } finally {
       busy = false;
       fields.disabled = false;
       box.removeAttribute('aria-busy');
@@ -411,7 +410,7 @@ async function load(id, forceSetup) {
   record = await getTrack(id);
   if (!record) {
     dom.player.hidden = true;
-    showState('找不到这条媒体', '它可能已经被删掉了; 回首页重新导入一次');
+    showState('媒体不存在', '请返回首页选择或重新导入');
     return false;
   }
   const isVideo = mediaKind(record.audio) === 'video';
@@ -450,7 +449,7 @@ async function load(id, forceSetup) {
   videoPlayer?.apply();
   await attachAudio(record.id);
   if (forceSetup) {
-    if (record.status === 'failed' && record.error) toast('上次分析失败: ' + record.error);
+    if (record.status === 'failed' && record.error) toast(errorMessage(record.error, '上次字幕分析失败，请重试'));
     showSetup();
     return false;
   }
@@ -473,7 +472,7 @@ async function openTrack() {
         record = await savePreparedTranscript(record.id,
           new File([saved], record.transcript?.name || 'transcript.json'), record.lang);
         data = await trackData(record.id);
-      } catch (err) { toast(err.message); }
+      } catch (err) { toast(errorMessage(err, '字幕加载失败，请重新导入')); }
     }
     data ||= plainTrack(record);
   }
@@ -512,7 +511,7 @@ function apply(next) {
   if (translator) translator.stop();
   translator = createTranslator(next, {
     onApply: applyTranslations,
-    onError: (msg) => toast('翻译: ' + msg),
+    onError: (msg) => toast('翻译失败：' + msg),
   });
 
   dom.timeNow.textContent = '0:00';
@@ -530,8 +529,8 @@ function apply(next) {
   player.setTrack({ id: next.id, title, position: record?.position });
   if (next.S) clearState();
   else {
-    showState('可以直接播放', '字幕为可选项，可在设置中随时导入');
-    dom.readerState.append(button('导入字幕（可选）', { onPick: showSetup }));
+    showState('');
+    dom.readerState.append(button('导入字幕', { main: true, glyph: 'i-doc', onPick: showSetup }));
   }
   dom.btnPin.disabled = !next.S;
   dom.btnExplain.disabled = !next.S || next.raw.subtitleMode === 'plain';
@@ -769,10 +768,10 @@ function paintShadow(kind, i, until) {
   dom.btnShadow.setAttribute('aria-pressed', kind === 'off' ? 'false' : 'true');
   const total = track ? track.S : 0;
   let text = '';
-  if (kind === 'listen') text = `跟读 ${i + 1}/${total} · 先听一遍`;
+  if (kind === 'listen') text = `跟读 ${i + 1}/${total} · 播放示范`;
   else if (kind === 'speak' || kind === 'tick') {
     const left = Math.max(0, Math.ceil((until - performance.now()) / 1000));
-    text = `跟读 ${i + 1}/${total} · 该你说了 ${left}s`;
+    text = `跟读 ${i + 1}/${total} · 请跟读，剩余 ${left} 秒`;
   }
   if (text === hintText) return;
   hintText = text;
@@ -787,7 +786,7 @@ function wireTools() {
     if (!track) return;
     const on = !engine.follow;
     engine.setFollow(on);
-    toast(on ? '自动跟随已开' : '自动跟随已关，可自由翻阅');
+    toast(on ? '已开启字幕跟随' : '已关闭字幕跟随');
   });
 
   dom.btnExplain.addEventListener('click', toggleChat);
@@ -800,7 +799,7 @@ function wireTools() {
     if (!track) return;
     engine.setRepeat((engine.repeat + 1) % 3);
     paintRepeat();
-    toast(['重复已关', '单句循环', '整曲循环'][engine.repeat]);
+    toast(['已关闭循环播放', '单句循环', '全部循环'][engine.repeat]);
   });
 
   dom.btnSpeed.addEventListener('click', () => openSpeedSheet(audio, (rate) => {
@@ -827,8 +826,10 @@ function wireTools() {
   //  首页的列表就能显示准确的时长, 下次再分析也能把它当参数带给后端。
   audio.addEventListener('loadedmetadata', async () => {
     if (!record) return;
-    const updated = await setDuration(record.id, audio.duration);
-    if (updated) record = updated;
+    try {
+      const updated = await setDuration(record.id, audio.duration);
+      if (updated) record = updated;
+    } catch (error) { console.warn('Media duration was not saved', error); }
     if (track && Number.isFinite(audio.duration)) {
       track.duration = audio.duration;
       dom.timeTotal.textContent = fmtTime(audio.duration);
@@ -877,7 +878,7 @@ async function boot() {
   const id = q.get('track') || settings.track;
   if (!id) {
     dom.player.hidden = true;
-    showState('没有指定媒体', '回首页选择或导入音频、视频');
+    showState('未选择媒体', '请返回首页选择或导入音频、视频');
     return;
   }
   await load(id, q.get('setup') === '1');
@@ -893,7 +894,7 @@ async function boot() {
 
 boot().catch((err) => {
   console.error(err);
-  showState('初始化失败', String((err && err.message) || err));
+  showState('播放器加载失败', errorMessage(err, '请刷新页面后重试'));
 });
 
 // 带 ?debug 时挂一个只读句柄, 方便在控制台里看内部状态 (高度表/游标/翻译进度)

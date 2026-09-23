@@ -178,7 +178,7 @@ test('malformed custom parameters and built-in collisions fail before any upload
   t.mock.method(globalThis, 'fetch', async () => { throw new Error('must not upload'); });
   for (const extraParams of ['{', '[]', 'null', '"text"', '{"file":"bad"}', '{"model":"bad"}',
     '{"response_format":"srt"}', '{"stream":true}', '{"timestamp_granularities[]":["word"]}', '{"":1}']) {
-    await assert.rejects(transcribe(audio(), options({ extraParams })), /自定义参数/);
+    await assert.rejects(transcribe(audio(), options({ extraParams })), /自定义参数|流式转录/);
   }
   assert.equal(fetch.mock.callCount(), 0);
 });
@@ -209,7 +209,7 @@ test('invalid or conflicting key-value fields fail before upload', async (t) => 
   t.mock.method(globalThis, 'fetch', async () => { throw new Error('must not upload'); });
   for (const keys of [[''], ['model'], ['stream[]'], ['--beam_size'], ['bad\nname'], ['temperature', ' temperature ']]) {
     const extraParams = keys.map((key) => ({ key, value: '0', enabled: true }));
-    await assert.rejects(transcribe(audio(), options({ extraParams })), /自定义参数/);
+    await assert.rejects(transcribe(audio(), options({ extraParams })), /自定义参数|流式转录/);
   }
   assert.equal(fetch.mock.callCount(), 0);
 });

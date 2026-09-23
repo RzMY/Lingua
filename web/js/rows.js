@@ -46,6 +46,7 @@ export function segRow(label, hint, get, set, options, { wrap = false } = {}) {
   const row = el('div', 'row');
   const segs = el('div', 'segs');
   segs.setAttribute('role', 'group');
+  segs.setAttribute('aria-label', label);
   if (wrap) segs.style.flexWrap = 'wrap';
   const buttons = options.map(([value, text]) => {
     const b = el('button', 'seg', text);
@@ -111,8 +112,8 @@ export function stepRow(label, hint, get, set, { min = 0, max = 100, step = 1, u
     return b;
   };
 
-  const minus = mk('i-minus', -step, label + ' 调小');
-  const plus = mk('i-plus', step, label + ' 调大');
+  const minus = mk('i-minus', -step, '减小' + label);
+  const plus = mk('i-plus', step, '增大' + label);
   box.append(minus, val);
   if (unit) box.append(el('span', 'step-unit', unit));
   box.append(plus);
@@ -203,6 +204,7 @@ export function inputField(label, {
   if (hint) wrap.append(el('span', 'field-hint', hint));
   const box = el('div', 'field-box');
   const input = el('input');
+  input.setAttribute('aria-label', label);
   input.type = secret ? 'password' : type;
   input.value = value == null ? '' : String(value);
   input.placeholder = placeholder;
@@ -213,11 +215,13 @@ export function inputField(label, {
   if (secret) {
     const eye = el('button', 'field-eye');
     eye.type = 'button';
-    eye.setAttribute('aria-label', '显示或隐藏');
+    eye.setAttribute('aria-label', '显示' + label);
+    eye.setAttribute('aria-pressed', 'false');
     eye.append(icon('i-eye', 'ic ic-sm'));
     eye.addEventListener('click', () => {
       input.type = input.type === 'password' ? 'text' : 'password';
       eye.setAttribute('aria-pressed', input.type === 'text' ? 'true' : 'false');
+      eye.setAttribute('aria-label', (input.type === 'text' ? '隐藏' : '显示') + label);
     });
     box.append(eye);
   }
@@ -227,11 +231,12 @@ export function inputField(label, {
 }
 
 /** 多行输入 (提示词编辑). */
-export function textField(label, { value = '', hint = '', rows = 10, onInput } = {}) {
+export function textField(label, { value = '', hint = '', placeholder = '', rows = 10, onInput } = {}) {
   const wrap = el('label', 'field');
   wrap.append(el('b', null, label));
   if (hint) wrap.append(el('span', 'field-hint', hint));
   const ta = el('textarea');
+  ta.placeholder = placeholder;
   ta.rows = rows;
   ta.spellcheck = false;
   ta.value = value == null ? '' : String(value);

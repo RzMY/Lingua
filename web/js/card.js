@@ -10,14 +10,15 @@
  */
 
 import { config, fill, langVars, llmReady } from './config.js';
-import { chatJSON, LLMError, once } from './llm.js';
+import { chatJSON, once } from './llm.js';
+import { errorMessage } from './errors.js';
 import { get as cacheGet, put as cachePut } from './store.js';
 import { el, copyText, hash53, icon, toast } from './util.js';
 
 let host = null;
 let scrim = null;
 let ctl = null;
-let escBound = false;
+let returnFocus = null;
 // 同 sheet.js: `.is-open` 下一帧才加, 状态另用变量记
 let openFlag = false;
 
@@ -28,13 +29,24 @@ function ensureHost() {
   host = el('div', 'wcard');
   host.setAttribute('role', 'dialog');
   host.setAttribute('aria-modal', 'true');
+  host.setAttribute('aria-labelledby', 'wordCardTitle');
+  host.setAttribute('aria-hidden', 'true');
+  host.inert = true;
+  host.tabIndex = -1;
   document.body.append(scrim, host);
-  if (!escBound) {
-    escBound = true;
-    addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && isCardOpen()) closeWordCard();
-    });
-  }
+  host.addEventListener('keydown', (event) => {
+    if (!openFlag) return;
+    if (event.key === 'Escape') {
+      event.preventDefault(); event.stopPropagation(); closeWordCard();
+    } else if (event.key === 'Tab') {
+      const buttons = [...host.querySelectorAll('button:not(:disabled)')];
+      event.preventDefault();
+      const current = buttons.indexOf(document.activeElement);
+      const next = current < 0 ? (event.shiftKey ? buttons.length - 1 : 0)
+        : (current + (event.shiftKey ? -1 : 1) + buttons.length) % buttons.length;
+      buttons[next]?.focus();
+    }
+  });
 }
 
 export const isCardOpen = () => openFlag;
@@ -43,6 +55,12 @@ export function closeWordCard() {
   if (!openFlag) return;
   openFlag = false;
   if (ctl) { ctl.abort(); ctl = null; }
+  if (host.contains(document.activeElement)) {
+    if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
+    else document.activeElement.blur();
+  }
+  host.inert = true;
+  host.setAttribute('aria-hidden', 'true');
   host.classList.remove('is-open');
   scrim.classList.remove('is-open');
 }
@@ -93,6 +111,7 @@ export async function openWordCard({ track, i, j, lang }) {
   const w = s && s.words[j];
   if (!w) return;
   ensureHost();
+  if (!host.contains(document.activeElement)) returnFocus = document.activeElement;
   if (ctl) ctl.abort();
   ctl = new AbortController();
   const signal = ctl.signal;
@@ -100,6 +119,7 @@ export async function openWordCard({ track, i, j, lang }) {
   host.textContent = '';
   const top = el('div', 'wc-top');
   const word = el('div', 'wc-word', w.text);
+  word.id = 'wordCardTitle';
   if (w.read && w.read !== w.text) word.append(el('span', 'wc-read', w.read));
   top.append(word);
   if (w.roman) top.append(el('div', 'wc-roman', w.roman));
@@ -130,21 +150,24 @@ export async function openWordCard({ track, i, j, lang }) {
   again.title = '重新生成';
   again.setAttribute('aria-label', '重新生成');
   again.append(icon('i-refresh', 'ic ic-sm'));
-  const shut = el('button', 'wc-a wc-a-main', '知道了');
+  const shut = el('button', 'wc-a wc-a-main', '关闭');
   shut.type = 'button';
   shut.addEventListener('click', closeWordCard);
   acts.append(pos, copy, again, shut);
   host.append(acts);
 
   openFlag = true;
+  host.inert = false;
+  host.removeAttribute('aria-hidden');
   requestAnimationFrame(() => {
     if (!openFlag) return;               // 同一帧内开又关: 别把卡片补回来
     scrim.classList.add('is-open');
     host.classList.add('is-open');
+    if (!host.contains(document.activeElement)) host.focus({ preventScroll: true });
   });
 
   const paint = (data) => {
-    gloss.textContent = String(data.gloss || '').trim() || '（模型没给释义）';
+    gloss.textContent = String(data.gloss || '').trim() || '暂无释义';
     note.textContent = '';
     const body = String(data.note || '').trim();
     for (const line of body.split(/\n+/)) if (line) note.append(el('p', null, line));
@@ -170,7 +193,7 @@ export async function openWordCard({ track, i, j, lang }) {
 
   const fail = (msg) => {
     host.classList.remove('is-load');
-    gloss.textContent = '暂时讲不了';
+    gloss.textContent = '释义加载失败';
     note.textContent = '';
     note.append(el('p', 'wc-err', msg));
   };
@@ -188,7 +211,7 @@ export async function openWordCard({ track, i, j, lang }) {
       if (hit) { paint(hit); return; }
     }
     if (!llmReady()) {
-      fail('还没配置大模型: 回首页 → 设置 → 大模型, 填好地址和模型名。');
+      fail('请在「设置 → 大模型」配置接口地址和模型名');
       return;
     }
     try {
@@ -198,11 +221,10 @@ export async function openWordCard({ track, i, j, lang }) {
       cachePut('word', cacheKey, data, track.id);
     } catch (err) {
       if (signal.aborted || (err && err.name === 'AbortError')) return;
-      fail(err instanceof LLMError ? err.message : (err && err.message) || '请求失败');
+      fail(errorMessage(err, '释义请求失败，请重试'));
     }
   }
 
   again.addEventListener('click', () => load(true));
   await load(false);
 }
-

@@ -73,10 +73,10 @@ const fixture = process.argv[4];
         await page.locator('#btnPlay').click();
         await page.waitForFunction(() => LT.engine.audio.currentTime > .1);
         await page.locator('#btnPlay').click();
-        await page.getByRole('button', { name: '导入字幕（可选）', exact: true }).click();
-        await page.getByRole('button', { name: '跳过，直接播放' }).click();
+        await page.getByRole('button', { name: '导入字幕', exact: true }).click();
+        await page.getByRole('button', { name: '返回播放', exact: true }).click();
         assert.equal(await page.locator('#setup').isVisible(), false);
-        await page.getByRole('button', { name: '导入字幕（可选）', exact: true }).click();
+        await page.getByRole('button', { name: '导入字幕', exact: true }).click();
         await page.locator('#setup input[type=file]').setInputFiles({ name: 'optional.srt', mimeType: 'text/plain',
           buffer: Buffer.from('1\n00:00:00,000 --> 00:00:15,000\nHello world.\n\n2\n00:00:15,000 --> 00:00:30,000\nKeep learning every day.\n') });
         await page.getByRole('button', { name: '只导入字幕', exact: true }).click();

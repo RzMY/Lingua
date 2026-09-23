@@ -103,7 +103,8 @@ test('native rejection never falls back to a black video, and can retry', async 
   const h = harness(t, { bridgeOverrides: { open: async () => { throw new Error('denied'); } } });
   await h.media.play(); await h.pip.toggle();
   assert.equal(h.pip.isActive(), false); assert.equal(h.media.paused, false);
-  assert.match(h.doc.getElementById('toast').textContent, /denied/);
+  assert.match(h.doc.getElementById('toast').textContent, /字幕小窗启动失败.*重试/);
+  assert.doesNotMatch(h.doc.getElementById('toast').textContent, /denied/);
   assert.equal(h.doc.querySelector('.audio-pip-carrier, .ios-caption-carrier'), null);
   h.bridge.open = async () => {}; await h.pip.toggle(); assert.equal(h.pip.isActive(), true);
 });
@@ -131,10 +132,10 @@ test('native startup failure remains visible when the stop event arrives before 
   };
   await h.pip.toggle();
   assert.equal(h.pip.isActive(), false);
-  assert.match(h.doc.getElementById('toast').textContent, /native content source rejected/);
+  assert.match(h.doc.getElementById('toast').textContent, /字幕小窗启动失败.*重试/);
 });
 
-test('startup timeout waits for native teardown and preserves the diagnostic stage for retry', async (t) => {
+test('startup timeout waits for native teardown and shows a timeout message for retry', async (t) => {
   let cleanup;
   const h = harness(t, { bridgeOverrides: {
     open: async () => { throw Object.assign(new Error('已请求系统小窗，但没有收到启动回调（PIP_START_NO_CALLBACK）'),
@@ -149,8 +150,8 @@ test('startup timeout waits for native teardown and preserves the diagnostic sta
   assert.equal(h.pip.isBusy(), false);
   assert.equal(h.media.disablePictureInPicture, false);
   const message = h.doc.getElementById('toast').textContent;
-  assert.match(message, /PIP_START_NO_CALLBACK/);
-  assert.doesNotMatch(message, /权限/);
+  assert.match(message, /字幕小窗启动超时.*重试/);
+  assert.doesNotMatch(message, /PIP_START_NO_CALLBACK|权限/);
   h.bridge.open = async () => {}; h.bridge.close = async () => {};
   await h.pip.toggle(); assert.equal(h.pip.isActive(), true);
 });

@@ -22,7 +22,7 @@ import { TARGET_LANGS } from './config.js';
 import { featureText } from './langs.js';
 
 const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
-const THEMES = [['auto', '跟随'], ['light', '浅色'], ['dark', '深色']];
+const THEMES = [['auto', '跟随系统'], ['light', '浅色'], ['dark', '深色']];
 
 /** 词性图例: 只加 `p-<tag>` 类, 颜色由 reader.css 里的 --pc 决定. */
 function legendCard(track) {
@@ -50,7 +50,7 @@ function legendCard(track) {
 export function openTrackSheet(track, { trStats, video, onSubtitles } = {}) {
   const body = document.createDocumentFragment();
   if (video) {
-    body.append(group(navRow('视频字幕布局', '位置、宽度与背景', { onPick: () => openVideoSheet({ track }) })));
+    body.append(group(navRow('视频字幕布局', '', { onPick: () => openVideoSheet({ track }) })));
   }
   const langRow = segRow('译文语言', '',
     () => trackCfg.lang, (v) => setTrackCfg('lang', v),
@@ -68,10 +68,10 @@ export function openTrackSheet(track, { trStats, video, onSubtitles } = {}) {
     if (key === 'tr') rows.push(langRow);
   }
 
-  rows.push(navRow('字幕字号', video ? '' : '分别调节原文、注音、原形 / 转写与译文', { onPick: () => openFontSheet({ track, video: !!video }) }));
-  rows.push(navRow('系统字幕字号', '画中画示例', { value: trackCfg.video.captionSize + 'px', onPick: () => openCaptionSheet({ track }) }));
-  if (onSubtitles) rows.push(navRow('字幕管理', '导入字幕或分析字幕（可选）', { onPick: onSubtitles }));
-  body.append(sectionTitle(video ? '字幕内容 · 当前视频' : '这条音频'), group(...rows));
+  rows.push(navRow('字幕字号', '', { onPick: () => openFontSheet({ track, video: !!video }) }));
+  rows.push(navRow('系统字幕字号', '', { value: trackCfg.video.captionSize + ' px', onPick: () => openCaptionSheet({ track }) }));
+  if (onSubtitles) rows.push(navRow('字幕管理', '', { onPick: onSubtitles }));
+  body.append(sectionTitle(video ? '当前视频' : '当前音频'), group(...rows));
   body.append(group(infoRow('源语言', track.langName)));
 
   if (trStats) {

@@ -50,7 +50,7 @@ const root = path.resolve(__dirname, '..');
               const version = 'b'.repeat(64), checksum = 'c'.repeat(64), bundles = [];
               window.nativeQA = { checks: 0, downloads: 0, activated: 0, fail: false };
               window.adapters = {
-                Capacitor: { isNativePlatform: () => true, getPlatform: () => 'ios' },
+                Capacitor: { isNativePlatform: () => true, getPlatform: () => 'ios', isPluginAvailable: () => false },
                 CapacitorHttp: { get: async () => { window.nativeQA.checks++; return { status: 200, data: {
                   schema: 1, appId: 'app.linguatrack.mobile', nativeRevision: 3, version, checksum, bundle: `bundle-${version}.zip`, size: 100,
                 } }; } },

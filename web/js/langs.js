@@ -59,11 +59,11 @@ export const DEFAULT_LANGS = [
 export function featureText(layers, key) {
   const label = (layers && layers[key]) || '';
   switch (key) {
-    case 'tr': return ['翻译', '显示译文'];
-    case 'read': return [label || '注音', '显示' + (label || '注音')];
-    case 'roman': return [label || '转写', '显示' + (label || '转写')];
-    case 'pos': return ['词性标注', '按词性着色'];
-    case 'card': return ['点词释义', '点击单词查看'];
+    case 'tr': return ['翻译', ''];
+    case 'read': return [label || '注音', ''];
+    case 'roman': return [label || '转写', ''];
+    case 'pos': return ['词性着色', ''];
+    case 'card': return ['点词释义', ''];
     default: return [key, ''];
   }
 }

@@ -4,9 +4,10 @@ import { openSheet, closeSheet } from './sheet.js';
 import { button, buttonBar, group, infoRow, switchRow } from './rows.js';
 import { el, isIOS, toast } from './util.js';
 import { saveFile } from './native.js';
+import { errorMessage } from './errors.js';
 
 let importing = false;
-const errorText = (err) => (err && err.message) || '操作失败';
+const errorText = (err) => errorMessage(err);
 
 function fileInput(label, accept = '', multiple = false) {
   const input = el('input');
@@ -40,15 +41,15 @@ export function openBackupExport() {
       await saveFile(new Blob([JSON.stringify(backup)], { type: 'application/json' }),
         'lingua-backup-' + backup.exportedAt.replace(/[:.]/g, '-') + '.json');
       const summary = backupSummary(backup);
-      note.textContent = `已导出 ${summary.tracks} 条曲目、${summary.analyses} 份分析、${summary.llm} 条 LLM 产物`;
-    } catch (err) { note.textContent = '导出失败: ' + errorText(err); }
+      note.textContent = `已导出 ${summary.tracks} 条媒体记录、${summary.analyses} 份分析结果和 ${summary.llm} 条模型缓存`;
+    } catch (err) { note.textContent = '导出失败：' + errorText(err); }
     finally { save.disabled = false; credentials.querySelector('button').disabled = false; }
   } });
   body.append(group(
-    infoRow('备份内容', '配置、分析结果、LLM 产物'),
-    infoRow('音视频与字幕', '仅文件名'), credentials,
+    infoRow('备份内容', '配置、媒体记录、分析结果、模型缓存'),
+    infoRow('媒体与字幕文件', '仅保存文件名，不含原文件'), credentials,
   ), buttonBar(save), note);
-  openSheet('导出用户数据', body);
+  openSheet('导出数据', body);
 }
 
 export function openBackupImport() {
@@ -57,7 +58,7 @@ export function openBackupImport() {
   const input = fileInput('选择用户数据备份', '.json,application/json');
   const note = feedback();
   const preview = el('div');
-  const name = el('p', 'transfer-filename', '尚未选择备份');
+  const name = el('p', 'transfer-filename', '未选择备份文件');
   let backup = null, restoreConfig = true, selection = 0;
   const configRow = switchRow('使用备份中的全局配置', '替换当前模型、提示词与显示偏好',
     () => restoreConfig, (v) => { restoreConfig = !!v; });
@@ -68,14 +69,14 @@ export function openBackupImport() {
     restore.disabled = true;
     choose.disabled = true;
     configRow.querySelector('button').disabled = true;
-    note.textContent = '正在写入…';
+    note.textContent = '正在导入…';
     try {
       await importBackup(backup, { restoreConfig });
       // All configuration modules reload from the committed snapshot on the next page load.
       location.hash = 'restore';
       location.reload();
     } catch (err) {
-      note.textContent = '导入失败: ' + errorText(err);
+      note.textContent = '导入失败：' + errorText(err);
       importing = false;
       restore.disabled = false;
       choose.disabled = false;
@@ -103,9 +104,11 @@ export function openBackupImport() {
       backup = parsed;
       preview.append(group(
         infoRow('导出时间', new Date(parsed.exportedAt).toLocaleString()),
-        infoRow('曲目 / 分析 / LLM 产物', `${summary.tracks} / ${summary.analyses} / ${summary.llm}`),
-        infoRow('重复曲目', copies ? `${copies} 条保存为副本` : '无'),
-        infoRow('待补充文件', `${summary.tracks} 个媒体、${parsed.stores.tracks.filter((r) => r.value.transcript).length} 个字幕`),
+        infoRow('媒体记录', `${summary.tracks} 条`),
+        infoRow('分析结果', `${summary.analyses} 份`),
+        infoRow('模型缓存', `${summary.llm} 条`),
+        infoRow('重复媒体', copies ? `${copies} 条保存为副本` : '无'),
+        infoRow('待补充文件', `${summary.tracks} 个媒体文件、${parsed.stores.tracks.filter((r) => r.value.transcript).length} 个字幕文件`),
         infoRow('API Key 与访问令牌', parsed.includesCredentials ? '包含在备份中' : '保留本机凭据'),
       ));
       note.textContent = '';
@@ -115,7 +118,7 @@ export function openBackupImport() {
     }
   });
   body.append(input, name, preview, group(configRow), buttonBar(choose, restore), note);
-  openSheet('导入用户数据', body, { cls: 'sheet-tall' });
+  openSheet('导入数据', body, { cls: 'sheet-tall' });
 }
 
 export async function openMissingFiles(options = {}) {
@@ -139,7 +142,7 @@ export function openFileRepair(records, { onUpdate, onClose, imported = false } 
     const pending = missingFiles(records);
     const audios = pending.filter((f) => f.kind === 'audio').length;
     count.textContent = (imported ? '用户数据已导入\n' : '')
-      + (pending.length ? `待补充 ${audios} 个媒体、${pending.length - audios} 个字幕` : '文件已补齐');
+      + (pending.length ? `待补充 ${audios} 个媒体文件、${pending.length - audios} 个字幕文件` : '文件已补齐');
     done.lastElementChild.textContent = pending.length ? '稍后补充' : '完成';
     batch.disabled = busy || !pending.length;
     list.textContent = '';
@@ -187,7 +190,7 @@ export function openFileRepair(records, { onUpdate, onClose, imported = false } 
         records = records.map((t) => t.id === item.id ? updated : t);
         saved++;
         updates.set(item.id, updated);
-      } catch (err) { errors.push(item.file.name + ': ' + errorText(err)); }
+      } catch (err) { errors.push(item.file.name + '：' + errorText(err)); }
     }
     busy = false;
     body.querySelectorAll('button, input').forEach((control) => { control.disabled = false; });
@@ -197,7 +200,7 @@ export function openFileRepair(records, { onUpdate, onClose, imported = false } 
     // Invoke it only once all selected files have been committed.
     for (const updated of updates.values()) {
       try { if (onUpdate) await onUpdate(updated); }
-      catch (err) { note.textContent += '\n刷新失败: ' + errorText(err); }
+      catch (err) { note.textContent += '\n刷新失败：' + errorText(err); }
     }
   }
 
@@ -205,8 +208,8 @@ export function openFileRepair(records, { onUpdate, onClose, imported = false } 
     const files = [...(input.files || [])];
     if (!files.length) return;
     const { matches, ambiguous, unmatched } = matchFiles(records, files);
-    const extra = [ambiguous.length ? `${ambiguous.length} 个同名文件待逐项选择: ${ambiguous.join('、')}` : '',
-      unmatched.length ? `${unmatched.length} 个文件名不匹配: ${unmatched.join('、')}` : ''].filter(Boolean).join('\n');
+    const extra = [ambiguous.length ? `${ambiguous.length} 个同名文件需单独选择：${ambiguous.join('、')}` : '',
+      unmatched.length ? `${unmatched.length} 个文件名不匹配：${unmatched.join('、')}` : ''].filter(Boolean).join('\n');
     try {
       if (matches.length) await save(matches, extra);
       else note.textContent = extra || '没有待补充的文件';

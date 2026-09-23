@@ -16,6 +16,8 @@ let actsEl = null;
 let bodyEl = null;
 let footEl = null;
 let closeCb = null;
+let returnFocus = null;
+let focusFrame = 0;
 // 打开状态用变量记, 不看 `.is-open` 类: 那个类是下一帧才加的, 后台标签页里
 // rAF 会被节流, 只看类名会让「同一帧内开了又关」的浮层漏掉 onClose.
 let openFlag = false;
@@ -28,16 +30,37 @@ function ensureSheet() {
   sheetEl = el('div', 'sheet');
   sheetEl.setAttribute('role', 'dialog');
   sheetEl.setAttribute('aria-modal', 'true');
+  sheetEl.setAttribute('aria-labelledby', 'sheetTitle');
+  sheetEl.setAttribute('aria-hidden', 'true');
+  sheetEl.inert = true;
+  sheetEl.tabIndex = -1;
 
   const grip = el('div', 'sheet-grip');
   headEl = el('div', 'sheet-head');
   titleEl = el('h2');
+  titleEl.id = 'sheetTitle';
   actsEl = el('div', 'sheet-acts');
   const close = el('button', 'tb-btn tb-btn-sm');
   close.type = 'button';
   close.setAttribute('aria-label', '关闭');
   close.append(icon('i-x'));
   close.addEventListener('click', closeSheet);
+  sheetEl.addEventListener('keydown', (event) => {
+    if (!openFlag) return;
+    if (event.key === 'Escape') {
+      event.preventDefault(); event.stopPropagation(); closeSheet();
+    } else if (event.key === 'Tab') {
+      const controls = [...sheetEl.querySelectorAll('button, input, select, textarea, a[href], [tabindex]')]
+        .filter((node) => !node.matches(':disabled, [hidden]') && node.tabIndex >= 0 && node.getClientRects().length);
+      const first = controls[0], last = controls.at(-1);
+      if (!first) { event.preventDefault(); return; }
+      event.preventDefault();
+      const index = controls.indexOf(document.activeElement);
+      const next = index < 0 ? (event.shiftKey ? last : first)
+        : controls[(index + (event.shiftKey ? -1 : 1) + controls.length) % controls.length];
+      next.focus();
+    }
+  });
   actsEl.append(close);
   headEl.append(titleEl, actsEl);
 
@@ -96,6 +119,7 @@ function dragToClose(handle) {
  */
 export function openSheet(title, body, opts = {}) {
   ensureSheet();
+  const opener = sheetEl.contains(document.activeElement) ? returnFocus : document.activeElement;
   const o = typeof opts === 'function' ? { onClose: opts } : (opts || {});
   closeSheet();
   sheetEl.className = 'sheet' + (o.cls ? ' ' + o.cls : '');
@@ -114,14 +138,20 @@ export function openSheet(title, body, opts = {}) {
   if (o.footer) footEl.append(o.footer);
 
   closeCb = o.onClose || null;
+  returnFocus = opener;
   openFlag = true;
+  sheetEl.inert = false;
+  sheetEl.removeAttribute('aria-hidden');
   document.documentElement.classList.add('sheet-open');
-  requestAnimationFrame(() => {
+  cancelAnimationFrame(focusFrame);
+  focusFrame = requestAnimationFrame(() => {
+    focusFrame = 0;
     // 这一帧到达前又被关掉了 (同一帧内开又关) 就别再补 `.is-open`,
     // 否则浮层会自己弹回来, 而 openFlag 已经是 false, 点遮罩也关不掉。
     if (!openFlag) return;
     scrimEl.classList.add('is-open');
     sheetEl.classList.add('is-open');
+    if (!sheetEl.contains(document.activeElement)) sheetEl.focus({ preventScroll: true });
   });
   return { sheet: sheetEl, body: bodyEl, foot: footEl };
 }
@@ -129,6 +159,14 @@ export function openSheet(title, body, opts = {}) {
 export function closeSheet() {
   if (!sheetEl || !openFlag) return;
   openFlag = false;
+  cancelAnimationFrame(focusFrame);
+  focusFrame = 0;
+  if (sheetEl.contains(document.activeElement)) {
+    if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
+    else document.activeElement.blur();
+  }
+  sheetEl.inert = true;
+  sheetEl.setAttribute('aria-hidden', 'true');
   document.documentElement.classList.remove('sheet-open');
   sheetEl.classList.remove('is-open');
   scrimEl.classList.remove('is-open');
@@ -171,7 +209,12 @@ export function openMenu(anchor, items) {
   const scrim = el('div', 'menu-scrim');
   const menu = el('div', 'menu');
   menu.setAttribute('role', 'menu');
-  const shut = () => { scrim.remove(); menu.remove(); };
+  menu.setAttribute('aria-label', '更多操作');
+  const shut = () => {
+    const focused = menu.contains(document.activeElement);
+    scrim.remove(); menu.remove();
+    if (focused && anchor.isConnected) anchor.focus({ preventScroll: true });
+  };
   scrim.addEventListener('click', shut);
   for (const it of items) {
     if (!it) continue;
@@ -184,6 +227,18 @@ export function openMenu(anchor, items) {
     menu.append(btn);
   }
   document.body.append(scrim, menu);
+  menu.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' || event.key === 'Tab') {
+      event.preventDefault(); event.stopPropagation(); shut(); return;
+    }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const entries = [...menu.querySelectorAll('button:not(:disabled)')];
+    const current = entries.indexOf(document.activeElement);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? entries.length - 1
+      : (current + (event.key === 'ArrowDown' ? 1 : -1) + entries.length) % entries.length;
+    entries[next]?.focus();
+  });
   let box = anchor.getBoundingClientRect();
   const rotated = document.body.classList.contains('video-rotated');
   const viewWidth = rotated ? innerHeight : innerWidth;
@@ -195,6 +250,10 @@ export function openMenu(anchor, items) {
   const fits = below + menu.offsetHeight < viewHeight - 8;
   menu.style.left = left + 'px';
   menu.style.top = (fits ? below : Math.max(8, box.top - menu.offsetHeight - 6)) + 'px';
-  requestAnimationFrame(() => menu.classList.add('is-open'));
+  requestAnimationFrame(() => {
+    if (!menu.isConnected) return;
+    menu.classList.add('is-open');
+    menu.querySelector('button')?.focus({ preventScroll: true });
+  });
   return shut;
 }

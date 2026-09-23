@@ -241,7 +241,7 @@ export function setupVideo({ app, video, media = video, engine, toggle, onLayout
     }
     if (pipNote) {
       pipNote.hidden = !app.classList.contains('is-pip') && !audioPip.isActive();
-      pipNote.textContent = audioPip.isActive() ? '字幕小窗播放中 · 点这里收回' : '小窗播放中 · 点这里收回';
+      pipNote.textContent = audioPip.isActive() ? '退出字幕小窗' : '退出小窗播放';
     }
     syncLayout();
   };

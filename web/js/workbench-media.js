@@ -177,7 +177,7 @@ export async function extractMedia(file, { signal, onStage = () => {} } = {}) {
     + '.lossless.wav', { type: 'audio/wav' }), ...wav };
   const decoded = await decodeMedia(file, { signal, onStage });
   const sampleRate = decoded.sampleRate;
-  onStage('正在生成原采样率无损聆听音频…');
+  onStage('正在提取音频…');
   const blob = await encodeDecoded(decoded, true, signal);
   return { file: new File([blob], (file.name.replace(/\.[^.]+$/, '') || 'audio') + '.lossless.wav',
     { type: 'audio/wav' }), sampleRate, channels: decoded.numberOfChannels, duration: decoded.duration };
@@ -193,7 +193,7 @@ export async function convertMedia(input, { signal, onStage = () => {} } = {}) {
       // Some decoders trim AAC priming/padding in each remuxed window, or report
       // a different channel count from stsd. Decode the original listening file
       // as one stream so the browser applies its codec metadata only once.
-      onStage('正在使用完整音轨兼容转换…');
+      onStage('正在转换音轨…');
       const decoded = await decodeMedia(sourceAudio.file, { signal, sampleRate: SAMPLE_RATE });
       return await encodeAsrMp3(decoded, sourceAudio.file.name, { signal, onStage });
     }
@@ -243,7 +243,7 @@ async function convertAudio(sourceAudio, { signal, onStage }) {
       signal?.throwIfAborted();
       const end = Math.min(frames, Math.round(((segment.time || 0) + segment.duration) * SAMPLE_RATE));
       const length = end - written;
-      onStage(`正在压制 16 kHz MP3… ${Math.round(written / frames * 100)}%`);
+      onStage(`正在生成 16 kHz MP3… ${Math.round(written / frames * 100)}%`);
       if (segment.silence) {
         for (let n = 0; n < length; n += SAMPLE_RATE) {
           await writer.write(Array.from({ length: count }, () => new Float32Array(Math.min(SAMPLE_RATE, length - n))));
@@ -308,7 +308,9 @@ export function parseExtraParams(text = '') {
   for (const [key, value] of fields) {
     if (!key.trim() || /[\r\n]/.test(key)) throw new Error('自定义参数名称不能为空或包含换行');
     if (key.startsWith('--')) throw new Error('自定义参数名称无需填写 -- 前缀');
-    if (reserved.has(key.replace(/\[\]$/, ''))) throw new Error(`自定义参数 ${key} 与内置选项冲突，请使用上方配置；暂不支持流式转录`);
+    if (reserved.has(key.replace(/\[\]$/, ''))) throw new Error(key === 'stream'
+      ? '暂不支持流式转录，请移除 stream 参数'
+      : `自定义参数 ${key} 与内置选项冲突，请使用上方配置`);
     if (names.has(key)) throw new Error(`自定义参数 ${key} 重复，请仅启用一个同名参数`);
     names.add(key);
     const values = key.endsWith('[]') && Array.isArray(value) ? value : [value];
@@ -325,7 +327,7 @@ export async function transcribe(file, options, { signal } = {}) {
   const format = options.asrFormat;
   if (!Object.hasOwn(FORMATS, format)) throw new Error('不支持的转录结果格式');
   const language = String(options.asrLanguage || '').trim();
-  if (language && !/^[a-z]{2,3}$/i.test(language)) throw new Error('语言请填写 ISO 语言代码，如 ja、en、zh，或留空自动识别');
+  if (language && !/^[a-z]{2,3}$/i.test(language)) throw new Error('请输入语言代码（如 ja、en、zh），或留空自动识别');
   const seconds = Number(options.asrTimeout);
   if (!Number.isFinite(seconds) || seconds < 1 || seconds > 3600) throw new Error('超时须为 1–3600 秒');
   const body = new FormData();
@@ -358,14 +360,14 @@ export async function transcribe(file, options, { signal } = {}) {
       throw new Error(`转录失败（HTTP ${response.status}）：${hints[response.status] || '服务端异常，请稍后重试'}`);
     }
     const raw = await response.text();
-    if (!raw.trim()) throw new Error('转录接口返回了空结果');
+    if (!raw.trim()) throw new Error('转录结果为空，请检查音频后重试');
     let content = raw;
     if (format.endsWith('json')) {
       let data;
       try { data = JSON.parse(raw); } catch { throw new Error('转录接口未返回有效 JSON，请检查结果格式'); }
       if (!data || typeof data !== 'object' || Array.isArray(data) || data.error
         || (typeof data.text !== 'string' && !Array.isArray(data.segments) && !Array.isArray(data.words))) {
-        throw new Error('转录接口返回的 JSON 缺少 text、segments 或 words');
+        throw new Error('转录结果缺少文本或字幕数据，请检查接口配置');
       }
       // OpenAI returns word times beside segments; our subtitle parser expects them inside.
       // Assign each word once by midpoint so small boundary overlaps do not drop it.
@@ -388,7 +390,7 @@ export async function transcribe(file, options, { signal } = {}) {
     return { content, file: new File([content], (file.name.replace(/\.[^.]+$/, '') || 'transcript')
       + '.' + extension, { type: type + ';charset=utf-8' }) };
   } catch (err) {
-    if (timedOut) throw new Error('转录超时，可增加超时秒数后重试');
+    if (timedOut) throw new Error('转录请求超时，请延长超时后重试');
     if (signal?.aborted) throw new DOMException('已取消', 'AbortError');
     if (err instanceof TypeError) throw new Error('无法连接转录接口，请检查网络、接口 CORS 配置，以及 HTTPS 页面是否使用了 HTTP 接口');
     throw err;

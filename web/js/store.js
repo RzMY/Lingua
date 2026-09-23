@@ -57,20 +57,21 @@ function open() {
 }
 
 /** 首次调用会真的开库; 失败就永久走内存, 不再反复重试. */
-async function tx(store, mode) {
+async function tx(store, mode, strict = false) {
   if (degraded) return null;
   try {
     const db = await open();
     return db.transaction(store, mode).objectStore(store);
-  } catch {
+  } catch (error) {
+    if (strict && !degraded) throw error;
     return null;
   }
 }
 
-const wrap = (req) =>
-  new Promise((resolve) => {
+const wrap = (req, strict = false) =>
+  new Promise((resolve, reject) => {
     req.onsuccess = () => resolve(req.result);
-    req.onerror = () => resolve(undefined);
+    req.onerror = () => strict ? reject(req.error || new Error('本地数据读取失败，请重试')) : resolve(undefined);
   });
 
 export const isDegraded = () => degraded;
@@ -114,12 +115,12 @@ export async function writeBatch(batches, { addOnly = false, persistent = false,
     try { db = await open(); } catch { /* Checked below for durable imports. */ }
   }
   if (!db) {
-    if (persistent) throw new Error('浏览器持久存储不可用, 无法导入数据');
+    if (persistent) throw new Error('本地存储不可用，无法导入数据。请使用普通浏览模式');
     const next = new Map();
     for (const name of names) {
       const bag = new Map(mem.get(name));
       for (const row of batches[name]) {
-        if (addOnly && bag.has(row.key)) throw new Error('数据已存在, 请重新导入');
+        if (addOnly && bag.has(row.key)) throw new Error('数据已存在，请重新导入');
         bag.set(row.key, structuredClone(row.value));
       }
       next.set(name, bag);
@@ -140,7 +141,7 @@ export async function writeBatch(batches, { addOnly = false, persistent = false,
     transaction.onabort = () => {
       clearTimeout(timer);
       try { if (rollback) rollback(); } catch (err) { failure = err; }
-      reject(failure || transaction.error || new Error('写入失败, 导入已取消'));
+      reject(failure || transaction.error || new Error('本地数据保存失败，请重试'));
     };
     try {
       for (const name of names) {
@@ -163,10 +164,10 @@ export async function writeBatch(batches, { addOnly = false, persistent = false,
   });
 }
 
-export async function get(store, key) {
-  const os = await tx(store, 'readonly');
+export async function get(store, key, { strict = false } = {}) {
+  const os = await tx(store, 'readonly', strict);
   if (!os) return mem.get(store).get(key);
-  const row = await wrap(os.get(key));
+  const row = await wrap(os.get(key), strict);
   return row === undefined ? undefined : row.v;
 }
 
@@ -187,10 +188,10 @@ export async function getMany(store, keys, out = new Map()) {
 }
 
 /** 取一个 store 里的全部值 (音频库列表用). */
-export async function values(store) {
-  const os = await tx(store, 'readonly');
+export async function values(store, { strict = false } = {}) {
+  const os = await tx(store, 'readonly', strict);
   if (!os) return [...mem.get(store).values()];
-  const rows = await wrap(os.getAll());
+  const rows = await wrap(os.getAll(), strict);
   return (rows || []).map((row) => row && row.v).filter((v) => v !== undefined);
 }
 
@@ -212,40 +213,13 @@ export async function del(store, key) {
   await wrap(os.delete(key));
 }
 
-async function sweep(store, track) {
-  const os = await tx(store, 'readwrite');
-  if (!os) {
-    const bag = mem.get(store);
-    let n = 0;
-    for (const k of [...bag.keys()]) {
-      if (k === track || String(k).startsWith(track + '|')) { bag.delete(k); n++; }
-    }
-    return n;
-  }
-  return new Promise((resolve) => {
-    let count = 0;
-    const req = os.index('track').openCursor(IDBKeyRange.only(track));
-    req.onsuccess = () => {
-      const cur = req.result;
-      if (!cur) return resolve(count);
-      cur.delete();
-      count++;
-      cur.continue();
-    };
-    req.onerror = () => resolve(count);
-  });
-}
-
 /** 删掉某条音频的**大模型缓存** (不动音频本体); 返回删除条数. */
-export async function wipeTrack(track) {
-  if (!track) return 0;
-  let n = 0;
-  for (const store of CACHE_STORES) n += await sweep(store, track);
-  return n;
-}
+export const wipeTrack = (track) => removeTrackData(track, CACHE_STORES);
 
 /** 删掉某条音频的全部数据 (音频 / 分析结果 / 元数据 / 缓存). */
-export async function wipeTrackAll(track) {
+export const wipeTrackAll = (track) => removeTrackData(track, STORES);
+
+async function removeTrackData(track, stores) {
   if (!track) return 0;
   let db;
   if (!degraded) {
@@ -253,35 +227,46 @@ export async function wipeTrackAll(track) {
   }
   if (!db) {
     let count = 0;
-    for (const store of STORES) count += await sweep(store, track);
+    for (const store of stores) {
+      const bag = mem.get(store);
+      for (const key of [...bag.keys()]) {
+        if (key === track || String(key).startsWith(track + '|')) { bag.delete(key); count++; }
+      }
+    }
     return count;
   }
   // One transaction avoids a partially deleted library and waits for durable completion.
   // Older stores can lack the track index or contain rows without its indexed field.
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORES, 'readwrite');
-    let count = 0;
+    const transaction = db.transaction(stores, 'readwrite');
+    let count = 0, failure;
     transaction.oncomplete = () => resolve(count);
-    transaction.onabort = () => reject(transaction.error || new Error('删除未完成，请重试'));
-    for (const store of STORES) {
-      const os = transaction.objectStore(store);
-      const deleted = new Set();
-      const remove = (key) => {
-        if (deleted.has(key)) return;
-        deleted.add(key); os.delete(key); count++;
-      };
-      // Key-only reads avoid materializing large media Blobs just to delete them.
-      os.getKey(track).onsuccess = (event) => {
-        if (event.target.result !== undefined) remove(event.target.result);
-      };
-      const cursors = [os.openKeyCursor(IDBKeyRange.bound(track + '|', track + '|\uffff'))];
-      if (os.indexNames.contains('track')) cursors.push(os.index('track').openKeyCursor(IDBKeyRange.only(track)));
-      for (const request of cursors) request.onsuccess = () => {
-        const cursor = request.result;
-        if (!cursor) return;
-        remove(cursor.primaryKey); cursor.continue();
-      };
-    }
+    transaction.onabort = () => reject(failure || transaction.error || new Error('删除未完成，请重试'));
+    const guard = (action) => (event) => {
+      try { action(event); }
+      catch (error) { failure = error; transaction.abort(); }
+    };
+    guard(() => {
+      for (const store of stores) {
+        const os = transaction.objectStore(store);
+        const deleted = new Set();
+        const remove = (key) => {
+          if (deleted.has(key)) return;
+          deleted.add(key); os.delete(key); count++;
+        };
+        // Key-only reads avoid materializing large media Blobs just to delete them.
+        os.getKey(track).onsuccess = guard((event) => {
+          if (event.target.result !== undefined) remove(event.target.result);
+        });
+        const cursors = [os.openKeyCursor(IDBKeyRange.bound(track + '|', track + '|\uffff'))];
+        if (os.indexNames.contains('track')) cursors.push(os.index('track').openKeyCursor(IDBKeyRange.only(track)));
+        for (const request of cursors) request.onsuccess = guard(() => {
+          const cursor = request.result;
+          if (!cursor) return;
+          remove(cursor.primaryKey); cursor.continue();
+        });
+      }
+    })();
   });
 }
 
@@ -289,19 +274,30 @@ export async function wipeTrackAll(track) {
 export async function stats() {
   const out = {};
   for (const store of STORES) {
-    const os = await tx(store, 'readonly');
-    out[store] = os ? (await wrap(os.count())) || 0 : mem.get(store).size;
+    const os = await tx(store, 'readonly', true);
+    out[store] = os ? (await wrap(os.count(), true)) || 0 : mem.get(store).size;
   }
   return out;
 }
 
 /** 只清大模型缓存; 音频库不动. */
 export async function clearAll() {
-  for (const store of CACHE_STORES) {
-    const os = await tx(store, 'readwrite');
-    if (!os) { mem.get(store).clear(); continue; }
-    await wrap(os.clear());
+  let db;
+  if (!degraded) {
+    try { db = await open(); } catch { /* Memory-only sessions can still clear their caches. */ }
   }
+  if (!db) {
+    for (const store of CACHE_STORES) mem.get(store).clear();
+    return;
+  }
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(CACHE_STORES, 'readwrite');
+    let failure;
+    transaction.oncomplete = () => resolve();
+    transaction.onabort = () => reject(failure || transaction.error || new Error('缓存清空失败，请重试'));
+    try { for (const store of CACHE_STORES) transaction.objectStore(store).clear(); }
+    catch (error) { failure = error; transaction.abort(); }
+  });
 }
 
 /** 浏览器给这个源的存储配额与已用量 (拿不到就返回 0). */

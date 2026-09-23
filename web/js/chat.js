@@ -10,7 +10,8 @@
  */
 
 import { config, fill, langVars, llmReady } from './config.js';
-import { chatStream, LLMError } from './llm.js';
+import { chatStream } from './llm.js';
+import { errorMessage } from './errors.js';
 import { mdInto } from './md.js';
 import { get as cacheGet, put as cachePut, del as cacheDel } from './store.js';
 import { openSheet, closeSheet, openMenu } from './sheet.js';
@@ -96,7 +97,8 @@ export async function openChat({ track, i, lang, onClose }) {
   const bar = el('div', 'chat-in');
   const box = el('textarea');
   box.rows = 1;
-  box.placeholder = '继续问点什么…';
+  box.placeholder = '输入问题…';
+  box.setAttribute('aria-label', '追问内容');
   box.spellcheck = false;
   const send = el('button', 'chat-send');
   send.type = 'button';
@@ -165,7 +167,7 @@ export async function openChat({ track, i, lang, onClose }) {
     if (!llmReady()) {
       wait.remove();
       const row = botBubble(() => {}, () => {});
-      mdInto(row.body, '还没配置大模型。回首页 → **设置 → 大模型**, 填好接口地址与模型名后再来。');
+      mdInto(row.body, '请在「设置 → 大模型」配置接口地址和模型名');
       log.append(row);
       state.busy = false;
       send.disabled = false;
@@ -211,7 +213,7 @@ export async function openChat({ track, i, lang, onClose }) {
       });
       if (signal.aborted) return;
       if (!row) { wait.remove(); row = botBubble(() => {}, () => {}); log.append(row); }
-      mdInto(row.body, full || '（模型没有返回内容）');
+      mdInto(row.body, full || '模型未返回内容，请重试');
       row.acts.hidden = false;
       state.msgs.push({ role: 'assistant', content: full });
       save();
@@ -219,9 +221,9 @@ export async function openChat({ track, i, lang, onClose }) {
     } catch (err) {
       wait.remove();
       if (signal.aborted || (err && err.name === 'AbortError')) return;
-      const msg = err instanceof LLMError ? err.message : (err && err.message) || '请求失败';
+      const msg = errorMessage(err, '模型请求失败，请重试');
       const bad = botBubble(() => {}, () => regenerate(state.msgs.length - 1));
-      mdInto(bad.body, '讲解失败: ' + msg);
+      mdInto(bad.body, '讲解失败：' + msg);
       bad.acts.hidden = false;
       log.append(bad);
       if (state.pinned) toBottom();
@@ -277,7 +279,7 @@ export async function openChat({ track, i, lang, onClose }) {
     {
       label: '复制全文', icon: 'i-copy',
       onPick: async () => {
-        const text = state.msgs.map((m) => (m.role === 'user' ? '我: ' : '') + m.content).join('\n\n');
+        const text = state.msgs.map((m) => (m.role === 'user' ? '我：' : '') + m.content).join('\n\n');
         toast((await copyText(text)) ? '已复制' : '复制失败');
       },
     },

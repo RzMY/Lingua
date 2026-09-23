@@ -467,11 +467,9 @@ body.video-rotated {
   border-radius: 20px; background: var(--accent-soft); color: var(--accent);
 }
 .setup-emblem .ic { width: 28px; height: 28px; }
-.setup-kicker { color: var(--accent); font-size: 12px; font-weight: 650; letter-spacing: .06em; }
 .setup-h h1 { font-size: 28px; line-height: 1.25; letter-spacing: -.03em; margin: 5px 0 0; }
-.setup-intro { width: 100%; margin: 0; color: var(--ink-3); font-size: 13px; line-height: 1.7; }
 .setup-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
-.setup-card { padding: 16px; border-radius: var(--radius-card); background: var(--card); margin-bottom: 12px; }
+.setup-card { padding: 0; border-radius: 0; background: transparent; margin-bottom: 20px; }
 .setup-section { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; }
 .setup-step { color: var(--accent); font: 700 12px var(--font-roman); }
 .setup-section h2 { margin: 0; font-size: 14px; font-weight: 750; }
@@ -494,23 +492,23 @@ body.video-rotated {
 .setup-pick > .ic { color: var(--accent); flex: none; }
 .setup-card .rows { margin: 0; background: var(--sheet); border-radius: 16px; }
 .setup-card .row-wrap { align-items: stretch; }
+.setup-card .row-wrap .segs { gap: 0; padding: 2px; flex-wrap: nowrap; width: 100%; }
+.setup-card .row-wrap .seg { flex: 1 1 0; min-width: 0; padding: 6px 4px; font-size: 12px; white-space: nowrap; }
 .setup-options { margin-top: 12px; }
 .setup-options summary { display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 8px 2px; color: var(--ink-2); list-style: none; }
 .setup-options summary::-webkit-details-marker { display: none; }
 .setup-options summary > span { display: grid; gap: 3px; flex: 1; }
 .setup-options summary b { font-size: 13px; font-weight: 650; }
-.setup-options summary span span { font-size: 11.5px; color: var(--ink-3); }
 .setup-chevron { transition: transform .2s var(--ease); }
 .setup-options[open] .setup-chevron { transform: rotate(180deg); }
 .setup-options[open] > .rows { margin-top: 10px; }
 .setup-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
 .setup-actions .btn { justify-content: center; min-height: 48px; padding: 12px 8px; border-radius: 16px; }
-.setup-help { margin: 12px 8px 18px; color: var(--ink-3); font-size: 11.5px; line-height: 1.8; text-align: center; }
 .setup-back { display: flex; margin: 16px auto 0; background: transparent; color: var(--ink-3); font-size: 13px; }
 .setup-fields:disabled .setup-pick { opacity: .55; cursor: wait; }
 @media (max-width: 380px) {
   .setup { padding: 20px 14px calc(22px + var(--safe-b)); }
-  .setup-card { padding: 14px; }
+  .setup-card { padding: 0; }
   .setup-pick { gap: 8px; padding: 18px 10px; }
 }
 .setup-bar {

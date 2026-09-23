@@ -7,6 +7,7 @@ import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import { UpdateManager } from './update.js';
 import { nativeStyles } from './ui.js';
+import { errorMessage } from '../../web/js/errors.js';
 import { CHANNELS, CHANNEL_KEY, OWN_KEY, DEV_KEY, PREVIOUS_CHANNEL_KEY, normalizeSource, sourceKey, fetchSourceManifest } from './channels.js';
 
 const NativeMedia = registerPlugin('NativeMedia');
@@ -24,7 +25,7 @@ function button(text, action, className = 'native-button') {
   const b = node('button', text); b.type = 'button';
   b.className = className;
   if (className === 'native-tool') b.setAttribute('aria-label', text);
-  b.onclick = async () => { b.disabled = true; try { await action(); } catch (e) { setStatus(e.message); } finally { b.disabled = false; } };
+  b.onclick = async () => { b.disabled = true; try { await action(); } catch (e) { setStatus(errorMessage(e)); } finally { b.disabled = false; } };
   return b;
 }
 function setStatus(text) {
@@ -35,7 +36,7 @@ async function getJson(url) {
   const response = await CapacitorHttp.get({ url, headers: { 'Cache-Control': 'no-cache',
     Accept: url.startsWith('https://api.github.com/') ? 'application/vnd.github+json' : 'application/json' },
     connectTimeout: 15000, readTimeout: 20000, responseType: 'json' });
-  if (response.status !== 200) throw Error(`更新服务返回 ${response.status}，请稍后重试`);
+  if (response.status !== 200) throw Error(`更新服务暂时不可用（HTTP ${response.status}），请稍后重试`);
   return typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
 }
 async function readSource() {
@@ -148,7 +149,7 @@ function offerUpdate(manifest, view = updateDialog('发现新版本')) {
       note.textContent = '正在重新打开…';
       await manager.apply();
     } catch (error) {
-      heading.textContent = '更新未完成'; note.textContent = error.message;
+      heading.textContent = '更新未完成'; note.textContent = errorMessage(error, '更新失败，请检查网络后重试');
       install.textContent = '重试';
     } finally { updating = false; later.disabled = false; box.removeAttribute('aria-busy'); }
   }, 'native-button native-button-primary');
@@ -172,7 +173,7 @@ async function check(manual = false) {
     }
   } catch (error) {
     if (!view?.box.open) return;
-    view.heading.textContent = '暂时无法检查更新'; view.note.textContent = error.message;
+    view.heading.textContent = '无法检查更新'; view.note.textContent = errorMessage(error, '无法连接更新服务，请检查网络后重试');
     view.actions.replaceChildren(button('关闭', () => view.box.close()),
       button('重试', () => check(true), 'native-button native-button-primary'));
   }
@@ -339,7 +340,7 @@ async function initialize() {
         setStatus('系统设置中的代码分支已更改，保存后切换');
         settings(changed);
       }
-    } catch (error) { setStatus(error.message); settings(); }
+    } catch (error) { setStatus(errorMessage(error, '分支设置读取失败，请重新选择')); settings(); }
   });
   if (Capacitor.getPlatform() === 'android') {
     await NativeMedia.addListener('pipChanged', ({ active }) => window.dispatchEvent(new CustomEvent('native-pip', { detail: { active } })));
@@ -349,8 +350,8 @@ async function initialize() {
 export const ready = initialize().catch(async (error) => {
   console.error('Native startup failed', error);
   // Keep the bundled recovery action independent of the application entry points.
-  const box = node('div', `本地应用初始化失败：${error.message}。`);
-  box.append(button('恢复安装包前端', () => CapacitorUpdater.reset())); document.body.append(box);
+  const box = node('div', '应用启动失败：' + errorMessage(error, '请重启应用或恢复内置版本'));
+  box.append(button('恢复内置版本', () => CapacitorUpdater.reset())); document.body.append(box);
   await SplashScreen.hide().catch(() => {});
   throw error;
 });

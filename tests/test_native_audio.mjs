@@ -210,7 +210,8 @@ test('native playback errors reach the user instead of being hidden by a synthet
   h.w.document.body.innerHTML = '<div id="toast"></div>';
   const controls = h.w.NativeAudioTest.setupMediaSession({ audio: h.audio, engine: {} });
   await controls.play();
-  assert.match(h.w.document.getElementById('toast').textContent, /AVAudioSession could not activate/);
+  assert.match(h.w.document.getElementById('toast').textContent, /播放失败.*重试/);
+  assert.doesNotMatch(h.w.document.getElementById('toast').textContent, /AVAudioSession/);
 });
 
 test('video frames stay muted and background WebKit pauses never stop the native sound', async (t) => {

@@ -10,7 +10,7 @@ export const GLOBAL_KEYS = ['linguatrack.config.v1', 'linguatrack.settings.v1', 
 const TRACK_PREFIX = 'linguatrack.track.';
 const ID = /^[a-zA-Z0-9_-]{1,128}$/;
 const object = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
-const fail = (message) => { throw new Error('备份无效: ' + message); };
+const fail = (message) => { throw new Error('备份无效：' + message); };
 const require = (ok, message) => { if (!ok) fail(message); };
 const finite = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0;
 const filename = (value) => String(value || '').split(/[\\/]/).pop();
@@ -24,7 +24,7 @@ function parseJSON(text) {
       return value;
     });
   } catch (err) {
-    if (err.message.startsWith('备份无效:')) throw err;
+    if (err.message.startsWith('备份无效：')) throw err;
     fail('JSON 格式损坏');
   }
 }
@@ -159,7 +159,7 @@ function validateAnalysis(data, id) {
 /** Validate the entire archive before any persistent writes or preview actions. */
 export function validateBackup(backup) {
   require(object(backup) && backup.format === BACKUP_FORMAT, '不是 Lingua 用户数据备份');
-  require(backup.version === BACKUP_VERSION, '不支持的备份版本, 请更新应用');
+  require(backup.version === BACKUP_VERSION, '备份版本不受支持，请更新应用');
   require(typeof backup.exportedAt === 'string' && Number.isFinite(Date.parse(backup.exportedAt)), '导出时间错误');
   require(typeof backup.includesCredentials === 'boolean', '缺少凭据选项');
   require(object(backup.localStorage) && object(backup.stores), '缺少配置或数据');
@@ -173,7 +173,7 @@ export function validateBackup(backup) {
     for (const row of rows) {
       require(object(row) && typeof row.key === 'string' && row.key.length > 0
         && !keys.has(row.key) && row.value !== undefined
-        && typeof row.track === 'string' && finite(row.at), '记录损坏或键重复: ' + name);
+        && typeof row.track === 'string' && finite(row.at), '记录损坏或键重复：' + name);
       keys.add(row.key);
       require(!row.track || (ID.test(row.track)
         && (row.key === row.track || row.key.startsWith(row.track + '|'))), '缓存关联错误');

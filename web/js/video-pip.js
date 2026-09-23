@@ -304,7 +304,7 @@ export function setupVideoPip({ video, stage, app, engine, releaseLandscape, onL
       try { await openClassic(); return; } catch (error) { failures.push(error); }
     }
     if (failures.length) console.warn('[pip] 原生小窗没有打开', failures);
-    toast(failures.length ? '系统没有允许小窗, 用 Safari 打开可以浮在其他 App 上' : '这个宿主没有系统小窗接口');
+    toast(failures.length ? '无法开启画中画，请检查系统权限后重试' : '当前环境不支持画中画');
   }
 
   async function toggle() {
@@ -313,7 +313,7 @@ export function setupVideoPip({ video, stage, app, engine, releaseLandscape, onL
       else if (!beforeOpen || await beforeOpen()) await open();
     } catch (error) {
       console.warn('[pip]', error);
-      toast('小窗没有打开, 再点一次试试');
+      toast('画中画启动失败，请重试');
     }
     onStateChange?.();
   }

@@ -24,10 +24,10 @@ export function parseSubtitles(text, name = '') {
   let rows = [];
   if (/\.json$/i.test(name)) {
     let data;
-    try { data = JSON.parse(text); } catch { throw new Error('字幕 JSON 格式损坏'); }
+    try { data = JSON.parse(text); } catch { throw new Error('字幕 JSON 格式无效，请检查文件内容'); }
     const list = Array.isArray(data) ? data : ['segments', 'sentences', 'chunks', 'result', 'results', 'words']
       .map((key) => data?.[key]).find(Array.isArray);
-    if (!list) throw new Error('字幕 JSON 中没有带时间戳的 segments / words');
+    if (!list) throw new Error('字幕 JSON 缺少带时间戳的句子或单词');
     rows = list.filter((v) => v && typeof v === 'object').map((v) => ({
       start: startOf(v), end: endOf(v),
       text: clean(textOf(v) || (v.words || []).map(textOf).join(' ')),
@@ -59,7 +59,7 @@ export function parseSubtitles(text, name = '') {
     if (previous && previous.end > row.start) previous.end = row.start;
     out.push({ ...row });
   }
-  if (!out.length) throw new Error('没有找到有效的字幕时间戳，请选择 JSON / SRT / VTT 字幕');
+  if (!out.length) throw new Error('字幕缺少有效时间戳，请检查 JSON、SRT 或 VTT 文件');
   return out;
 }
 

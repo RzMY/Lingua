@@ -271,7 +271,7 @@ test('an insert collision rejects the whole batch and leaves configuration untou
 });
 
 test('import explicitly refuses transient in-memory storage', async () => {
-  await assert.rejects(importBackup(fixture()), /持久存储不可用/);
+  await assert.rejects(importBackup(fixture()), /本地存储不可用/);
   assert.equal(await get('tracks', 'lesson'), undefined);
 });
 

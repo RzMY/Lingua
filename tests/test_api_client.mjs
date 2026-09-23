@@ -43,3 +43,35 @@ test('401 responses become an actionable authentication error', async (t) => {
   await assert.rejects(health(), (error) => error instanceof ApiError && error.status === 401
     && error.message.includes('\u8bbf\u95ee\u4ee4\u724c'));
 });
+
+test('backend failures show recovery guidance without reflecting response bodies', async (t) => {
+  for (const [status, expected] of [[400, /字幕/], [403, /权限/], [404, /地址/],
+    [413, /上限/], [429, /稍后/], [500, /稍后/]]) {
+    t.mock.method(globalThis, 'fetch', async () => new Response('<html>private response 私密数据</html>', { status }));
+    await assert.rejects(health(), (error) => {
+      assert.ok(error instanceof ApiError);
+      assert.equal(error.status, status);
+      assert.match(error.message, expected);
+      assert.doesNotMatch(error.message, /private|私密|html/);
+      return true;
+    });
+    t.mock.restoreAll();
+  }
+});
+
+test('HTML, empty and invalid JSON success responses do not pass the backend connection check', async (t) => {
+  for (const body of ['<html>Sign in</html>', '', 'null', '[]', '{"ok":false}', '{"error":"private"}']) {
+    t.mock.method(globalThis, 'fetch', async () => new Response(body));
+    await assert.rejects(health(), /返回格式异常/);
+    t.mock.restoreAll();
+  }
+});
+
+test('backend network failures are localized and explicit cancellation stays distinguishable', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => { throw new TypeError('Failed to fetch'); });
+  await assert.rejects(health(), (error) => /网络.*设置 → 分析后端/.test(error.message)
+    && !/Failed to fetch|python/.test(error.message));
+  t.mock.restoreAll();
+  t.mock.method(globalThis, 'fetch', async () => { throw new DOMException('Aborted', 'AbortError'); });
+  await assert.rejects(health(), { name: 'AbortError' });
+});

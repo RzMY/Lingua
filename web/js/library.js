@@ -12,7 +12,7 @@
  * 也不再需要联网就能重听已经导入过的音频。
  */
 
-import { del, get, getMany, put, values, wipeTrack, wipeTrackAll, writeBatch } from './store.js';
+import { del, get, getMany, values, wipeTrack, wipeTrackAll, writeBatch } from './store.js';
 import { dropTrackCfg } from './trackcfg.js';
 import { randomId } from './util.js';
 import { isMediaFile } from './media.js';
@@ -30,17 +30,17 @@ export function slugId(name) {
 
 /** 新到旧; 首页按天分组就靠 createdAt. */
 export async function listTracks() {
-  const rows = await values('tracks');
+  const rows = await values('tracks', { strict: true });
   return rows
     .filter((t) => t && t.id)
     .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))
       || String(a.title || '').localeCompare(String(b.title || '')));
 }
 
-export const getTrack = (id) => get('tracks', id);
-export const trackData = (id) => get('data', id);
+export const getTrack = (id) => get('tracks', id, { strict: true });
+export const trackData = (id) => get('data', id, { strict: true });
 export async function audioBlob(id) {
-  const audio = await get('audio', id);
+  const audio = await get('audio', id, { strict: true });
   if (!audio || audio.storage !== 'chunks-v1') return audio;
   const parts = [];
   // One transaction per bounded batch, instead of one round trip per MiB.
@@ -56,7 +56,7 @@ export async function audioBlob(id) {
   return new Blob(parts, { type: audio.type });
 }
 export async function transcriptBlob(id) {
-  const saved = await get('transcripts', id);
+  const saved = await get('transcripts', id, { strict: true });
   return saved instanceof ArrayBuffer ? new Blob([saved]) : saved;
 }
 
@@ -83,25 +83,7 @@ export async function createTrack(file, { title = '', lang = 'ja' } = {}) {
   if (!(file instanceof Blob) || !file.size || !isMediaFile(file)) {
     throw new Error('请选择非空的音频或视频文件');
   }
-  const id = await uniqueId(slugId(file.name));
-  const record = {
-    id,
-    title: (title || file.name.replace(/\.[^.]+$/, '') || id).slice(0, 200),
-    lang,
-    status: 'new',                 // new | subtitles (raw) | ready (analyzed) | failed
-    error: '',
-    audio: { name: file.name, size: file.size || 0, type: file.type || '' },
-    duration: 0,
-    sentences: 0,
-    words: 0,
-    hasWordTiming: false,
-    transcript: null,
-    createdAt: now(),
-    updatedAt: now(),
-  };
-  await put('audio', id, file, id);
-  await put('tracks', id, record, id);
-  return record;
+  return createPreparedTrack(file, null, { title, lang, persistent: false });
 }
 
 export async function patchTrack(id, fields) {
@@ -110,14 +92,14 @@ export async function patchTrack(id, fields) {
   const next = { ...record, id, updatedAt: now() };
   // undefined 表示「这次不改」而不是「清空」—— 展开对象会把 undefined 也盖上去
   for (const [k, v] of Object.entries(fields || {})) if (v !== undefined) next[k] = v;
-  await put('tracks', id, next, id);
+  await writeBatch({ tracks: [{ key: id, value: next, track: id }] });
   return next;
 }
 
 /** 分析结果落库, 并把统计回填进元数据. */
 export async function saveAnalysis(id, track, { transcriptName = '', transcriptFile = null } = {}) {
   const record = await getTrack(id);
-  if (!record) throw new Error('找不到这条音频');
+  if (!record) throw new Error('媒体不存在，请重新选择');
   const stats = track.stats || {};
   const audio = track.audio || {};
   const next = { ...record,
@@ -142,14 +124,14 @@ export async function saveAnalysis(id, track, { transcriptName = '', transcriptF
   return next;
 }
 
-/** Workbench import: commit the listening master and subtitle together, never the ASR proxy. */
-export async function createPreparedTrack(file, transcript, { title = '', lang = 'ja', duration = 0, onStage } = {}) {
+/** Shared chunked import. Workbench callers require persistent storage; ordinary imports also allow a memory-only session. */
+export async function createPreparedTrack(file, transcript, { title = '', lang = 'ja', duration = 0, onStage, persistent = true } = {}) {
   if (!(file instanceof Blob) || !file.size || !file.name) throw new Error('缺少聆听音频');
   if (transcript && (!(transcript instanceof Blob) || !transcript.size || !SUB_RE.test(transcript.name))) {
     throw new Error('缺少有效的 JSON / SRT / VTT 字幕');
   }
   const id = await uniqueId(slugId(file.name));
-  const record = { id, title: (title || file.name.replace(/\.[^.]+$/, '')).slice(0, 200), lang,
+  const record = { id, title: (title || file.name.replace(/\.[^.]+$/, '') || id).slice(0, 200), lang,
     status: 'new', error: '', duration, sentences: 0, words: 0, hasWordTiming: false,
     audio: { name: file.name, size: file.size, type: file.type },
     transcript: transcript ? { name: transcript.name, at: now(), missing: false } : null,
@@ -163,13 +145,13 @@ export async function createPreparedTrack(file, transcript, { title = '', lang =
       const bytes = await file.slice(p, p + chunkSize).arrayBuffer(), key = `${prefix}|${i}`;
       keys.push(key);
       await writeBatch({ audioChunks: [{ key, value: bytes, track: id }] },
-        { persistent: true, addOnly: true, timeoutMs: 15000 });
+        { persistent, addOnly: true, timeoutMs: 15000 });
       onStage?.(`正在保存聆听音频… ${Math.round(Math.min(p + chunkSize, file.size) / file.size * 100)}%`);
     }
     const manifest = { storage: 'chunks-v1', prefix, count: keys.length, type: file.type, size: file.size };
     const batches = { tracks: [{ key: id, value: record, track: id }], audio: [{ key: id, value: manifest, track: id }] };
     if (transcript) batches.transcripts = [{ key: id, value: transcript, track: id }];
-    await writeBatch(batches, { addOnly: true, persistent: true, timeoutMs: 15000 });
+    await writeBatch(batches, { addOnly: true, persistent, timeoutMs: 15000 });
     return record;
   } catch (err) {
     for (const key of keys) await del('audioChunks', key);
@@ -183,8 +165,8 @@ export const SUB_RE = /\.(json|srt|vtt|webvtt)$/i;
 /** Save a replacement subtitle before analysis so failures can retry from the player. */
 export async function savePreparedTranscript(id, file, lang) {
   const record = await getTrack(id);
-  if (!record) throw new Error('找不到这条音频，请重新选择');
-  if (!(file instanceof Blob) || !file.size || !SUB_RE.test(file.name)) throw new Error('请选择 JSON / SRT / VTT 字幕');
+  if (!record) throw new Error('媒体不存在，请重新选择');
+  if (!(file instanceof Blob) || !file.size || !SUB_RE.test(file.name)) throw new Error('请选择有效的 JSON、SRT 或 VTT 字幕');
   const { subtitleTrack } = await import('./subtitles.js');
   const data = await subtitleTrack({ ...record, lang: lang || record.lang }, file);
   const next = await saveAnalysis(id, data, { transcriptName: file.name, transcriptFile: file });
@@ -214,7 +196,7 @@ export function matchFiles(records, files) {
 /** Reattach files without changing analysis, cache keys, or the track ID. */
 export async function attachFiles(id, files) {
   const record = await getTrack(id);
-  if (!record) throw new Error('找不到这条音频');
+  if (!record) throw new Error('媒体不存在，请重新选择');
   const next = { ...record, updatedAt: now() };
   const batches = {};
   const staged = [];
@@ -224,7 +206,7 @@ export async function attachFiles(id, files) {
       const file = files[kind];
       if (!file) continue;
       if (!(file instanceof Blob) || !file.name || !file.size) throw new Error('请选择非空文件');
-      if (kind === 'transcript' && !SUB_RE.test(file.name)) throw new Error('请选择 JSON / SRT / VTT 字幕');
+      if (kind === 'transcript' && !SUB_RE.test(file.name)) throw new Error('请选择 JSON、SRT 或 VTT 字幕');
       if (kind === 'audio' && !isMediaFile(file)) {
         throw new Error('请选择音频或视频文件');
       }

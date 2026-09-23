@@ -13,7 +13,8 @@
  */
 
 import { config, fill, langVars } from './config.js';
-import { chatJSON, LLMError } from './llm.js';
+import { chatJSON } from './llm.js';
+import { errorMessage } from './errors.js';
 import { get as cacheGet, getMany, put as cachePut } from './store.js';
 import { hash53 } from './util.js';
 
@@ -170,7 +171,7 @@ export function createTranslator(track, hooks = {}) {
           }
           if (!warned && hooks.onError) {
             warned = true;
-            hooks.onError(err instanceof LLMError ? err.message : (err && err.message) || '翻译失败');
+            hooks.onError(errorMessage(err, '模型请求失败，请重试'));
           }
         })
         .finally(() => {
@@ -289,4 +290,3 @@ export async function cachedTranslation(trackId, lang, text) {
   if (!text) return '';
   return (await cacheGet('tr', keyOf(trackId, lang, text))) || '';
 }
-

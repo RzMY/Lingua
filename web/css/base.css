@@ -492,9 +492,9 @@ button {
 /* 内容自己占一整行 (词性图例这类) */
 .row-block { display: block; }
 .row-block .row-label { width: 100%; }
-/*  行内输入 (调用参数这类「参数名 + 数值」): 标签不撑满一行, 输入框紧跟在参数名
-    后面。标签必须 flex: none —— 它默认 flex: 1, 会把输入框一路推到最右边。 */
-.row-inline .row-label { flex: none; }
+/* Numeric setting rows wrap when the label and input cannot fit on a narrow screen. */
+.row-inline { flex-wrap: wrap; }
+.row-inline .row-label { flex: 1 1 auto; }
 .row-input {
   flex: none;
   width: 104px;
@@ -650,19 +650,10 @@ html[data-theme="dark"] .switch::after { background: #e8ecdc; }
   }
 }
 
-/* Native document transitions also cover back/forward without delaying links.
-   Only the viewport snapshot is animated, never each sentence or media frame. */
-@view-transition { navigation: auto; }
-::view-transition-old(root) { animation: page-leave 140ms ease-out both; }
-::view-transition-new(root) { animation: page-arrive 220ms var(--ease) both; }
-@keyframes page-leave { to { opacity: 0; } }
 @keyframes page-arrive { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
-/* Entry fallback for browsers without cross-document View Transitions. */
+/* Keep a local entrance: rapid player navigation can reject cross-document snapshot transitions. */
 @media (prefers-reduced-motion: no-preference) {
   .home, .playback-content { animation: page-arrive 220ms var(--ease); }
   .finder:not([hidden]), .setup-options[open] > .rows { animation: page-arrive 180ms var(--ease); }
-}
-@media (prefers-reduced-motion: reduce) {
-  ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
 }
