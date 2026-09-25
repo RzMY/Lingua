@@ -15,7 +15,7 @@ const { outputFiles } = await build({ stdin: { contents: `
 const html = await readFile(new URL('../web/player.html', import.meta.url), 'utf8');
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
-function harness(t, { kind = 'audio', ios = true, supported = true, bridgeOverrides = {} } = {}) {
+function harness(t, { kind = 'audio', ios = true, platform = ios ? 'ios' : null, supported = true, bridgeOverrides = {} } = {}) {
   const dom = new JSDOM(html, { url: 'https://localhost/player.html', runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window, doc = w.document, calls = [];
   t.after(() => { w.dispatchEvent(new w.Event('pagehide')); w.close(); });
@@ -35,7 +35,7 @@ function harness(t, { kind = 'audio', ios = true, supported = true, bridgeOverri
     update: async (value) => { calls.push(['update', value]); },
     close: async (value) => { calls.push(['close', value]); }, ...bridgeOverrides,
   };
-  if (ios) w.LinguaNative = { platform: 'ios', captionPip: supported ? bridge : null };
+  if (platform) w.LinguaNative = { platform, captionPip: supported ? bridge : null };
   w.eval(outputFiles[0].text);
   const api = w.PipTest, app = doc.getElementById('app'), media = doc.getElementById(kind);
   Object.defineProperties(media, { readyState: { configurable: true, value: 2 }, duration: { value: 30 },
@@ -56,8 +56,8 @@ function harness(t, { kind = 'audio', ios = true, supported = true, bridgeOverri
   return { w, doc, api, app, media, track, pip, videoPlayer, calls, bridge };
 }
 
-for (const kind of ['audio', 'video']) test(`${kind}: native captions use the original clock and leave playback intact`, async (t) => {
-  const h = harness(t, { kind }); await h.media.play();
+for (const platform of ['ios', 'android']) for (const kind of ['audio', 'video']) test(`${platform} ${kind}: native captions use the original clock and leave playback intact`, async (t) => {
+  const h = harness(t, { kind, platform }); await h.media.play();
   const count = h.doc.querySelectorAll('video').length;
   await h.pip.toggle(); await flush();
   assert.equal(h.pip.isActive(), true); assert.equal(h.pip.supported(), true);
@@ -88,9 +88,9 @@ for (const kind of ['audio', 'video']) test(`${kind}: native captions use the or
   assert.equal(h.media.disablePictureInPicture, false);
 });
 
-test('unsupported browsers and old iOS binaries hide the entry even with video PiP APIs present', async (t) => {
-  for (const ios of [false, true]) {
-    const h = harness(t, { ios, supported: false, kind: 'video' });
+test('unsupported browsers and old mobile binaries hide the entry even with video PiP APIs present', async (t) => {
+  for (const platform of [null, 'ios', 'android']) {
+    const h = harness(t, { platform, supported: false, kind: 'video' });
     let requested = 0;
     h.w.documentPictureInPicture = { requestWindow: () => requested++ };
     h.media.webkitSetPresentationMode = () => requested++;
@@ -107,6 +107,33 @@ test('native rejection never falls back to a black video, and can retry', async 
   assert.doesNotMatch(h.doc.getElementById('toast').textContent, /denied/);
   assert.equal(h.doc.querySelector('.audio-pip-carrier, .ios-caption-carrier'), null);
   h.bridge.open = async () => {}; await h.pip.toggle(); assert.equal(h.pip.isActive(), true);
+});
+
+test('Android overlay permission denial restores the player and permits another attempt', async (t) => {
+  const h = harness(t, { platform: 'android', bridgeOverrides: {
+    open: async () => { throw { code: 'OVERLAY_PERMISSION' }; },
+  } });
+  await h.media.play(); await h.pip.toggle();
+  assert.match(h.doc.getElementById('toast').textContent, /显示在其他应用上层/);
+  assert.equal(h.pip.isBusy(), false); assert.equal(h.pip.isActive(), false);
+  assert.equal(h.media.paused, false); assert.equal(h.media.disablePictureInPicture, false);
+  h.bridge.open = async () => {}; await h.pip.toggle();
+  assert.equal(h.pip.isActive(), true);
+});
+
+test('Android waits for permission without claiming an active window, then syncs the latest clock', async (t) => {
+  let grant;
+  const h = harness(t, { platform: 'android', bridgeOverrides: {
+    open: () => new Promise((resolve) => { grant = resolve; }),
+  } });
+  await h.media.play(); const opening = h.pip.toggle(); await flush();
+  assert.equal(h.pip.isBusy(), true); assert.equal(h.pip.isActive(), false);
+  h.media.currentTime = 19; h.media.dispatchEvent(new h.w.Event('seeked')); await flush();
+  grant(); await opening;
+  assert.equal(h.pip.isActive(), true); assert.equal(h.calls.at(-1)[1].position, 19);
+  const session = h.calls.at(-1)[1].session;
+  h.w.dispatchEvent(new h.w.CustomEvent('native-caption-pip', { detail: { session, active: false } }));
+  assert.equal(h.pip.isActive(), false); assert.equal(h.media.disablePictureInPicture, false);
 });
 
 test('capability changes reveal and hide the entry, while an active window keeps its close button', async (t) => {

@@ -250,9 +250,9 @@ async function initialize() {
   if (audioPlayer) {
     try { nativeVideoAudio = (await audioPlayer.capabilities()).videoAudio === true; } catch { /* Older IPA. */ }
   }
-  // The optional bridge requires a new IPA; old binaries must never pretend to support it.
+  // The optional bridge requires a new APK/IPA; old binaries must never pretend to support it.
   let captionPip = null;
-  const captionPluginAvailable = Capacitor.getPlatform() === 'ios' && Capacitor.isPluginAvailable('CaptionPip');
+  const captionPluginAvailable = Capacitor.isPluginAvailable('CaptionPip');
   let captionProbe = null;
   const refreshCaptionPip = () => {
     if (!captionPluginAvailable) return Promise.resolve();

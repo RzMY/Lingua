@@ -50,3 +50,5 @@ ios/**/xcuserdata/
 mobile-artifacts/
 dist/
 release-assets/
+
+.idea/

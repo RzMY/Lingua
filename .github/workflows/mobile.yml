@@ -76,7 +76,7 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: bash gradlew assembleDebug assembleRelease
+        run: bash gradlew assembleDebug assembleRelease testDebugUnitTest
       - name: Stage packages with stable names
         working-directory: android
         run: |

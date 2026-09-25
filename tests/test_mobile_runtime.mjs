@@ -86,15 +86,16 @@ test('video audio is enabled only by binaries supporting the extended native API
   }
 });
 
-test('caption PiP is exposed only by an iOS binary reporting native support', async (t) => {
-  for (const [platform, available, supported] of [['ios', true, true], ['ios', true, false], ['ios', false, false], ['android', true, true]]) {
+test('caption windows are exposed only by mobile binaries reporting native support', async (t) => {
+  for (const [platform, available, supported] of [['ios', true, true], ['ios', true, false], ['ios', false, false],
+    ['android', true, true], ['android', true, false], ['android', false, false]]) {
     let listener, probes = 0;
     const bridge = { capabilities: async () => { probes++; return { supported }; },
       addListener: async (name, handler) => { assert.equal(name, 'stateChanged'); listener = handler; } };
     const h = await harness({}, { platform, captionPip: available ? bridge : null }); t.after(h.close);
-    const exposed = platform === 'ios' && available && supported;
+    const exposed = available && supported;
     assert.equal(!!h.window.LinguaNative.captionPip, exposed);
-    assert.equal(probes, platform === 'ios' && available ? 1 : 0);
+    assert.equal(probes, available ? 1 : 0);
     if (exposed) {
       let event;
       h.window.addEventListener('native-caption-pip', (value) => { event = value.detail; });

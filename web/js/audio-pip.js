@@ -5,7 +5,7 @@ import { toast } from './util.js';
 import { errorMessage } from './errors.js';
 
 export function setupAudioPip({ media, engine, app, beforeOpen, releaseLandscape, onStateChange }) {
-  const getBridge = () => nativeApp()?.platform === 'ios' ? nativeApp().captionPip : null;
+  const getBridge = () => nativeApp()?.captionPip ?? null;
   let nativePip = null, opening = false;
   const supported = () => !!getBridge() || hasSession();
   const isActive = () => !!nativePip?.isActive();

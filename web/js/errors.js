@@ -18,6 +18,8 @@ export function errorMessage(error, fallback = '操作失败，请重试') {
     PIP_PRESENTATION_TIMEOUT: '字幕小窗显示超时，请重试',
     PIP_SOURCE_DETACHED: '播放窗口已关闭，请返回播放页重试',
     PIP_START_FAILED: '字幕小窗启动失败，请重试',
+    OVERLAY_PERMISSION: '请在系统设置中允许 Lingua 显示在其他应用上层，然后重试字幕小窗',
+    OVERLAY_SETTINGS: '无法打开悬浮窗设置，请到系统设置中允许 Lingua 显示在其他应用上层',
     AUDIO_STALE: '当前音频已切换，请重新播放',
   };
   if (Object.hasOwn(messages, error?.code)) return messages[error.code];

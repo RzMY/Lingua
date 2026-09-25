@@ -1,4 +1,4 @@
-/** iOS UIKit subtitles: send the timeline once, then synchronize the native clock. */
+/** Native subtitles: send the timeline once, then synchronize the native clock. */
 import { trackCfg } from './trackcfg.js';
 import { pipLines } from './video-pip.js';
 import { randomId, toast } from './util.js';
@@ -7,7 +7,7 @@ export function setupNativeCaptionPip({ bridge, media, engine, onStateChange }) 
   let session = '', sequence = 0, active = false, opening = false, closing = false;
   let disposed = false, stalled = false, lastSent = -Infinity, lastTimeline = '';
   let inFlight = false, queued = null, originalDisablePip = false;
-  // Active means AVKit confirmed a system PiP window. A pending request is not a window.
+  // Active means the native window is attached. Permission/startup requests are only busy.
   const isActive = () => active;
   const hasSession = () => active || opening || closing;
   const isBusy = () => opening || closing;
