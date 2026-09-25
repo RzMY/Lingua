@@ -75,7 +75,7 @@ test('native audio is independent of PiP support and forwards native events to t
   listener({ session: 'lesson', position: 15, paused: false });
   assert.equal(received.position, 15); assert.equal(received.paused, false);
   const browser = await harness({}, { platform: 'android', audioPlayer: bridge }); t.after(browser.close);
-  assert.equal(browser.window.LinguaNative.audioPlayer, null);
+  assert.ok(browser.window.LinguaNative.audioPlayer);
 });
 
 test('video audio is enabled only by binaries supporting the extended native API', async (t) => {

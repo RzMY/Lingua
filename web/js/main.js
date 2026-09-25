@@ -28,8 +28,6 @@ import { setupPlayer } from './player.js';
 import { mediaKind } from './media.js';
 import { setupVideo } from './video-player.js';
 import { setupAudioPip } from './audio-pip.js';
-import { NativeAudio } from './native-audio.js';
-import { NativeVideo } from './native-video.js';
 import { initSettings, setSetting, settings } from './settings.js';
 import { initTrackCfg, trackCfg } from './trackcfg.js';
 import { config, loadConfig } from './config.js';
@@ -42,7 +40,6 @@ import { errorMessage } from './errors.js';
 import { audioBlob, audioUrl, getTrack, patchTrack, saveAnalysis, setDuration, setPosition, trackData,
   transcriptBlob, savePreparedTranscript, SUB_EXT, SUB_RE } from './library.js';
 import { plainTrack } from './subtitles.js';
-import { openFileRepair } from './backup-ui.js';
 import { createTranslator } from './translate.js';
 import { closeWordCard, isCardOpen, openWordCard } from './card.js';
 import { chatOpen, closeChat, openChat } from './chat.js';
@@ -382,8 +379,11 @@ function updateFileState() {
   dom.btnPlay.title = objUrl ? '' : '请先补充音频或视频文件';
 }
 
-function repairFiles() {
+async function repairFiles() {
   if (!record) return;
+  let openFileRepair;
+  try { ({ openFileRepair } = await import('./backup-ui.js')); }
+  catch (error) { toast(errorMessage(error, '文件管理加载失败，请重试')); return; }
   openFileRepair([record], {
     onUpdate: async (updated) => {
       record = updated;
@@ -415,9 +415,16 @@ async function load(id, forceSetup) {
   }
   const isVideo = mediaKind(record.audio) === 'video';
   audio = isVideo ? $('video') : $('audio');
-  if (audio === $('audio') && nativeApp()?.audioPlayer) audio = new NativeAudio(nativeApp().audioPlayer);
-  if (isVideo && nativeApp()?.nativeVideoAudio) audio = new NativeVideo(nativeApp().audioPlayer, $('video'));
+  if (audio === $('audio') && nativeApp()?.audioPlayer) {
+    const { NativeAudio } = await import('./native-audio.js');
+    audio = new NativeAudio(nativeApp().audioPlayer);
+  }
+  if (isVideo && nativeApp()?.nativeVideoAudio) {
+    const { NativeVideo } = await import('./native-video.js');
+    audio = new NativeVideo(nativeApp().audioPlayer, $('video'));
+  }
   engine.audio = audio;
+  audio.addEventListener('timeupdate', () => engine.backgroundTick());
   player = setupPlayer({ audio, engine, dom, savePosition: setPosition });
   if (isVideo) {
     videoPlayer = setupVideo({ app: dom.app, video: $('video'), media: audio, engine, toggle: () => player.toggle(),
@@ -582,9 +589,10 @@ function syncTranslate() {
 let pendingForce = false;
 
 const runRelayout = rafOnce(() => {
+  if (engine.presentationHidden) return;
   const force = pendingForce;
   pendingForce = false;
-  if (!dom.setup.hidden || !track || !vlist) return;
+  if (!dom.setup.hidden || !track || !vlist || engine.presentationHidden) return;
   syncFollowAlign();
   const changed = metrics.sync(dom.viewport.clientWidth);
   if (!changed && !force) { engine.markScrollDirty(); return; }
@@ -706,7 +714,18 @@ function wireReader() {
     }
   });
   new ResizeObserver(() => relayout(false)).observe(sc);
-  document.addEventListener('visibilitychange', () => engine.kick());
+  let activityPip = false, nativeActive = true;
+  const syncPresentation = () => {
+    engine.setPresentationHidden(document.hidden || !nativeActive || activityPip);
+    if (!engine.presentationHidden) relayout(false);
+  };
+  document.addEventListener('visibilitychange', syncPresentation);
+  window.addEventListener('native-app-state', ({ detail }) => { nativeActive = detail.active; syncPresentation(); });
+  window.addEventListener('native-pip', ({ detail }) => {
+    if (typeof detail.active !== 'boolean') return;
+    activityPip = detail.active; syncPresentation();
+  });
+  syncPresentation();
 
   dom.viewport.addEventListener('click', onReaderClick);
   dom.viewport.addEventListener('pointerdown', onPressStart);

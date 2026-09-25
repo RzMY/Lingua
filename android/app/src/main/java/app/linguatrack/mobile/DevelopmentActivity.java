@@ -1,6 +1,7 @@
 package app.linguatrack.mobile;
 
-import android.app.Activity;
+import androidx.activity.ComponentActivity;
+import androidx.activity.OnBackPressedCallback;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -21,7 +22,7 @@ import androidx.webkit.WebViewFeature;
 import org.json.JSONObject;
 
 /** Remote browsing has no Capacitor bridge; its only message is a presentation hint. */
-public class DevelopmentActivity extends Activity {
+public class DevelopmentActivity extends ComponentActivity {
     private WebView web;
     private FrameLayout root;
     private Button bubble, reload, back;
@@ -46,6 +47,9 @@ public class DevelopmentActivity extends Activity {
     }
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override public void handleOnBackPressed() { navigateBack(); }
+        });
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         getWindow().setStatusBarColor(Color.TRANSPARENT);
         getWindow().setNavigationBarColor(Color.TRANSPARENT);
@@ -197,7 +201,7 @@ public class DevelopmentActivity extends Activity {
         restorePreviousChannel(this);
         startActivity(new Intent(this, MainActivity.class).setAction(Intent.ACTION_APPLICATION_PREFERENCES)); finish();
     }
-    @Override public void onBackPressed() {
+    private void navigateBack() {
         if (menu.getVisibility() == View.VISIBLE) menu.setVisibility(View.GONE);
         else web.evaluateJavascript("window.dispatchEvent(new CustomEvent('native-back',{cancelable:true}))", (unhandled) -> {
             if ("false".equals(unhandled)) return;

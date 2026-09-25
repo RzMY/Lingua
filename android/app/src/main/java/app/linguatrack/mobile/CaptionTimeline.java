@@ -57,4 +57,17 @@ final class CaptionTimeline {
         }
         return lines.get(index);
     }
+
+    /** Wake at the next caption boundary; a paused/final caption needs no polling. */
+    long nextDelay(long now) {
+        double time = positionAt(now) + 0.004;
+        if (paused || time >= duration || lines.isEmpty()) return -1;
+        int lo = 0, hi = lines.size();
+        while (lo < hi) {
+            int mid = (lo + hi) / 2;
+            if (lines.get(mid).start <= time) lo = mid + 1; else hi = mid;
+        }
+        if (lo == lines.size() || lines.get(lo).start > duration) return -1;
+        return Math.max(16, (long) Math.ceil((lines.get(lo).start - time) / rate * 1000));
+    }
 }

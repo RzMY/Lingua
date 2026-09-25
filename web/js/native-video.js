@@ -13,6 +13,12 @@ export class NativeVideo extends NativeAudio {
     this._visualPlaying = false; this._visualRequest = null; this._visualSeek = null;
     this._visualRate = 1; this._needsAlign = true; this._settleUntil = 0;
     this._refreshing = false; this._resumeEpoch = 0;
+    this._activityPip = false;
+    this._seekStarted = 0; this._lastDecoderReset = -Infinity;
+    video.addEventListener('seeking', () => { this._seekStarted = performance.now(); });
+    window.addEventListener('native-pip', ({ detail }) => {
+      if (typeof detail.active === 'boolean') { this._activityPip = detail.active; this._syncVideo(); }
+    });
     video.muted = true;
     for (const event of ['timeupdate', 'play', 'pause', 'seeking', 'seeked', 'ratechange', 'ended', 'waiting', 'playing']) {
       this.addEventListener(event, () => {
@@ -61,11 +67,11 @@ export class NativeVideo extends NativeAudio {
     this._emit('volumechange');
   }
   _inVideoPip() {
-    return document.pictureInPictureElement === this.video || this.video.webkitPresentationMode === 'picture-in-picture';
+    return this._activityPip || document.pictureInPictureElement === this.video || this.video.webkitPresentationMode === 'picture-in-picture';
   }
   async _visibilityChanged() {
     const epoch = ++this._resumeEpoch;
-    if (document.hidden) {
+    if (document.hidden || !this._appActive) {
       if (!this._inVideoPip()) { this._visualSeek = null; this._visualRequest = null; }
       this._refreshing = false; this._syncVideo(); return;
     }
@@ -87,12 +93,22 @@ export class NativeVideo extends NativeAudio {
   }
   _syncVideo() {
     if (!this._url || !this.video.readyState) return;
-    const showFrames = (!document.hidden || this._inVideoPip()) && !this._refreshing;
-    this._visualPlaying = showFrames && !this.paused && !this.ended && !this._waiting && !this.seeking;
+    const showFrames = ((!document.hidden && this._appActive) || this._inVideoPip()) && !this._refreshing;
+    if (showFrames && window.LinguaNative?.platform === 'android' && this.video.seeking
+        && performance.now() - this._seekStarted > 2500 && performance.now() - this._lastDecoderReset > 10000) {
+      // Some Android decoders strand a seek across stop/resume at HAVE_METADATA.
+      // Reload only the silent visual element; native sound/position are untouched.
+      this._lastDecoderReset = performance.now(); this._visualSeek = null;
+      this._needsAlign = true; this._visualRequest = null;
+      this.video.load(); this._playVideo(); return;
+    }
+    // Keep the silent decoder running through native seeks. Pausing it while an
+    // HTML seek is pending can leave Android at HAVE_METADATA indefinitely.
+    this._visualPlaying = showFrames && !this.paused && !this.ended && !this._waiting;
     if (showFrames) {
       const position = this.currentTime, drift = position - this.video.currentTime, now = performance.now();
       let rate = this.playbackRate;
-      if (!this.seeking && !this.video.seeking && this._visualSeek === null) {
+      if (this.video.readyState >= 2 && !this.seeking && !this.video.seeking && this._visualSeek === null) {
         // Explicit seeks/resume align once. During playback, small discrepancies
         // are corrected by rate, not repeated currentTime writes every 100 ms.
         if (this._needsAlign || (Math.abs(drift) > HARD_DRIFT && now >= this._settleUntil)) {
@@ -111,7 +127,9 @@ export class NativeVideo extends NativeAudio {
       this._needsAlign = true;
     }
     if (this._visualPlaying) this._playVideo();
-    else if (!this.video.paused) this.video.pause();
+    // Do not abort a pending decoder seek when an asynchronous native pause/
+    // readiness update arrives. It must decode its target before being parked.
+    else if (!this.video.paused && (!this.video.seeking || !showFrames)) this.video.pause();
   }
   async _playbackSource(blob, record, signal) {
     const original = await super._playbackSource(blob, record);
@@ -132,6 +150,7 @@ export class NativeVideo extends NativeAudio {
     const url = this._url = URL.createObjectURL(blob);
     this._needsAlign = true; this._visualSeek = null; this._settleUntil = 0;
     this._visualRequest = null;
+    this.video.preload = 'auto';
     this.video.muted = true; this.video.src = this._url;
     try {
       await super.attach(blob, record);

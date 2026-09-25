@@ -48,4 +48,21 @@ public class CaptionTimelineTest {
     private CaptionTimeline.Line line(double start, String text, String translation) {
         return new CaptionTimeline.Line(start, text, translation);
     }
+
+    @Test public void wakesAtCaptionBoundariesAndStopsWhilePausedOrAtLastLine() {
+        CaptionTimeline clock = new CaptionTimeline();
+        clock.setLines(Arrays.asList(line(0, "first", ""), line(10, "second", ""), line(20, "last", "")));
+        clock.sync(1, 0, 30, 1, false, 0);
+        assertEquals(9996, clock.nextDelay(0));
+        assertEquals(4996, clock.nextDelay(5000));
+        clock.sync(2, 10, 30, 2, false, 5000);
+        assertEquals(4998, clock.nextDelay(5000));
+        assertEquals(-1, clock.nextDelay(10000));
+        clock.sync(3, 5, 30, 1, true, 10000);
+        assertEquals(-1, clock.nextDelay(10000));
+        clock.sync(4, 5, 30, 0.5, false, 10000);
+        assertEquals(9992, clock.nextDelay(10000));
+        clock.setLines(Arrays.asList(line(0, "only", ""), line(40, "outside", "")));
+        assertEquals(-1, clock.nextDelay(10000));
+    }
 }

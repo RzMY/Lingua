@@ -21,6 +21,8 @@ import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.ImageButton;
+import java.util.function.Consumer;
 
 /** Small transparent native window. Only its own bounds receive touches; it never takes focus. */
 final class CaptionOverlay {
@@ -29,6 +31,9 @@ final class CaptionOverlay {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final FrameLayout root;
     private final TextView original, translation, close;
+    private final LinearLayout transport;
+    private final ImageButton play, rewind, forward, returnButton;
+    private boolean playing;
     private final WindowManager.LayoutParams params;
     private final Runnable onClose;
     private final Runnable hideControls = () -> showControls(false);
@@ -41,14 +46,14 @@ final class CaptionOverlay {
 
     // touch() calls performClick on taps; window x/y are physical screen coordinates even in RTL.
     @SuppressLint({"ClickableViewAccessibility", "RtlHardcoded"})
-    CaptionOverlay(Context context, Runnable onClose) {
+    CaptionOverlay(Context context, Runnable onClose, Runnable onReturn, Consumer<String> onControl) {
         this.context = context;
         this.onClose = onClose;
         windows = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
         root = new FrameLayout(context);
         root.setPadding(dp(10), dp(8), dp(10), dp(8));
         root.setMinimumHeight(dp(64));
-        root.setContentDescription("字幕悬浮窗，拖动调整位置，点按显示关闭按钮");
+        root.setContentDescription("字幕悬浮窗，拖动调整位置，点按显示播放控制");
         root.setOnClickListener(view -> revealControls());
         root.setOnTouchListener(this::touch);
 
@@ -56,15 +61,28 @@ final class CaptionOverlay {
         captions.setOrientation(LinearLayout.VERTICAL);
         captions.setGravity(Gravity.CENTER);
         // Reserve a touch target so closing the window never obscures the text.
-        FrameLayout.LayoutParams textLayout = new FrameLayout.LayoutParams(-1, -2);
-        textLayout.setMarginEnd(dp(38));
-        root.addView(captions, textLayout);
+        LinearLayout content = new LinearLayout(context);
+        content.setOrientation(LinearLayout.VERTICAL);
+        root.addView(content, new FrameLayout.LayoutParams(-1, -2));
+        LinearLayout.LayoutParams textLayout = new LinearLayout.LayoutParams(-1, -2);
+        // Symmetric space for the corner buttons keeps the text at the window's center.
+        textLayout.setMargins(dp(42), dp(8), dp(42), dp(8));
+        content.addView(captions, textLayout);
         original = label(Color.WHITE, Typeface.BOLD);
         translation = label(0xffeeeeee, Typeface.NORMAL);
         captions.addView(original, new LinearLayout.LayoutParams(-1, -2));
         LinearLayout.LayoutParams trLayout = new LinearLayout.LayoutParams(-1, -2);
         trLayout.topMargin = dp(5);
         captions.addView(translation, trLayout);
+        transport = new LinearLayout(context);
+        transport.setGravity(Gravity.CENTER);
+        rewind = control(R.drawable.ic_pip_rewind, R.string.pip_rewind, () -> onControl.accept("seekbackward"));
+        play = control(R.drawable.ic_pip_play, R.string.pip_play, () -> onControl.accept(playing ? "pause" : "play"));
+        forward = control(R.drawable.ic_pip_forward, R.string.pip_forward, () -> onControl.accept("seekforward"));
+        for (ImageButton button : new ImageButton[] {rewind, play, forward}) {
+            transport.addView(button, new LinearLayout.LayoutParams(dp(56), dp(48)));
+        }
+        content.addView(transport, new LinearLayout.LayoutParams(-1, -2));
         close = new TextView(context);
         close.setText("×");
         close.setTextColor(Color.WHITE);
@@ -76,6 +94,8 @@ final class CaptionOverlay {
         context.getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, feedback, true);
         if (feedback.resourceId != 0) close.setBackgroundResource(feedback.resourceId);
         root.addView(close, new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.END | Gravity.TOP));
+        returnButton = control(R.drawable.ic_pip_return, R.string.pip_return, onReturn);
+        root.addView(returnButton, new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.START | Gravity.TOP));
 
         int type = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
             ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE;
@@ -89,6 +109,25 @@ final class CaptionOverlay {
         root.addOnLayoutChangeListener((view, l, t, r, b, ol, ot, or, ob) -> {
             if (attached && b - t != ob - ot) clampAndUpdate();
         });
+    }
+
+    private ImageButton control(int icon, int label, Runnable action) {
+        ImageButton button = new ImageButton(context);
+        button.setImageResource(icon);
+        button.setBackgroundColor(Color.TRANSPARENT);
+        button.setContentDescription(context.getString(label));
+        button.setOnClickListener(view -> { action.run(); revealControls(); });
+        return button;
+    }
+
+    void setPlayback(boolean nextPlaying, boolean seekable) {
+        if (playing != nextPlaying) {
+            playing = nextPlaying;
+            play.setImageResource(playing ? R.drawable.ic_pip_pause : R.drawable.ic_pip_play);
+            play.setContentDescription(context.getString(playing ? R.string.pip_pause : R.string.pip_play));
+        }
+        rewind.setEnabled(seekable); forward.setEnabled(seekable);
+        rewind.setAlpha(seekable ? 1f : 0.4f); forward.setAlpha(seekable ? 1f : 0.4f);
     }
 
     private TextView label(int color, int style) {
@@ -202,6 +241,8 @@ final class CaptionOverlay {
 
     private void showControls(boolean visible) {
         close.setVisibility(visible ? View.VISIBLE : View.INVISIBLE);
+        returnButton.setVisibility(visible ? View.VISIBLE : View.INVISIBLE);
+        transport.setVisibility(visible ? View.VISIBLE : View.GONE);
         if (visible) {
             GradientDrawable background = new GradientDrawable();
             background.setColor(0xb3222222); background.setCornerRadius(dp(16));

@@ -123,12 +123,17 @@ export function setupMediaSession({ audio, engine }) {
   // The native player owns lock-screen commands and Now Playing while WKWebView is suspended.
   const ms = audio.nativeAudio ? null : navigator.mediaSession;
   let playRequest = 0;
+  let lastProgressSync = -Infinity, lastPlaybackState = '';
 
-  const sync = () => {
+  const sync = (progressOnly = false) => {
     if (!ms) return;
+    const now = performance.now();
+    if (progressOnly && now - lastProgressSync < 1000) return;
+    if (progressOnly) lastProgressSync = now;
     try {
-      ms.playbackState = !audio.src ? 'none'
+      const state = !audio.src ? 'none'
         : audio.paused || audio.ended ? 'paused' : 'playing';
+      if (state !== lastPlaybackState) { ms.playbackState = state; lastPlaybackState = state; }
     } catch { /* 部分实现没有可写的 playbackState */ }
     try {
       const duration = audio.duration;
@@ -165,11 +170,11 @@ export function setupMediaSession({ audio, engine }) {
     'durationchange', 'ratechange', 'seeked', 'emptied', 'error', 'timeupdate']) {
     audio.addEventListener(event, () => {
       if (event === 'pause' || event === 'ended' || event === 'emptied') playRequest++;
-      sync();
+      sync(event === 'timeupdate');
     });
   }
-  document.addEventListener('visibilitychange', sync);
-  window.addEventListener('pageshow', sync);
+  document.addEventListener('visibilitychange', () => sync());
+  window.addEventListener('pageshow', () => sync());
 
   if (ms) {
     const set = (name, fn) => {

@@ -19,6 +19,10 @@ export class NativeAudio extends EventTarget {
     this._revision = 0; this._serial = 0; this._generation = 0; this._queue = Promise.resolve();
     this._blob = null; this._record = null; this._detached = false; this._loop = { start: null, end: null, all: false };
     this._sourceAbort = null;
+    this._appActive = true;
+    window.addEventListener('native-app-state', ({ detail }) => {
+      this._appActive = detail.active; this._visibilityChanged();
+    });
     window.addEventListener('native-audio-state', ({ detail }) => this._accept(detail));
     document.addEventListener('visibilitychange', () => this._visibilityChanged());
     window.addEventListener('pagehide', () => { this._detached = true; void this.release(); });
@@ -32,7 +36,7 @@ export class NativeAudio extends EventTarget {
     });
   }
   get nativeSession() { return this.src; }
-  _visibilityChanged() { if (!document.hidden) void this.refresh(); }
+  _visibilityChanged() { if (!document.hidden && this._appActive) void this.refresh(); }
   get currentTime() {
     const advance = !this.paused && !this._waiting && !this.seeking ? (performance.now() - this._anchor) / 1000 * this._rate : 0;
     return clamp(this._position + advance, 0, Number.isFinite(this.duration) ? this.duration : Infinity);

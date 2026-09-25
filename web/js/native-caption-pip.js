@@ -2,6 +2,7 @@
 import { trackCfg } from './trackcfg.js';
 import { pipLines } from './video-pip.js';
 import { randomId, toast } from './util.js';
+import { mediaControl } from './media-controls.js';
 
 export function setupNativeCaptionPip({ bridge, media, engine, onStateChange }) {
   let session = '', sequence = 0, active = false, opening = false, closing = false;
@@ -16,6 +17,7 @@ export function setupNativeCaptionPip({ bridge, media, engine, onStateChange }) 
     position: Number(media.currentTime) || 0,
     duration: Number.isFinite(media.duration) ? media.duration : engine.track?.duration || 0,
     rate: media.playbackRate || 1, paused: media.paused || media.ended || stalled,
+    playing: !media.paused && !media.ended,
     captionSize: trackCfg.video.captionSize, showTranslation: document.documentElement.dataset.tr !== '0' });
   const timeline = () => (engine.track?.sentences || []).map((sentence, i) => ({
     start: engine.track.sStart[i], ...pipLines(sentence, true),
@@ -102,6 +104,10 @@ export function setupNativeCaptionPip({ bridge, media, engine, onStateChange }) 
 
   window.addEventListener('native-caption-pip', ({ detail }) => {
     if (!session || detail.session !== session) return;
+    if (detail.action) {
+      if (active && !closing && !disposed) mediaControl(media, engine, detail.action);
+      return;
+    }
     if (!detail.active) {
       // During startup the open promise owns failure/cancellation so its error stays visible.
       if (opening && !closing && !disposed) return;

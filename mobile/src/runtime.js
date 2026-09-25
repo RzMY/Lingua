@@ -41,8 +41,8 @@ async function getJson(url) {
 }
 async function readSource() {
   const get = async (key) => (await Preferences.get({ key })).value || '';
-  return normalizeSource({ channel: await get(CHANNEL_KEY) || 'stable',
-    ownUrl: await get(OWN_KEY), developmentUrl: await get(DEV_KEY) });
+  const [channel, ownUrl, developmentUrl] = await Promise.all([get(CHANNEL_KEY), get(OWN_KEY), get(DEV_KEY)]);
+  return normalizeSource({ channel: channel || 'stable', ownUrl, developmentUrl });
 }
 function clearImplicitBackendToken() {
   const raw = localStorage.getItem('linguatrack.config.v1');
@@ -234,13 +234,13 @@ async function initialize() {
   const meta = await (await fetch('native-bundle.json')).json();
   version = meta.version;
   // On binary upgrade the plugin discards downloaded bundles; remove stale pending references too.
-  const { bundles } = await CapacitorUpdater.list();
+  const { bundles } = state.pending ? await CapacitorUpdater.list() : { bundles: [] };
   if (state.pending && (state.pending.version === version || !bundles.some((b) => b.id === state.pending.id && b.status !== 'error'))) {
     state.pending = null; await save(state);
   }
   manager = new UpdateManager({ updater: CapacitorUpdater, fetchManifest: (selected) => fetchSourceManifest(selected, getJson), save, state, currentVersion: version });
   let marked = false;
-  const audioPlayer = Capacitor.getPlatform() === 'ios' && Capacitor.isPluginAvailable('AudioPlayer') ? AudioPlayer : null;
+  const audioPlayer = Capacitor.isPluginAvailable('AudioPlayer') ? AudioPlayer : null;
   if (audioPlayer) {
     await audioPlayer.addListener('stateChanged', (detail) => window.dispatchEvent(new CustomEvent('native-audio-state', { detail })));
   }
@@ -331,6 +331,7 @@ async function initialize() {
     if (canGoBack) history.back(); else App.minimizeApp();
   });
   await App.addListener('appStateChange', async ({ isActive }) => {
+    window.dispatchEvent(new CustomEvent('native-app-state', { detail: { active: isActive } }));
     if (!isActive) return;
     syncPresentation(true);
     void refreshCaptionPip();
@@ -343,7 +344,7 @@ async function initialize() {
     } catch (error) { setStatus(errorMessage(error, '分支设置读取失败，请重新选择')); settings(); }
   });
   if (Capacitor.getPlatform() === 'android') {
-    await NativeMedia.addListener('pipChanged', ({ active }) => window.dispatchEvent(new CustomEvent('native-pip', { detail: { active } })));
+    await NativeMedia.addListener('pipChanged', (detail) => window.dispatchEvent(new CustomEvent('native-pip', { detail })));
   }
   window.addEventListener('hashchange', () => { if (location.hash === '#native-settings') settings(); });
 }

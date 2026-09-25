@@ -13,6 +13,19 @@ const { outputFiles } = await build({ stdin: { contents: `
   bundle: true, write: false, format: 'iife', globalName: 'NativeAudioTest' });
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
+test('Android app lifecycle pauses only video frames and refreshes native time on return', async (t) => {
+  const h = harness(t, {}, { video: true });
+  await h.attach(); await h.audio.play(); await flush();
+  h.w.dispatchEvent(new h.w.CustomEvent('native-app-state', { detail: { active: false } }));
+  await flush();
+  assert.equal(h.audio.paused, false); assert.equal(h.video.paused, true);
+  h.state().position = 47;
+  h.w.dispatchEvent(new h.w.CustomEvent('native-app-state', { detail: { active: true } }));
+  await flush(); await flush();
+  assert.equal(h.audio.currentTime, 47); assert.equal(h.video.currentTime, 47);
+  assert.equal(h.audio.paused, false);
+});
+
 function harness(t, overrides = {}, { video: withVideo = false } = {}) {
   const dom = new JSDOM('<html><body></body></html>', { url: 'https://localhost/player.html', runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window, calls = [], chunks = [];

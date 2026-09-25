@@ -31,12 +31,21 @@ public class CaptionPipPlugin extends Plugin {
     private String session = "";
     private float captionSize = 20;
     private boolean showTranslation = true;
+    private String nativeSession = "";
+    private PlaybackService playback;
+    private final Runnable playbackChanged = () -> {
+        if (overlay == null) return;
+        if (playback == null || !playback.matches(nativeSession)) { finish(); return; }
+        syncNativeClock(); paint(); schedule();
+    };
+    private long nativeSequence;
+    private long webSequence = -1;
     private final Runnable tick = new Runnable() {
         @Override public void run() {
             if (overlay == null) return;
             if (!Settings.canDrawOverlays(getContext())) { finish(); return; }
-            paint();
-            handler.postDelayed(this, 100);
+            syncNativeClock(); paint();
+            schedule();
         }
     };
     private final WebViewListener navigation = new WebViewListener() {
@@ -94,13 +103,18 @@ public class CaptionPipPlugin extends Plugin {
     private void attach() {
         if (pendingOpen == null) return;
         try {
-            overlay = new CaptionOverlay(getContext(), this::finish);
+            overlay = new CaptionOverlay(getContext(), this::finish, () -> {
+                PlaybackService.returnToApp(getContext()); finish();
+            }, this::control);
+            playback = PlaybackService.instance;
+            if (playback != null && playback.matches(nativeSession)) playback.listeners.add(playbackChanged);
+            syncNativeClock();
             paint();
             overlay.show();
             PluginCall call = pendingOpen; pendingOpen = null;
             call.resolve();
             emit(true);
-            handler.post(tick);
+            schedule();
         } catch (RuntimeException error) {
             fail("字幕小窗启动失败", Settings.canDrawOverlays(getContext()) ? "PIP_START_FAILED" : "OVERLAY_PERMISSION", error);
         }
@@ -108,19 +122,29 @@ public class CaptionPipPlugin extends Plugin {
 
     @PluginMethod public void update(PluginCall call) {
         handler.post(() -> {
-            if (!session.isEmpty() && session.equals(call.getString("session"))) { apply(call); paint(); }
+            if (!session.isEmpty() && session.equals(call.getString("session"))) { apply(call); paint(); schedule(); }
             call.resolve();
         });
     }
 
     private void apply(PluginCall call) {
         JSObject data = call.getData();
-        if (!timeline.sync(data.optLong("sequence", 0), data.optDouble("position", 0),
+        long next = data.optLong("sequence", 0);
+        if (next <= webSequence) return;
+        webSequence = next;
+        nativeSession = data.optString("nativeAudioSession", "");
+        if (!nativeSession.isEmpty() && PlaybackService.instance != null && PlaybackService.instance.matches(nativeSession)) {
+            // WebView can be paused or its events stale. Native media is authoritative.
+            syncNativeClock();
+        } else if (!timeline.sync(data.optLong("sequence", 0), data.optDouble("position", 0),
             data.optDouble("duration", 0), data.optDouble("rate", 1),
             data.optBoolean("paused", true), SystemClock.elapsedRealtime())) return;
         double size = data.optDouble("captionSize", 20);
         if (Double.isFinite(size)) captionSize = (float) Math.max(12, Math.min(36, size));
         showTranslation = data.optBoolean("showTranslation", true);
+        playing = data.optBoolean("playing", !data.optBoolean("paused", true));
+        seekable = data.optDouble("duration", 0) > 0;
+        if (!nativeSession.isEmpty()) syncNativeClock();
         JSArray sentences = call.getArray("sentences");
         if (sentences != null) {
             ArrayList<CaptionTimeline.Line> lines = new ArrayList<>();
@@ -136,11 +160,38 @@ public class CaptionPipPlugin extends Plugin {
 
     private String text(String value) { return value.substring(0, Math.min(value.length(), 10000)); }
 
+    private boolean playing, seekable;
+
+    private void control(String action) {
+        if (session.isEmpty()) return;
+        if (playback != null && playback.matches(nativeSession)) {
+            playback.control(action); syncNativeClock(); paint(); schedule(); return;
+        }
+        JSObject value = new JSObject();
+        value.put("session", session); value.put("action", action);
+        notifyListeners("stateChanged", value);
+    }
+
+    private void syncNativeClock() {
+        PlaybackService service = PlaybackService.instance;
+        if (service == null || !service.matches(nativeSession) || !service.isReady()) return;
+        playing = service.isPlaying(); seekable = service.duration() > 0;
+        timeline.sync(++nativeSequence, service.position(), service.duration(), service.rate(), !playing, SystemClock.elapsedRealtime());
+    }
+
+    private void schedule() {
+        handler.removeCallbacks(tick);
+        if (overlay == null) return;
+        long delay = timeline.nextDelay(SystemClock.elapsedRealtime());
+        if (delay >= 0) handler.postDelayed(tick, delay);
+    }
+
     private void paint() {
         if (overlay == null) return;
         CaptionTimeline.Line line = timeline.lineAt(SystemClock.elapsedRealtime());
         overlay.render(line == null ? "聆听中" : line.text,
             showTranslation && line != null ? line.translation : "", captionSize);
+        overlay.setPlayback(playing, seekable);
     }
 
     @PluginMethod public void close(PluginCall call) {
@@ -168,6 +219,9 @@ public class CaptionPipPlugin extends Plugin {
             pendingOpen.reject("字幕小窗已取消"); pendingOpen = null;
         }
         if (overlay != null) { overlay.dismiss(); overlay = null; }
+        if (playback != null) playback.listeners.remove(playbackChanged);
+        playback = null; nativeSession = ""; nativeSequence = 0;
+        webSequence = -1;
         if (!session.isEmpty()) emit(false);
         session = "";
         timeline = new CaptionTimeline();

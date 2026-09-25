@@ -8,6 +8,7 @@ import android.os.Bundle;
 public class MainActivity extends BridgeActivity {
     @Override public void onCreate(Bundle state) {
         registerPlugin(NativeMediaPlugin.class);
+        registerPlugin(AudioPlayerPlugin.class);
         registerPlugin(CaptionPipPlugin.class);
         registerPlugin(NativeShellPlugin.class);
         super.onCreate(state);

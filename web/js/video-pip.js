@@ -18,8 +18,9 @@
  */
 
 import { trackCfg } from './trackcfg.js';
-import { locate, toast } from './util.js';
+import { locate, randomId, toast } from './util.js';
 import { nativeApp } from './native.js';
+import { activityPipControls } from './media-controls.js';
 
 /**  折叠空白: 小窗只有一行位置, 换行和连续空格都不该撑高盒子.
     中日韩文本里换进来的换行不该变成一个空格 (「每天/都练习」中间不该有缝), 所以
@@ -57,14 +58,19 @@ export function pipCues(track, showTr = true) {
 
 export function setupVideoPip({ video, stage, app, engine, releaseLandscape, onLayout, onStateChange, beforeOpen, ownsActivity }) {
   const activityPip = nativeApp()?.activityPip;
+  const controls = activityPip ? activityPipControls(activityPip, engine.audio || video, engine, randomId()) : null;
   let activityActive = false;
+  let activityControlsSupported = false;
   const activityStyle = document.createElement('style');
   activityStyle.textContent = `html.native-activity-pip body{padding:0!important}html.native-activity-pip #videoStage{position:fixed!important;inset:0!important;width:100vw!important;height:100dvh!important;max-height:none!important;z-index:99999!important;border-radius:0!important}html.native-activity-pip #videoStage video{width:100%!important;height:100%!important;object-fit:contain!important}html.native-activity-pip #videoStage button,html.native-activity-pip #videoStage .video-status{display:none!important}`;
   if (activityPip) document.head.append(activityStyle);
   window.addEventListener('native-pip', ({ detail }) => {
+    if (detail.action) { controls?.control(detail); return; }
     if (ownsActivity?.()) return;
     activityActive = detail.active;
+    controls?.activate(activityActive && activityControlsSupported);
     app.classList.toggle('is-pip', activityActive);
+    // The Activity contains the same video; native cues replace the hidden reader.
     if (activityActive) fillCues();
     cuesOn(activityActive);
     document.documentElement.classList.toggle('native-activity-pip', activityActive);
@@ -292,8 +298,10 @@ export function setupVideoPip({ video, stage, app, engine, releaseLandscape, onL
     if (activityPip) {
       try {
         await releaseLandscape?.();
-        fillCues();
-        await activityPip.enterPip({ width: video.videoWidth || 16, height: video.videoHeight || 9 });
+        const result = await activityPip.enterPip({ width: video.videoWidth || 16, height: video.videoHeight || 9,
+          ...controls.snapshot() });
+        activityControlsSupported = result?.controls === true;
+        controls.activate(activityControlsSupported);
         return;
       } catch (error) { failures.push(error); }
     }
@@ -332,7 +340,7 @@ export function setupVideoPip({ video, stage, app, engine, releaseLandscape, onL
   video.addEventListener('leavepictureinpicture', syncClassic);
   video.addEventListener('enterpictureinpicture', syncClassic);
   video.addEventListener('webkitpresentationmodechanged', syncClassic);
-  window.addEventListener('pagehide', () => { if (pipWin) unmountDocument(); });
+  window.addEventListener('pagehide', () => { controls?.activate(false); if (pipWin) unmountDocument(); });
 
   return { toggle, close, refresh, paint: () => paint(true), isActive,
     supported: () => !!(activityPip || documentPip() || classicKind()) };

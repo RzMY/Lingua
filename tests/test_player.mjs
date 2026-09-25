@@ -100,6 +100,17 @@ test('page controls and native media events synchronize the same session', async
   assert.equal(ms.playbackState, 'paused');
 });
 
+test('frequent progress events are throttled but seeks and pause synchronize immediately', (t) => {
+  const { audio, positions } = fixture(t);
+  audio.dispatchEvent(new Event('timeupdate'));
+  const count = positions.length;
+  for (let i = 0; i < 100; i++) { audio.currentTime += 0.01; audio.dispatchEvent(new Event('timeupdate')); }
+  assert.equal(positions.length, count);
+  audio.currentTime = 80; audio.dispatchEvent(new Event('seeked'));
+  assert.equal(positions.at(-1).position, 80);
+  audio.pause(); assert.equal(positions.length, count + 2);
+});
+
 test('system seeking and sentence controls use the engine', (t) => {
   const { audio, handlers, steps, engine } = fixture(t, { ios: true });
   handlers.get('seekbackward')({});

@@ -88,6 +88,20 @@ for (const platform of ['ios', 'android']) for (const kind of ['audio', 'video']
   assert.equal(h.media.disablePictureInPicture, false);
 });
 
+test('Android subtitle overlay commands use the original media and reject stale windows', async (t) => {
+  const h = harness(t, { platform: 'android' });
+  await h.pip.toggle(); await flush();
+  const session = h.calls.find(([name]) => name === 'open')[1].session;
+  const command = (action, id = session) => h.w.dispatchEvent(new h.w.CustomEvent('native-caption-pip', { detail: { session: id, action } }));
+  command('play', 'old'); assert.equal(h.media.paused, true);
+  command('play'); assert.equal(h.media.paused, false); assert.equal(h.pip.isActive(), true);
+  command('pause'); assert.equal(h.media.paused, true);
+  command('seekforward'); assert.equal(h.media.currentTime, 17);
+  command('seekbackward'); assert.equal(h.media.currentTime, 12);
+  assert.equal(h.media.playbackRate, 1.5);
+  await h.pip.close(); command('play'); assert.equal(h.media.paused, true);
+});
+
 test('unsupported browsers and old mobile binaries hide the entry even with video PiP APIs present', async (t) => {
   for (const platform of [null, 'ios', 'android']) {
     const h = harness(t, { platform, supported: false, kind: 'video' });

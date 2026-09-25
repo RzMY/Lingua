@@ -29,6 +29,7 @@ export class Engine {
 
     this.follow = true;
     this.suspended = false;
+    this.presentationHidden = false;
     this.followAlign = FOLLOW_ALIGN;
     this.repeat = 0;          // 0 关 / 1 单句 / 2 全部
     this.loopS = -1;
@@ -89,6 +90,23 @@ export class Engine {
     if (on) this.stop(); else this.kick();
   }
 
+  // A native PiP shows the video/cue track, not the reader or its seek bar.
+  setPresentationHidden(on) {
+    if (this.presentationHidden === on) return;
+    this.presentationHidden = on;
+    this._needV = true;
+    this._sec = this._pct = -1;
+    if (on) this._target = -1;
+    this.stop();
+    this.kick();
+  }
+
+  backgroundTick() {
+    if (this.presentationHidden && !this.suspended && this.track && !this.scrubbing) {
+      this._loops(this.audio.currentTime, performance.now());
+    }
+  }
+
   markScrollDirty() { this._needV = true; this.kick(); }
 
   noteUserScroll({ unpin = false } = {}) {
@@ -109,6 +127,13 @@ export class Engine {
     if (!track) { this._raf = 0; return; }
 
     const t = this.scrubbing ? this.scrubTime : audio.currentTime;
+
+    if (this.presentationHidden) {
+      if (!this.scrubbing) this._loops(t, now);
+      // Retain loop/shadow timing while PiP is visible; ordinary playback parks rAF.
+      this._raf = (!audio.paused && this.repeat === 1) || this.shadow !== 'off' ? requestAnimationFrame(this._onFrame) : 0;
+      return;
+    }
 
     this._sync(t);
     this._paintSeek(t);

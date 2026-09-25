@@ -1,0 +1,7 @@
+<resources>
+    <string name="pip_play">播放</string>
+    <string name="pip_pause">暂停</string>
+    <string name="pip_rewind">快退 5 秒</string>
+    <string name="pip_forward">快进 5 秒</string>
+    <string name="pip_return">返回应用</string>
+</resources>
