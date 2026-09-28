@@ -5,16 +5,15 @@ on:
     branches: [main]
   push:
     branches: [main]
-  release:
-    types: [published]
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: mobile-${{ github.event_name == 'release' && github.event.release.tag_name || github.ref }}
-  cancel-in-progress: true
+  group: mobile-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/main' }}
 
 jobs:
   frontend:
@@ -22,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name || github.sha }}
+          ref: ${{ github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -46,7 +45,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name || github.sha }}
+          ref: ${{ github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -113,7 +112,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name || github.sha }}
+          ref: ${{ github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -169,22 +168,20 @@ jobs:
     needs: [frontend, android, ios]
     if: >-
       github.event_name != 'pull_request' &&
-      (github.event_name != 'release' || !github.event.release.prerelease) &&
-      (github.event_name == 'release' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name || github.sha }}
+          ref: ${{ github.sha }}
       - uses: actions/download-artifact@v4
         with:
           pattern: '*'
           path: release-assets
           merge-multiple: true
-      - name: Replace rolling Pre-release or upload official Release assets
+      - name: Update rolling Pre-release or prepare versioned Release draft
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.event.release.tag_name || '' }}
         run: python3 mobile/scripts/publish-release.py release-assets

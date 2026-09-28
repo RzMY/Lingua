@@ -1,4 +1,4 @@
-"""Publish completed build assets. A single preview tag is replaced by the latest main commit."""
+"""Attach completed builds to tag release drafts or the rolling main preview."""
 import hashlib
 import json
 import mimetypes
@@ -67,6 +67,22 @@ def owned_asset(name):
         name.startswith('bundle-') and name.endswith('.zip'))
 
 
+def find_release(api, tag):
+    release = api.request('GET', f'/releases/tags/{urllib.parse.quote(tag, safe="")}')
+    if release is not None:
+        return release
+    # The tag endpoint only resolves published releases. Authenticated listing
+    # also includes drafts, which must be reused after partial uploads or reruns.
+    for page in range(1, 101):
+        batch = api.request('GET', f'/releases?per_page=100&page={page}') or []
+        for release in batch:
+            if release['tag_name'] == tag:
+                return release
+        if len(batch) < 100:
+            return None
+    raise RuntimeError('Too many releases to find an existing draft safely')
+
+
 def publish(api, paths, *, preview, tag, sha):
     if preview:
         # A slow, superseded build must never roll the preview tag back to an old commit.
@@ -75,11 +91,11 @@ def publish(api, paths, *, preview, tag, sha):
             print('Skipping superseded main build; a newer commit owns Pre-release.')
             return
     encoded_tag = urllib.parse.quote(tag, safe='')
-    release = api.request('GET', f'/releases/tags/{encoded_tag}')
+    release = find_release(api, tag)
     if release and bool(release['prerelease']) != preview:
         raise RuntimeError('Refusing to change a release between stable and preview')
-    if release and release.get('draft'):
-        raise RuntimeError('Publish the formal Release before attaching artifacts')
+    if preview and release and release.get('draft'):
+        raise RuntimeError('The rolling Pre-release must not be a draft')
     if preview:
         ref = f'/git/refs/tags/{encoded_tag}'
         if api.request('GET', f'/git/ref/tags/{encoded_tag}'):
@@ -87,9 +103,14 @@ def publish(api, paths, *, preview, tag, sha):
         else:
             api.request('POST', '/git/refs', {'ref': f'refs/tags/{tag}', 'sha': sha})
     if release is None:
-        release = api.request('POST', '/releases', {'tag_name': tag, 'target_commitish': sha,
+        data = {'tag_name': tag, 'target_commitish': sha,
             'name': 'Lingua Pre-release' if preview else f'Lingua {tag}', 'prerelease': preview,
-            'draft': False, 'make_latest': 'false' if preview else 'true'})
+            'draft': not preview}
+        if preview:
+            data['make_latest'] = 'false'
+        else:
+            data['generate_release_notes'] = True
+        release = api.request('POST', '/releases', data)
     if preview:
         api.request('PATCH', f"/releases/{release['id']}", {'name': 'Lingua Pre-release',
             'target_commitish': sha, 'prerelease': True, 'make_latest': 'false',
@@ -103,7 +124,7 @@ def publish(api, paths, *, preview, tag, sha):
         url = upload + '?' + urllib.parse.urlencode({'name': name})
         api.request('POST', url, paths[name].read_bytes(), mimetypes.guess_type(name)[0] or 'application/octet-stream')
         print(f'Published {name}')
-    # Remove obsolete preview artifacts only after the new manifest is in place.
+    # Remove obsolete build artifacts only after the new manifest is in place.
     for name, asset in existing.items():
         if owned_asset(name) and name not in paths:
             api.request('DELETE', f"/releases/assets/{asset['id']}")
@@ -115,10 +136,14 @@ def main():
     if repository.lower() != config['repository'].lower():
         raise SystemExit('Update mobile/release-config.json to this repository before publishing a fork.')
     ref = os.environ['GITHUB_REF']
-    tag = os.environ.get('RELEASE_TAG') or (ref.removeprefix('refs/tags/') if ref.startswith('refs/tags/') else '')
+    tag = ref.removeprefix('refs/tags/') if ref.startswith('refs/tags/') else ''
     preview = not tag
+    if preview and ref != 'refs/heads/main':
+        raise SystemExit('Only main can update the rolling Pre-release.')
     if not preview and tag == config['previewTag']:
         raise SystemExit('The rolling preview tag cannot be used as a formal release.')
+    if not preview and not tag.startswith('v'):
+        raise SystemExit('Formal release tags must start with v, for example v1.0.0.')
     publish(GitHub(repository, os.environ['GH_TOKEN']), release_files(Path(sys.argv[1])), preview=preview,
             tag=config['previewTag'] if preview else tag, sha=os.environ['GITHUB_SHA'])
 
