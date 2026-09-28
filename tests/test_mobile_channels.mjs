@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { normalizeSource, developmentUrl, fetchSourceManifest, sourceKey, releaseEndpoint } from '../mobile/src/channels.js';
+import { normalizeSource, developmentUrl, fetchSourceManifest, sourceKey, releaseEndpoint, releasePage } from '../mobile/src/channels.js';
 import { NATIVE_REVISION, validateManifest } from '../mobile/src/update.js';
 
 const version = 'a'.repeat(64);
@@ -30,6 +30,7 @@ for (const channel of ['stable', 'preview']) {
     assert.match(calls[1], /manifest.json\?asset=0$/);
     assert.equal(validateManifest(result.data, result.manifestUrl, result.bundleUrl).version, version);
     assert.match(result.bundleUrl, new RegExp(`/releases/download/${channel === 'preview' ? 'pre-release' : 'v1.2.0'}/`));
+    assert.equal(releasePage(channel), `https://github.com/RzMY/Lingua/releases/${channel === 'preview' ? 'tag/pre-release' : 'latest'}`);
   });
 }
 test('self-hosted channel reads its mobile manifest and never queries GitHub', async () => {
@@ -37,6 +38,7 @@ test('self-hosted channel reads its mobile manifest and never queries GitHub', a
     assert.equal(url, 'https://mine.example/lingua/mobile/manifest.json'); return manifest;
   });
   assert.match(validateManifest(result.data, result.manifestUrl).url, /mine.example\/lingua\/mobile\/bundle-/);
+  assert.equal(releasePage('own'), 'https://github.com/RzMY/Lingua/releases');
 });
 test('development channel cannot download or fall back through the update resolver', async () => {
   await assert.rejects(fetchSourceManifest({ channel: 'development' }, () => assert.fail('must not fetch')), /直接加载/);

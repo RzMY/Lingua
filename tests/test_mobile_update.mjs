@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { NATIVE_REVISION, UpdateManager, validateManifest } from '../mobile/src/update.js';
+import { NATIVE_REVISION, NativeUpdateRequiredError, UpdateManager, validateManifest } from '../mobile/src/update.js';
 import { normalizeTarget } from '../mobile/src/channels.js';
 import { apiUrl } from '../web/js/api.js';
 import { config } from '../web/js/config.js';
@@ -35,6 +35,25 @@ test('manifest binds zip URL to selected site and refuses incompatible or malfor
     assert.throws(() => validateManifest({ ...manifest, ...patch }, 'https://example.org/'));
   }
 });
+test('native incompatibility has a distinct action while malformed manifests remain ordinary errors', async () => {
+  const { manager, calls, saved } = fixture();
+  manager.fetchManifest = async () => ({ data: { ...manifest, nativeRevision: NATIVE_REVISION + 1 },
+    manifestUrl: 'https://example.org/mobile/manifest.json' });
+  await assert.rejects(manager.check(), (error) => {
+    assert.ok(error instanceof NativeUpdateRequiredError);
+    assert.equal(error.message, '请到仓库下载最新版应用');
+    return true;
+  });
+  assert.equal(manager.available, null);
+  assert.equal(calls.length, 0);
+  assert.equal(saved.length, 0);
+  for (const patch of [{ nativeRevision: undefined }, { nativeRevision: '4' }, { nativeRevision: 0 },
+    { schema: 2 }, { appId: 'other' }, { checksum: '' }, { bundle: '../other.zip' }]) {
+    assert.throws(() => validateManifest({ ...manifest, nativeRevision: NATIVE_REVISION + 1, ...patch },
+      'https://example.org/mobile/manifest.json'), (error) => !(error instanceof NativeUpdateRequiredError));
+  }
+});
+
 test('checks are coalesced and never download until explicitly requested', async () => {
   const { manager, calls, saved } = fixture();
   const a = manager.check(), b = manager.check(); assert.equal(a, b);

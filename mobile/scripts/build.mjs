@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { zipSync } from 'fflate';
 import { NATIVE_REVISION } from '../src/update.js';
+import { frontendVersion } from './version.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const out = resolve(root, 'mobile/www');
@@ -44,7 +45,7 @@ for (const page of ['index.html', 'player.html']) {
 const archive = {};
 for (const path of await files(out)) archive[relative(out, path).replaceAll('\\', '/')] = new Uint8Array(await readFile(path));
 const version = hash(Buffer.concat(Object.entries(archive).map(([name, bytes]) => Buffer.concat([Buffer.from(name + '\0'), Buffer.from(bytes)]))));
-const meta = { schema: 1, appId: 'app.linguatrack.mobile', nativeRevision: NATIVE_REVISION, version };
+const meta = { schema: 1, appId: 'app.linguatrack.mobile', nativeRevision: NATIVE_REVISION, frontendVersion, version };
 const metaBytes = Buffer.from(JSON.stringify(meta));
 archive['native-bundle.json'] = metaBytes;
 await writeFile(resolve(out, 'native-bundle.json'), metaBytes);

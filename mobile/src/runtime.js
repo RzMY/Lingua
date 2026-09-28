@@ -5,10 +5,10 @@ import { App } from '@capacitor/app';
 import { SplashScreen } from '@capacitor/splash-screen';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
-import { UpdateManager } from './update.js';
+import { NativeUpdateRequiredError, UpdateManager } from './update.js';
 import { nativeStyles } from './ui.js';
 import { errorMessage } from '../../web/js/errors.js';
-import { CHANNELS, CHANNEL_KEY, OWN_KEY, DEV_KEY, PREVIOUS_CHANNEL_KEY, normalizeSource, sourceKey, fetchSourceManifest } from './channels.js';
+import { CHANNELS, CHANNEL_KEY, OWN_KEY, DEV_KEY, PREVIOUS_CHANNEL_KEY, normalizeSource, sourceKey, fetchSourceManifest, releasePage } from './channels.js';
 
 const NativeMedia = registerPlugin('NativeMedia');
 const CaptionPip = registerPlugin('CaptionPip');
@@ -155,24 +155,34 @@ function offerUpdate(manifest, view = updateDialog('发现新版本')) {
   }, 'native-button native-button-primary');
   actions.replaceChildren(later, install);
 }
+function offerAppDownload(error, view = updateDialog('需要更新应用')) {
+  const { box, heading, note, actions } = view;
+  heading.textContent = '需要更新应用'; note.textContent = error.message;
+  const link = node('a', '前往仓库');
+  link.className = 'native-button native-button-primary';
+  link.href = releasePage(source.channel); link.target = '_blank'; link.rel = 'noopener noreferrer';
+  actions.replaceChildren(button('稍后', () => box.close()), link);
+}
 async function check(manual = false) {
   if (updating) return;
   if (manual) manualChecks++;
   const manualGeneration = manualChecks;
   const view = manual ? updateDialog('正在检查更新') : null;
+  // A newer or dismissed manual check owns the result, including startup failures.
+  const mayShowResult = () => manualGeneration === manualChecks && (manual ? view.box.open : !updatePanel?.open);
   if (view) view.actions.append(button('取消', () => view.box.close()));
   try {
     const manifest = await manager.check();
-    if (manual && !view.box.open) return;
-    // A manual check owns its dialog if it overlaps the silent startup check.
-    if (!manual && (updatePanel?.open || manualGeneration !== manualChecks)) return;
+    if (!mayShowResult()) return;
     if (manifest) offerUpdate(manifest, view || undefined);
     else if (view) {
       view.heading.textContent = '已是最新版本';
       view.actions.replaceChildren(button('完成', () => view.box.close(), 'native-button native-button-primary'));
     }
   } catch (error) {
-    if (!view?.box.open) return;
+    if (!mayShowResult()) return;
+    if (error instanceof NativeUpdateRequiredError) { offerAppDownload(error, view || undefined); return; }
+    if (!view) return;
     view.heading.textContent = '无法检查更新'; view.note.textContent = errorMessage(error, '无法连接更新服务，请检查网络后重试');
     view.actions.replaceChildren(button('关闭', () => view.box.close()),
       button('重试', () => check(true), 'native-button native-button-primary'));

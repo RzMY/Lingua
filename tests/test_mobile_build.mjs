@@ -41,6 +41,8 @@ test('mobile release contains complete application assets and produces identical
   const build = () => execFileSync(process.execPath, ['mobile/scripts/build.mjs', '--release'], { cwd: root });
   build();
   const meta = JSON.parse(await read('web/mobile/manifest.json'));
+  const pkg = JSON.parse(await read('package.json'));
+  assert.equal(meta.frontendVersion, pkg.version);
   const zip = await read('web/mobile/' + meta.bundle);
   assert.equal(createHash('sha256').update(zip).digest('hex'), meta.checksum);
   assert.equal(zip.length, meta.size);
@@ -53,7 +55,13 @@ test('mobile release contains complete application assets and produces identical
       if (file.isFile()) assert.ok(entries[dir + '/' + file.name], `missing ${dir}/${file.name}`);
     }
   }
-  assert.equal(JSON.parse(Buffer.from(entries['native-bundle.json'])).version, meta.version);
+  const bundledMeta = JSON.parse(Buffer.from(entries['native-bundle.json']));
+  assert.equal(bundledMeta.version, meta.version);
+  assert.equal(bundledMeta.frontendVersion, pkg.version);
+  const versionModule = await read('web/js/version.js');
+  const { FRONTEND_VERSION } = await import(`data:text/javascript;base64,${versionModule.toString('base64')}`);
+  assert.equal(FRONTEND_VERSION, pkg.version);
+  assert.deepEqual(Buffer.from(entries['js/version.js']), versionModule);
   assert.match(Buffer.from(entries['index.html']).toString(), /await ready; await import\("\.\/js\/home.js"\)/);
   assert.ok(Object.keys(entries).every((p) => !p.startsWith('data/') && !p.startsWith('mobile/') && !p.includes('node_modules')));
   build();
@@ -61,6 +69,7 @@ test('mobile release contains complete application assets and produces identical
   assert.deepEqual(await read('web/mobile/' + meta.bundle), zip);
   const browser = unzipSync(await read('web/mobile/Lingua-web.zip'));
   assert.ok(browser['index.html'] && browser['js/home.js']);
+  assert.deepEqual(Buffer.from(browser['js/version.js']), versionModule);
   assert.equal(browser['native.js'], undefined);
   assert.equal(browser['assets/pip-black.mp4'], undefined);
   assert.equal(browser['js/caption-video.js'], undefined);

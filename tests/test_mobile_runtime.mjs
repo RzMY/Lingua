@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import { build } from 'esbuild';
 import { JSDOM } from 'jsdom';
 import { fileURLToPath } from 'node:url';
+import { NATIVE_REVISION } from '../mobile/src/update.js';
+import releaseConfig from '../mobile/release-config.json' with { type: 'json' };
 
 const result = await build({
   entryPoints: [fileURLToPath(new URL('../mobile/src/runtime.js', import.meta.url))],
@@ -59,7 +61,7 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
 const ownSource = { channel: 'own', ownUrl: 'https://site.example/', developmentUrl: '' };
 const ownSaved = { 'lingua.channel': 'own', 'lingua.own-url': ownSource.ownUrl,
   'lingua.native.state': JSON.stringify({ source: ownSource, pending: null }) };
-const updateManifest = { schema: 1, appId: 'app.linguatrack.mobile', nativeRevision: 3,
+const updateManifest = { schema: 1, appId: 'app.linguatrack.mobile', nativeRevision: NATIVE_REVISION,
   version: 'b'.repeat(64), checksum: 'c'.repeat(64), bundle: `bundle-${'b'.repeat(64)}.zip`, size: 100 };
 const updateResponse = async () => ({ status: 200, data: updateManifest });
 const clickText = (h, text) => [...h.window.document.querySelectorAll('button')].find((b) => b.textContent === text).click();
@@ -193,6 +195,52 @@ test('dismissing a manual check also suppresses an overlapping startup prompt', 
   await h.window.LinguaNative.markReady(); await flush();
   const manual = h.window.LinguaNative.checkUpdates(); clickText(h, '取消'); await flush();
   finish(await updateResponse()); await manual; await flush();
+  assert.equal(h.window.document.querySelector('#native-update'), null);
+});
+
+for (const platform of ['ios', 'android']) {
+  test(`${platform} startup and manual checks direct native-incompatible updates to the repository without downloading`, async (t) => {
+    const incompatible = { ...updateManifest, nativeRevision: NATIVE_REVISION + 1 };
+    const pending = { id: 'already-downloaded', version: 'd'.repeat(64), checksum: 'e'.repeat(64) };
+    const saved = { ...ownSaved, 'lingua.native.state': JSON.stringify({ source: ownSource, pending }) };
+    const h = await harness(saved, { platform, response: async () => ({ status: 200, data: incompatible }),
+      updater: { list: async () => ({ bundles: [{ ...pending, status: 'pending' }] }),
+        download: () => assert.fail('incompatible updates cannot download'),
+        set: () => assert.fail('incompatible updates cannot activate') } });
+    t.after(h.close);
+    const assertPrompt = () => {
+      const dialogs = h.window.document.querySelectorAll('#native-update');
+      assert.equal(dialogs.length, 1);
+      const dialog = dialogs[0];
+      assert.equal(dialog.querySelector('h2').textContent, '需要更新应用');
+      assert.equal(dialog.querySelector('p').textContent, '请到仓库下载最新版应用');
+      assert.equal(dialog.querySelector('.native-actions').textContent, '稍后前往仓库');
+      const link = dialog.querySelector('a');
+      assert.equal(link.href, `https://github.com/${releaseConfig.repository}/releases`);
+      assert.equal(link.target, '_blank');
+      assert.equal(link.rel, 'noopener noreferrer');
+    };
+    await h.window.LinguaNative.markReady(); await flush();
+    assertPrompt();
+    clickText(h, '稍后'); await flush();
+    await h.events.appStateChange({ isActive: true });
+    assert.equal(h.window.document.querySelector('#native-update'), null);
+    assert.equal(h.calls.filter((call) => call === 'network').length, 1);
+    await h.window.LinguaNative.checkUpdates();
+    assertPrompt();
+    assert.equal(h.values.get('lingua.native.state'), saved['lingua.native.state']);
+  });
+}
+
+test('a cancelled manual check suppresses an overlapping startup incompatibility reminder', async (t) => {
+  let finish;
+  const h = await harness(ownSaved, { response: () => new Promise((resolve) => { finish = resolve; }) });
+  t.after(h.close);
+  await h.window.LinguaNative.markReady(); await flush();
+  const manual = h.window.LinguaNative.checkUpdates();
+  clickText(h, '取消'); await flush();
+  finish({ status: 200, data: { ...updateManifest, nativeRevision: NATIVE_REVISION + 1 } });
+  await manual; await flush();
   assert.equal(h.window.document.querySelector('#native-update'), null);
 });
 

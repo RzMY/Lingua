@@ -4,6 +4,7 @@
   "description": "Lingua web and native mobile shell",
   "scripts": {
     "test": "node --test tests/test_*.mjs",
+    "version": "node mobile/scripts/version.mjs",
     "mobile:build": "node mobile/scripts/build.mjs",
     "mobile:sync": "npm run mobile:permissions && npm run mobile:build && cap sync",
     "mobile:android": "cap open android",

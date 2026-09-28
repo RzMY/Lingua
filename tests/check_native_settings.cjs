@@ -35,6 +35,7 @@ const root = path.resolve(__dirname, '..');
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
+  const { version: frontendVersion } = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
   try {
     for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
       const browser = await engine.launch({ headless: true });
@@ -48,11 +49,11 @@ const root = path.resolve(__dirname, '..');
               const source = { channel: 'own', ownUrl: 'https://site.example/', developmentUrl: '' };
               const values = new Map([['lingua.channel', 'own'], ['lingua.own-url', source.ownUrl], ['lingua.native.state', JSON.stringify({ source, pending: null })]]);
               const version = 'b'.repeat(64), checksum = 'c'.repeat(64), bundles = [];
-              window.nativeQA = { checks: 0, downloads: 0, activated: 0, fail: false };
+              window.nativeQA = { checks: 0, downloads: 0, activated: 0, fail: false, nativeRevision: 3 };
               window.adapters = {
                 Capacitor: { isNativePlatform: () => true, getPlatform: () => 'ios', isPluginAvailable: () => false },
                 CapacitorHttp: { get: async () => { window.nativeQA.checks++; return { status: 200, data: {
-                  schema: 1, appId: 'app.linguatrack.mobile', nativeRevision: 3, version, checksum, bundle: `bundle-${version}.zip`, size: 100,
+                  schema: 1, appId: 'app.linguatrack.mobile', nativeRevision: window.nativeQA.nativeRevision, version, checksum, bundle: `bundle-${version}.zip`, size: 100,
                 } }; } },
                 registerPlugin: () => ({ setPresentation: async () => {}, addListener: async () => {} }),
                 SystemBars: { hide: async () => {}, show: async () => {} }, SystemBarType: { NavigationBar: 'NavigationBar' },
@@ -101,6 +102,24 @@ const root = path.resolve(__dirname, '..');
             await page.waitForFunction(() => window.nativeQA.downloads === 2);
             await page.evaluate(() => { window.nativeQA.fail = false; window.nativeQA.finish(); });
             await page.waitForFunction(() => window.nativeQA.activated === 1);
+            await dialog.getByRole('button', { name: '稍后', exact: true }).click();
+            await page.evaluate(() => {
+              window.nativeQA.nativeRevision = 4;
+              return window.LinguaNative.checkUpdates();
+            });
+            assert.equal(await dialog.locator('h2').innerText(), '需要更新应用');
+            assert.equal(await dialog.locator('p').innerText(), '请到仓库下载最新版应用');
+            assert.equal(await dialog.getByRole('link', { name: '前往仓库' }).getAttribute('href'), 'https://github.com/RzMY/Lingua/releases');
+            assert.equal(await page.evaluate(() => window.nativeQA.downloads), 2);
+            await layout(); await screenshot('app-download');
+            await dialog.getByRole('button', { name: '稍后', exact: true }).click();
+            await settings.getByRole('button', { name: '关闭', exact: true }).click();
+            await page.locator('[data-go="viewSet"]').click();
+            const versionRow = page.locator('#setBody .row').filter({ has: page.locator('b', { hasText: /^前端版本$/ }) });
+            await versionRow.scrollIntoViewIfNeeded();
+            assert.equal(await versionRow.innerText(), `前端版本\n${frontendVersion}`);
+            assert.equal(await versionRow.evaluate((row) => row.nextElementSibling.querySelector('b').textContent), '后端版本');
+            await screenshot('frontend-version');
             assert.deepEqual(errors, []);
             await page.close(); console.log(`${name} ${width}×${height} ${theme}: passed`);
           }

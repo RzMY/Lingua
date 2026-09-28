@@ -1,17 +1,25 @@
 // Platform-independent update policy; native plugin owns atomic extraction and rollback.
 export const NATIVE_REVISION = 3;
 
+export class NativeUpdateRequiredError extends Error {
+  constructor() {
+    super('请到仓库下载最新版应用');
+    this.name = 'NativeUpdateRequiredError';
+  }
+}
+
 export function validateManifest(data, manifestUrl, bundleUrl) {
   const base = new URL(manifestUrl);
   if (base.protocol !== 'https:' || base.username || base.password) throw Error('更新清单地址无效');
   if (data?.schema !== 1 || data.appId !== 'app.linguatrack.mobile'
-      || data.nativeRevision !== NATIVE_REVISION) throw Error('此更新需要新版安装包，或目标不是兼容的 Lingua 站点');
+      || !Number.isSafeInteger(data.nativeRevision) || data.nativeRevision < 1) throw Error('更新清单无效');
   if (!/^[a-f0-9]{64}$/.test(data.version) || !/^[a-f0-9]{64}$/.test(data.checksum)
       || !Number.isSafeInteger(data.size) || data.size < 1 || data.size > 100 * 1024 * 1024
       || data.bundle !== `bundle-${data.version}.zip`) throw Error('更新清单无效');
   const url = new URL(bundleUrl || data.bundle, base);
   if (url.origin !== base.origin || url.username || url.password
       || url.pathname !== new URL(data.bundle, base).pathname) throw Error('更新包与清单位置不匹配');
+  if (data.nativeRevision !== NATIVE_REVISION) throw new NativeUpdateRequiredError();
   return { ...data, url: url.href };
 }
 

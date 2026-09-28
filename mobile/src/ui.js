@@ -17,7 +17,7 @@ export const nativeStyles = `
 .native-status{margin:16px 0;color:var(--ink-2,#40463a);overflow-wrap:anywhere}
 .native-status:empty{display:none}
 .native-actions{display:flex;gap:10px;margin-top:24px}
-.native-button{display:flex;align-items:center;justify-content:center;flex:1;min-height:46px;padding:11px 16px;border:1px solid var(--line-2,#ccd1c4);border-radius:14px;background:var(--card,#e8eddf);color:var(--ink,#1b1f16);font-weight:600!important}
+.native-button{display:flex;align-items:center;justify-content:center;flex:1;min-height:46px;padding:11px 16px;border:1px solid var(--line-2,#ccd1c4);border-radius:14px;background:var(--card,#e8eddf);color:var(--ink,#1b1f16);font-weight:600!important;text-decoration:none}
 .native-button-primary{background:var(--cta,#b6f18f);color:var(--cta-ink,#1d3311);border-color:transparent}
 .native-button:active,.native-close:active{opacity:.75}
 .native-dialog button:disabled{opacity:.5;cursor:default}

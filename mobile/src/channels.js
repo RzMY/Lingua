@@ -52,6 +52,12 @@ export function releaseEndpoint(channel) {
   return channel === 'preview' ? `${base}/tags/${encodeURIComponent(releaseConfig.previewTag)}` : `${base}/latest`;
 }
 
+export function releasePage(channel) {
+  const base = `https://github.com/${releaseConfig.repository}/releases`;
+  return channel === 'preview' ? `${base}/tag/${encodeURIComponent(releaseConfig.previewTag)}`
+    : channel === 'stable' ? `${base}/latest` : base;
+}
+
 function releaseAsset(release, name) {
   const asset = release.assets?.find((item) => item.name === name);
   if (!asset) throw Error(`该版本尚未提供 ${name}，请稍后检查`);

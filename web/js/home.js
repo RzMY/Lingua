@@ -33,6 +33,7 @@ import { el, icon, toast, fmtTime, fmtSize, dayKey, debounce } from './util.js';
 import { enterView } from './motion.js';
 import { createKeyedList } from './keyed-list.js';
 import { nativeApp, nativeReady } from './native.js';
+import { FRONTEND_VERSION } from './version.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -468,6 +469,7 @@ function paintSettings() {
       switchRow('实验性功能', '启用音频提取与语音转录工作台',
         () => experimentsEnabled(), (v) => setConfig({ experimental: v })),
       svc,
+      infoRow('前端版本', FRONTEND_VERSION),
       ver,
       infoRow('数据存储', isDegraded() ? '仅本次会话' : '本地存储'),
     ),
