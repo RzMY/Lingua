@@ -1,33 +1,163 @@
-"""Rebuild checked-in application artwork; optional local tool: pip install pillow."""
+"""Generate checked-in web/iOS/Android artwork from web/icons/lingua.svg.
+
+Optional authoring dependencies: pip install -r mobile/scripts/icons-requirements.txt
+Import a new design with: python mobile/scripts/icons.py --source path/to/icon.svg
+Normal app/web builds consume the checked-in files and need no image tooling.
+"""
+import argparse
+from io import BytesIO
 from pathlib import Path
+import re
+import xml.etree.ElementTree as ET
+
 from PIL import Image, ImageDraw
+from resvg_py import svg_to_bytes
 
 ROOT = Path(__file__).resolve().parents[2]
-BG = '#f2f2ea'
-GREEN = '#4f7a37'
+SOURCE = ROOT / 'web/icons/lingua.svg'
+RES = ROOT / 'android/app/src/main/res'
+SVG = '{http://www.w3.org/2000/svg}'
+BG = '#FFFFFF'
+DENSITIES = [('mdpi', 1), ('hdpi', 1.5), ('xhdpi', 2), ('xxhdpi', 3), ('xxxhdpi', 4)]
+# The visible adaptive mask is 72dp on a 108dp layer. Keep the design's padding;
+# all foreground pixels also fit inside Android's central 66dp safe circle.
+ADAPTIVE_SCALE = 72 / 108
+ET.register_namespace('', SVG[1:-1])
 
 
-def icon(size, transparent=False):
-    image = Image.new('RGBA', (1024, 1024), (0, 0, 0, 0) if transparent else BG)
-    draw = ImageDraw.Draw(image)
-    draw.rounded_rectangle((200, 200, 824, 824), radius=156, fill=GREEN)
-    for x, top, bottom in [(324, 436, 588), (418, 352, 672), (512, 288, 736), (606, 384, 640), (700, 456, 568)]:
-        draw.rounded_rectangle((x - 24, top, x + 24, bottom), radius=24, fill=BG)
-    image = image.resize((size, size), Image.Resampling.LANCZOS)
-    return image if transparent else image.convert('RGB')
+def render(svg, size):
+    # resvg preserves the source's gradient and SVG filter, including its shadow.
+    data = svg_to_bytes(svg_string=svg, width=size, height=size, skip_system_fonts=True)
+    return Image.open(BytesIO(data)).convert('RGBA')
 
 
-icon(1024).save(ROOT / 'ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png')
-for density, scale in [('mdpi', 1), ('hdpi', 1.5), ('xhdpi', 2), ('xxhdpi', 3), ('xxxhdpi', 4)]:
-    directory = ROOT / f'android/app/src/main/res/mipmap-{density}'
-    for name in ['ic_launcher', 'ic_launcher_round']:
-        icon(round(48 * scale)).save(directory / f'{name}.png')
-    icon(round(108 * scale), True).save(directory / 'ic_launcher_foreground.png')
-for path in list((ROOT / 'android/app/src/main/res').glob('drawable*/splash.png')) + list(
-        (ROOT / 'ios/App/App/Assets.xcassets/Splash.imageset').glob('*.png')):
-    with Image.open(path) as previous:
-        size = previous.size
-    image = Image.new('RGB', size, BG)
-    mark = icon(round(min(size) * .23))
-    image.paste(mark, ((size[0] - mark.width) // 2, (size[1] - mark.height) // 2))
+def save(image, path):
+    path.parent.mkdir(parents=True, exist_ok=True)
     image.save(path)
+
+
+def write(path, content):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding='utf-8', newline='\n')
+
+
+def foreground(svg, *, monochrome=False, scale=1):
+    tree = ET.fromstring(svg)
+    tree.remove(tree.find(f'{SVG}rect'))  # White background belongs to the OS layer.
+    group = tree.find(f'{SVG}g')
+    if monochrome:
+        tree.remove(tree.find(f'{SVG}defs'))
+        group.attrib.pop('filter', None)
+        for rect in list(group):
+            if rect.get('fill') == '#FFFFFF':
+                group.remove(rect)  # Do not include the decorative white underlay.
+            else:
+                rect.set('fill', '#000000')
+    tree.remove(group)
+    wrapper = ET.SubElement(tree, f'{SVG}g', {
+        'transform': f'translate(512 512) scale({scale}) translate(-512 -512)',
+    })
+    wrapper.append(group)
+    return ET.tostring(tree, encoding='unicode')
+
+
+def silhouette_paths(svg):
+    """Convert this design's round bars to native paths, using source geometry."""
+    group = ET.fromstring(svg).find(f'{SVG}g')
+    match = re.fullmatch(
+        r'translate\(([-\d.]+) ([-\d.]+)\) scale\(([-\d.]+)\) translate\(([-\d.]+) ([-\d.]+)\)',
+        group.get('transform', ''),
+    )
+    if not match:
+        raise ValueError('Update silhouette_paths for the new SVG transform')
+    tx, ty, scale, dx, dy = map(float, match.groups())
+    paths = []
+    for rect in group:
+        if rect.tag != f'{SVG}rect':
+            raise ValueError('Expected rounded bars in the icon foreground')
+        if rect.get('fill') == '#FFFFFF':
+            continue
+        x = tx + (dx + float(rect.get('x'))) * scale
+        y = ty + (dy + float(rect.get('y'))) * scale
+        w, h, r = (float(rect.get(key)) * scale for key in ('width', 'height', 'rx'))
+        paths.append(
+            f'M{x+r:g},{y:g} H{x+w-r:g} A{r:g},{r:g} 0 0 1 {x+w:g},{y+r:g} '
+            f'V{y+h-r:g} A{r:g},{r:g} 0 0 1 {x+w-r:g},{y+h:g} '
+            f'H{x+r:g} A{r:g},{r:g} 0 0 1 {x:g},{y+h-r:g} '
+            f'V{y+r:g} A{r:g},{r:g} 0 0 1 {x+r:g},{y:g} Z'
+        )
+    return paths
+
+
+def native_silhouette(paths, dp, scale):
+    entries = '\n'.join(f'        <path android:fillColor="#FFFFFFFF" android:pathData="{p}" />' for p in paths)
+    return f'''<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated by mobile/scripts/icons.py from web/icons/lingua.svg. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="{dp}dp" android:height="{dp}dp"
+    android:viewportWidth="1024" android:viewportHeight="1024">
+    <group android:pivotX="512" android:pivotY="512" android:scaleX="{scale:g}" android:scaleY="{scale:g}">
+{entries}
+    </group>
+</vector>
+'''
+
+
+def legacy(image, size, *, circle=False):
+    # Pre-adaptive launchers draw these directly: supply the outer shape ourselves.
+    mask = Image.new('L', image.size, 0)
+    draw = ImageDraw.Draw(mask)
+    bounds = (0, 0, image.width - 1, image.height - 1)
+    if circle:
+        draw.ellipse(bounds, fill=255)
+    else:
+        draw.rounded_rectangle(bounds, radius=image.width * .22, fill=255)
+    result = image.copy()
+    result.putalpha(mask)
+    return result.resize((size, size), Image.Resampling.LANCZOS)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--source', type=Path, help='Import SVG into the tracked canonical source')
+    args = parser.parse_args()
+    source = (args.source or SOURCE).read_text(encoding='utf-8')
+    paths = silhouette_paths(source)
+    original = render(source, 1024)
+    if original.getchannel('A').getextrema() != (255, 255):
+        raise ValueError('The source must have an opaque white background')
+    if args.source:
+        write(SOURCE, source)
+
+    # iOS/Xcode applies its own corner mask. App Store artwork must have no alpha.
+    save(original.convert('RGB'), ROOT / 'ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png')
+    for name, size in [('favicon-32.png', 32), ('apple-touch-icon.png', 180),
+                       ('icon-192.png', 192), ('icon-512.png', 512), ('icon-maskable-512.png', 512)]:
+        save(render(source, size).convert('RGB'), ROOT / 'web/icons' / name)
+    original.save(ROOT / 'web/favicon.ico', sizes=[(s, s) for s in (16, 32, 48, 64, 256)])
+    write(ROOT / 'web/icons/safari-pinned-tab.svg', foreground(source, monochrome=True))
+
+    adaptive = foreground(source, scale=ADAPTIVE_SCALE)
+    for density, factor in DENSITIES:
+        directory = RES / f'mipmap-{density}'
+        save(legacy(original, round(48 * factor)), directory / 'ic_launcher.png')
+        save(legacy(original, round(48 * factor), circle=True), directory / 'ic_launcher_round.png')
+        save(render(adaptive, round(108 * factor)), directory / 'ic_launcher_foreground.png')
+    write(RES / 'drawable/ic_launcher_monochrome.xml', native_silhouette(paths, 108, ADAPTIVE_SCALE))
+    # Status icons are alpha-only silhouettes, with ~20dp artwork in a 24dp canvas.
+    write(RES / 'drawable/ic_stat_lingua.xml', native_silhouette(paths, 24, 1.32))
+
+    splash_paths = sorted(RES.glob('drawable*/splash.png')) + sorted(
+        (ROOT / 'ios/App/App/Assets.xcassets/Splash.imageset').glob('*.png'))
+    for path in splash_paths:
+        with Image.open(path) as previous:
+            size = previous.size
+        image = Image.new('RGB', size, BG)
+        mark = render(source, round(min(size) * .23)).convert('RGB')
+        image.paste(mark, ((size[0] - mark.width) // 2, (size[1] - mark.height) // 2))
+        save(image, path)
+    print('Generated web, iOS, Android launcher/notification icons and splash screens.')
+
+
+if __name__ == '__main__':
+    main()

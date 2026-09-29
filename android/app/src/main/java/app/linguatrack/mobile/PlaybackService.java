@@ -264,7 +264,7 @@ public class PlaybackService extends Service {
     private Notification notification() {
         PendingIntent open = PendingIntent.getActivity(this, 0, new Intent(this, MainActivity.class), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification.Builder builder = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(this, "playback") : new Notification.Builder(this);
-        return builder.setSmallIcon(R.drawable.ic_pip_play).setContentTitle(title).setContentText(playing ? "正在播放" : "已暂停")
+        return builder.setSmallIcon(R.drawable.ic_stat_lingua).setContentTitle(title).setContentText(playing ? "正在播放" : "已暂停")
             .setContentIntent(open).setVisibility(Notification.VISIBILITY_PUBLIC).setOnlyAlertOnce(true)
             .addAction(new Notification.Action.Builder(R.drawable.ic_pip_rewind, "快退 5 秒", actionIntent("seekbackward")).build())
             .addAction(new Notification.Action.Builder(playing ? R.drawable.ic_pip_pause : R.drawable.ic_pip_play,

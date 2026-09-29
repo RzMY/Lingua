@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+<title id="title">Lingua · 白底音频图标</title>
+<desc id="desc">五根圆润的薄荷绿色音频条，置于纯白背景中央。音频主体宽约61%，高约46%。</desc>
+<g transform="translate(512 512) scale(1) translate(-512 -512)"><g transform="translate(512 512) scale(1.8) translate(-512 -481)">
+<rect x="339" y="428" width="42" height="106" rx="21" fill="#000000" />
+<rect x="415" y="391" width="42" height="180" rx="21" fill="#000000" />
+<rect x="491" y="349" width="42" height="264" rx="21" fill="#000000" />
+<rect x="567" y="391" width="42" height="180" rx="21" fill="#000000" />
+<rect x="643" y="428" width="42" height="106" rx="21" fill="#000000" />
+</g>
+</g></svg>

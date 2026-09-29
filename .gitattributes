@@ -3,6 +3,8 @@
 *.js text eol=lf
 *.mjs text eol=lf
 *.json text eol=lf
+*.webmanifest text eol=lf
+*.svg text eol=lf
 *.html text eol=lf
 *.css text eol=lf
 *.py text eol=lf
@@ -14,6 +16,7 @@
 gradlew text eol=lf
 *.bat text eol=crlf
 *.png binary
+*.ico binary
 *.jpg binary
 *.wav binary
 *.jar binary
