@@ -1,17 +1,17 @@
 # Lingua
 
-Lingua 是一个面向语言学习的播放器。它把音视频、字幕、逐词时间轴、注音、转写、词性、译文和词汇讲解放在同一条学习流程。支持日语、英语、西班牙语、法语、德语和韩语。
+Lingua 是一个面向语言学习的播放器。它把音视频、字幕、逐词时间轴、注音、转写、词性、译文和词汇讲解放在同一条学习流程。支持 Android、iOS 和 Web 平台。支持日语、英语、西班牙语、法语、德语和韩语。
 
 ## 功能概览
 
-- 本地导入音频或视频：WAV、MP3、M4A、FLAC、OGG、OPUS，以及 MP4、WebM、MOV 等；
-- 导入词级 JSON、带内联时间戳的 WebVTT、普通 SRT / VTT。
-- 有词级时间戳时逐词高亮；只有句级时间戳时按整句高亮。
-- 日语假名与罗马音、韩语发音与罗马字、英语/西班牙语/法语/德语音标与原形。
-- 词性着色、点击单词查看释义、查看句子逐词拆解。
-- 浏览器直连 OpenAI 兼容接口，按需生成翻译、词卡和句子讲解。
-- 变速播放、单句/整曲重复、自动跟随、和长音频虚拟滚动。
-- IndexedDB 本地保存音视频、分析结果与大模型产物；支持用户数据导出、导入。
+- 支持导入音视频：WAV、MP3、M4A、FLAC、OGG、OPUS，以及 MP4、WebM、MOV 等。
+- 支持词级 JSON、带内联时间戳的 WebVTT、普通 SRT / VTT。
+- 支持展示日语假名与罗马音、韩语发音与罗马字、英语/西班牙语/法语/德语音标与原形。
+- 支持句子成分分解、词性着色、逐词高亮、音标显示、原形显示。
+- 支持接入大模型自动生成翻译，以及按需生成单词和句子讲解。
+- 支持画中画播放、字幕悬浮窗、变速播放、单句重复、字幕自动跟随。
+- 本地保存音视频、分析结果与大模型产物，支持用户数据导出、导入。
+- 内置工作台支持本地音频提取、压制，以及在线转录、快捷导入。
 
 ## 界面预览
 
@@ -19,18 +19,17 @@ Lingua 是一个面向语言学习的播放器。它把音视频、字幕、逐�
 
 ## 安装
 
-### Docker 部署
+项目分为前端和分析后端。前端可独立运行，但句子成分分解、词性分析、注音和词形还原等功能需要分析后端提供的 API。
+
+### Android / iOS （纯前端）
+在 [Releases](https://github.com/RzMY/Lingua/releases) 下载对应安装包。
+
+### Docker 部署 （包括Web前端和分析后端）
 
 首次部署先复制配置文件：
 
 ```bash
 cp .env.docker.example .env.docker
-```
-
-Windows PowerShell 使用：
-
-```powershell
-Copy-Item .env.docker.example .env.docker
 ```
 编辑 `.env.docker`，设置 `LINGUA_API_TOKEN`。
 
@@ -42,7 +41,6 @@ Copy-Item .env.docker.example .env.docker
 docker compose --env-file .env.docker pull
 docker compose --env-file .env.docker up -d --no-build --wait
 ```
-更新时重新执行这两条命令。
 
 #### 本地构建
 
@@ -55,80 +53,37 @@ docker compose --env-file .env.docker up -d --no-build --wait
 
 #### 原生访问
 
-- Android：在浏览器中打开页面，添加到主屏幕。
-- IOS：在 [WebClip](https://webclip-vue-app.vercel.app) 添加WebClip
+- Android：在浏览器中打开页面，添加书签到主屏幕。
+- IOS：在 [WebClip](https://webclip-vue-app.vercel.app) 添加 WebClip。
 
-#### Docker管理
+## 开始使用
 
-```bash
-# 查看服务状态
-docker compose --env-file .env.docker ps
-# 查看日志
-docker compose --env-file .env.docker logs --tail 100
-# 停止并移除容器
-docker compose --env-file .env.docker down
-```
-修改令牌或端口后，重新执行 `docker compose --env-file .env.docker up -d --no-build --wait` 使配置生效，并同步修改浏览器设置。
+- 在首页导入音频或视频，选择源语言，即可进行播放。
+- 在播放页导入字幕，即可直接显示原文并按句定位播放。
+- 句子成分分解、注音、原形和词性等分析功能，需要在「设置 → 分析后端」配置分析后端地址和访问令牌。
+- 翻译、单词和句子讲解等大模型功能，需要在「设置 → 大模型」填写接口地址、模型名和所需的 API Key。
 
-### 本地 Python 安装
+## 设置说明
 
-```bash
-conda create -n Lingua python=3.11
-conda activate Lingua
-pip install -r requirements.txt
-```
+设置按作用范围分为三类：
 
-检查语言依赖：
+- **连接与模型**：分析后端地址、访问令牌、大模型地址、API Key、模型名、提示词和调用参数。
+- **学习偏好**：目标学习语言、各源语言的默认显示层、字幕元素的大小显示、软件的主题色。
+- **数据管理**：导入/导出数据、补充缺失文件、查看存储明细和清理模型产物。
+- **更新管理**：检查更新、下载更新、安装更新。
 
-```bash
-python -m pipeline langs
-```
-
-英语注音需要额外的 NLTK 数据：
-
-```bash
-python -c "import nltk; nltk.download('cmudict'); nltk.download('averaged_perceptron_tagger_eng')"
-```
-
-如果要使用自定义 MeCab 词典，可在 `.env` 中设置 `LINGUA_DICDIR`，或运行命令时传入 `--dicdir`。复制示例配置：
-
-```bash
-cp .env.example .env
-```
-
-Windows PowerShell 可使用：
-
-```powershell
-Copy-Item .env.example .env
-```
-同时启动网站和分析 API：
-
-```bash
-python -m pipeline serve --root web --open
-```
-
-默认地址为 `http://127.0.0.1:5173`
-
-只启动 API：
-
-```bash
-python -m pipeline serve --no-static --host 0.0.0.0 --port 8765
-```
-
-## 工作台
+## 工作台（实验性功能）
 
 在「设置 → 系统」开启「实验性功能」后，底部导航的首页与设置之间显示工作台。
 
-#### 提取聆听音频：
-  - 普通 MP4 的 AAC/ALAC 原音轨直接分离为 M4A；
-  - 已有无损 WAV 直接复用，其他支持的格式解码为浮点 WAV，保留原采样率与声道。
-  - 提取后可直接导入该音频。
-#### 生成ASR音频：
-  - 下采样聆听音频生成 16 kHz MP3 用于转录；
-#### 转录：
-  - 点击「转录接口配置」，设置 OpenAI 兼容接口地址、API Key、模型与结果格式。可选词级时间戳与自定义参数。
-  - 输入音频可直接引用第一步的聆听原音频，也可引用第二步的 ASR 音频；
-  - 转录后可直接导入字幕。
+### 提取聆听音频：
+- 普通 MP4 的 AAC/ALAC 原音轨直接分离为 M4A。
+- 已有无损 WAV 直接复用，其他支持的格式解码为浮点 WAV，保留原采样率与声道。
+### 生成ASR音频：
+- 下采样聆听音频生成 16 kHz MP3 用于转录。
+### 转录：
+- 点击「转录接口配置」，设置 OpenAI 兼容接口地址、API Key、模型与结果格式。
+- 输入音频可直接引用第一步的聆听原音频，也可引用第二步的 ASR 音频。
 
 ## 字幕格式
 
@@ -155,7 +110,7 @@ python -m pipeline serve --no-static --host 0.0.0.0 --port 8765
 
 ### SRT / 普通 WebVTT
 
-支持句级时间戳。没有词级时间戳时，默认按整句高亮；可在播放页开启“估算词级时间戳”，按字符分配时间。
+支持句级时间戳并按整句高亮。
 
 ### 带内联时间戳的 WebVTT
 
@@ -171,14 +126,6 @@ python -m pipeline serve --no-static --host 0.0.0.0 --port 8765
 | `fr` | 法语 | spaCy | 音标 | 原形 |
 | `de` | 德语 | spaCy | 音标 | 原形 |
 | `ko` | 韩语 | spaCy | 发音 | 罗马字 |
-
-## 设置说明
-
-设置按作用范围分为三类：
-
-- **连接与模型**：分析后端地址、访问令牌、大模型地址、API Key、模型名、提示词和调用参数。
-- **学习偏好**：目标语言、各源语言默认显示层、字幕字号和主题。
-- **数据管理**：导入/导出数据、补充缺失文件、查看存储明细和清理模型缓存。
 
 ## HTTP API
 
@@ -204,9 +151,16 @@ python -m pipeline serve --no-static --host 0.0.0.0 --port 8765
 {"ok": true, "log": ["..."], "track": {"schemaVersion": 2, "sentences": []}}
 ```
 ## 开源致谢
-本项目依赖并使用了以下开源组件：
 
-* **lamejs**：用于音频 MP3 编码，基于 LGPL 许可证发布。项目主页及源码请参考 [LAME 官方网站](http://lame.sourceforge.net)。
+* **LinuxDo** [LinuxDo 官方网站](https://linux.do/)。
+* **lamejs** [LAME 官方网站](http://lame.sourceforge.net)。
+* **MeCab** [MeCab 官方网站](https://taku910.github.io/mecab/)。
+* **UniDic** [UniDic 官方网站](https://clrd.ninjal.ac.jp/unidic/)。
+* **spaCy** [spaCy 官方网站](https://spacy.io/)。
+* **Capacitor** [Capacitor 官方网站](https://capacitorjs.com/)。
+* **g2p-en** [g2p-en GitHub 仓库](https://github.com/Kyubyong/g2p)。
+* **hangulpy** [hangulpy GitHub 仓库](https://github.com/gaon12/hangulpy)。
+* **eSpeak NG** [eSpeak NG GitHub 仓库](https://github.com/espeak-ng/espeak-ng)。
 
 ## 许可
 
