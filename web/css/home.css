@@ -200,6 +200,12 @@ html[data-theme="dark"] .card-err { color: #f0bfb6; }
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+.card-t[contenteditable] {
+  position: relative;
+  z-index: 2;
+  outline: none;
+  cursor: text;
+}
 .card-a {
   position: relative;
   z-index: 2;

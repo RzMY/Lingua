@@ -1,12 +1,17 @@
 /** Keep unchanged cards (and their focus) through metadata refreshes and searches. */
 export function createKeyedList(root) {
   let cache = new Map();
-  return (entries) => {
+  const render = (entries) => {
     const next = new Map();
-    for (const { key, value, create } of entries) {
+    for (const { key, value, create, update } of entries) {
       const previous = cache.get(key);
       const signature = JSON.stringify(value);
-      const node = previous?.signature === signature ? previous.node : create();
+      let node = previous?.node;
+      if (!previous) node = create();
+      else if (previous.signature !== signature) {
+        if (update) update(node);
+        else node = create();
+      }
       next.set(key, { signature, node });
     }
     const keep = new Set(Array.from(next.values(), ({ node }) => node));
@@ -24,4 +29,11 @@ export function createKeyedList(root) {
     }
     cache = next;
   };
+  // A caller that updates a live node in place can acknowledge its new data without
+  // replacing that node (and its editing host) on the next unchanged refresh.
+  render.updateValue = (key, value) => {
+    const entry = cache.get(key);
+    if (entry) entry.signature = JSON.stringify(value);
+  };
+  return render;
 }

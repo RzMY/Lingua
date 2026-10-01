@@ -77,6 +77,7 @@ let tracks = [];
 let pending = [];        // 正在写入库的文件 (还没有 track 记录)
 let listErr = '';
 let query = '';
+let refreshVersion = 0;
 let missingFilesRow = null;
 const paintList = createKeyedList(dom.list);
 const missingCountLabel = () => {
@@ -135,21 +136,73 @@ const openSetup = (id) => {
 };
 
 function cardOf(t) {
-  const video = mediaKind(t.audio) === 'video';
+  let video = mediaKind(t.audio) === 'video';
   const card = el('div', video ? 'card card-video' : 'card');
-  const { panel, top } = panelOf(video ? 'i-video' : 'i-wave', metaOf(t), el('div', 'card-t', t.title || t.id));
+  card.dataset.trackId = t.id;
+  const titleNode = el('div', 'card-t', t.title || t.id);
+  const { panel, top } = panelOf(video ? 'i-video' : 'i-wave', metaOf(t), titleNode);
+  let rename = null;
+  const startRename = () => {
+    rename = renameCard(titleNode, async (title) => {
+      ++refreshVersion;
+      const updated = await patchTrack(t.id, { title });
+      if (!updated) throw new Error('媒体不存在，请刷新媒体库');
+      ++refreshVersion;
+      tracks = tracks.map((track) => track.id === t.id ? updated : track);
+      card.updateTrack(updated);
+      titleNode.textContent = title;
+      hit.setAttribute('aria-label', title + ' · 打开');
+      if (card.isConnected) paintList.updateValue('track:' + t.id, [t, sourceName(t.lang)]);
+      // 不在收起 iOS 键盘时替换卡片；菜单闭包与显示名称同步更新。
+      const key = query.trim().toLowerCase();
+      if (!card.isConnected || (key && !(title + ' ' + t.id).toLowerCase().includes(key))) render();
+    }, () => card.updateTrack(t));
+  };
 
   const more = el('button', 'card-a');
   more.type = 'button';
   more.setAttribute('aria-label', '更多操作');
   more.append(icon('i-dots'));
-  more.addEventListener('click', () => cardMenu(more, t));
+  more.addEventListener('pointerdown', () => {
+    if (rename?.editing) rename.commit();
+  });
+  more.addEventListener('click', async () => {
+    if (rename) await rename.commit();
+    if (more.isConnected) cardMenu(more, t, startRename);
+  });
   top.append(more);
 
   const hit = el('button', 'card-hit');
   hit.type = 'button';
   hit.setAttribute('aria-label', (t.title || t.id) + ' · 打开');
-  hit.addEventListener('click', () => openTrack(t.id));
+  // 点击正在改名的卡片只结束编辑；避免同一次点击又打开播放器。
+  let endingRename = false;
+  hit.addEventListener('pointerdown', () => {
+    endingRename = !!rename?.editing;
+    if (endingRename) rename.commit();
+  });
+  hit.addEventListener('click', async () => {
+    if (endingRename) { endingRename = false; return; }
+    if (rename?.editing) { rename.commit(); return; }
+    if (rename) await rename.commit();
+    openTrack(t.id);
+  });
+  card.updateTrack = (next) => {
+    t = next;
+    const nextVideo = mediaKind(t.audio) === 'video';
+    if (nextVideo !== video) {
+      video = nextVideo;
+      card.classList.toggle('card-video', video);
+      for (const use of panel.querySelectorAll('.card-wm use, .art use')) {
+        use.setAttribute('href', video ? '#i-video' : '#i-wave');
+      }
+    }
+    panel.querySelector('.card-meta').replaceWith(metaOf(t));
+    // A returning player's progress/duration refresh must not remove a live editor
+    // or the card that an already-open menu will act on.
+    if (!rename?.editing && !rename?.saving) titleNode.textContent = t.title || t.id;
+    hit.setAttribute('aria-label', (t.title || t.id) + ' · 打开');
+  };
   card.append(panel, hit);
   return card;
 }
@@ -210,7 +263,8 @@ function render() {
       day = d;
       entries.push({ key: 'day:' + t.id, value: d, create: () => el('div', 'day', d) });
     }
-    entries.push({ key: 'track:' + t.id, value: [t, sourceName(t.lang)], create: () => cardOf(t) });
+    entries.push({ key: 'track:' + t.id, value: [t, sourceName(t.lang)],
+      create: () => cardOf(t), update: (node) => node.updateTrack(t) });
   }
   paintList(entries);
 
@@ -219,10 +273,14 @@ function render() {
 }
 
 async function refresh() {
+  const version = ++refreshVersion;
   try {
-    tracks = await listTracks();
+    const next = await listTracks();
+    if (version !== refreshVersion) return;
+    tracks = next;
     listErr = '';
   } catch (err) {
+    if (version !== refreshVersion) return;
     tracks = [];
     listErr = errorMessage(err, '无法读取本地数据，请重试');
   }
@@ -295,37 +353,90 @@ $('btnAdd').addEventListener('click', pick);
 
 /* ------------------------------------------------------------------ 单条操作 */
 
-function renameSheet(t) {
-  let text = t.title || '';
-  const field = inputField('标题', {
-    value: text, placeholder: '输入媒体标题', onInput: (v) => { text = v; },
-  });
-  const body = el('div', 'pane');
-  const save = button('保存', {
-    main: true,
-    onPick: async () => {
-      const title = text.trim();
-      if (!title) { toast('标题不能为空'); return; }
-      save.disabled = true;
-      try {
-        const updated = await patchTrack(t.id, { title: title.slice(0, 200) });
-        if (!updated) throw new Error('媒体不存在，请刷新媒体库');
-        closeSheet();
-        await refresh();
-        toast('已重命名');
-      } catch (err) { toast('重命名失败：' + errorMessage(err)); }
-      finally { save.disabled = false; }
-    },
-  });
-  body.append(field, buttonBar(save, button('取消', { onPick: closeSheet })));
-  openSheet('重命名', body);
-  requestAnimationFrame(() => field.input.focus());
+function renameCard(titleNode, save, onSettled) {
+  const card = titleNode.closest('.card');
+  const original = titleNode.textContent;
+  let editing = true;
+  let saving = false;
+  let result;
+  const commit = () => {
+    if (!editing) return result;
+    editing = false;
+    const title = titleNode.textContent.replace(/[\r\n]+/g, ' ').trim().slice(0, 200);
+    // 先清理事件和编辑状态。即使 WKWebView 不派发 blur，仍会保存且不会锁住卡片。
+    titleNode.removeEventListener('blur', commit);
+    titleNode.removeEventListener('keydown', keydown);
+    titleNode.removeEventListener('beforeinput', beforeinput);
+    document.removeEventListener('pointerdown', outside);
+    titleNode.textContent = title || original;
+    titleNode.removeAttribute('contenteditable');
+    titleNode.removeAttribute('role');
+    titleNode.removeAttribute('aria-label');
+    titleNode.style.height = '';
+    card.classList.remove('is-renaming');
+    titleNode.blur();
+    if (!title || title === original) {
+      if (!title) toast('文件名不能为空，已保留原名称');
+      result = Promise.resolve();
+    } else {
+      saving = true;
+      result = Promise.resolve().then(() => save(title)).catch((err) => {
+        titleNode.textContent = original;
+        toast('重命名失败：' + errorMessage(err));
+      });
+    }
+    result = result.then(() => { saving = false; onSettled(); });
+    return result;
+  };
+  const keydown = (event) => {
+    if (event.isComposing || event.keyCode === 229) return;
+    if ((event.key === 'Backspace' || event.key === 'Delete') && !titleNode.textContent) {
+      event.preventDefault();
+      return;
+    }
+    if (event.key === 'Enter' || event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      commit();
+    }
+  };
+  const beforeinput = (event) => {
+    if (event.isComposing) return;
+    // iOS 的「完成」也可能只发送 beforeinput，没有可用的 keydown。
+    if (event.inputType === 'insertParagraph' || event.inputType === 'insertLineBreak') {
+      event.preventDefault();
+      commit();
+      return;
+    }
+    // 手机键盘未必发送 keydown；保留空编辑区的占位换行，避免光标和页面跳动。
+    if (event.inputType.startsWith('delete') && !titleNode.textContent) {
+      event.preventDefault();
+    }
+  };
+  const outside = (event) => { if (!titleNode.contains(event.target)) commit(); };
+  titleNode.addEventListener('keydown', keydown);
+  titleNode.addEventListener('beforeinput', beforeinput);
+  titleNode.addEventListener('blur', commit);
+  document.addEventListener('pointerdown', outside);
+  titleNode.style.height = titleNode.getBoundingClientRect().height + 'px';
+  titleNode.contentEditable = 'plaintext-only';
+  titleNode.enterKeyHint = 'done';
+  titleNode.setAttribute('role', 'textbox');
+  titleNode.setAttribute('aria-label', '文件名');
+  card.classList.add('is-renaming');
+  titleNode.focus();
+  const selection = window.getSelection();
+  const range = document.createRange();
+  range.selectNodeContents(titleNode);
+  selection.removeAllRanges();
+  selection.addRange(range);
+  return { get editing() { return editing; }, get saving() { return saving; }, commit };
 }
 
-function cardMenu(anchor, t) {
+function cardMenu(anchor, t, startRename) {
   openMenu(anchor, [
     { label: '打开', icon: 'i-play', onPick: () => openTrack(t.id) },
-    { label: '重命名', icon: 'i-pen', onPick: () => renameSheet(t) },
+    { label: '重命名', icon: 'i-pen', onPick: startRename },
     (t.audio?.missing || t.transcript?.missing) && {
       label: '补充文件', icon: 'i-upload',
       onPick: () => openFileRepair([t], { onUpdate: refresh, onClose: refresh }),

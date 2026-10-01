@@ -117,7 +117,7 @@ const output = path.resolve('.cache/frontend-review');
         }
       }
 
-      // Storage failures must preserve the edit, enable retry and avoid uncaught promises.
+      // A failed rename must restore stored data, release editing and permit retry.
       await page.goto(base + '/index.html');
       const trackId = await page.evaluate(async () => {
         const { createTrack, saveAnalysis } = await import('/js/library.js');
@@ -131,8 +131,8 @@ const output = path.resolve('.cache/frontend-review');
       });
       await page.reload();
       await page.getByRole('button', { name: '更多操作' }).click();
-      await page.getByRole('menuitem', { name: '重命名', exact: true }).click(); await settle();
-      await page.getByLabel('标题', { exact: true }).fill('Updated');
+      await page.getByRole('menuitem', { name: '重命名', exact: true }).click();
+      await page.getByRole('textbox', { name: '文件名', exact: true }).fill('Updated');
       await page.evaluate(() => {
         window.originalPut = IDBObjectStore.prototype.put;
         IDBObjectStore.prototype.put = function (...args) {
@@ -141,13 +141,16 @@ const output = path.resolve('.cache/frontend-review');
           return request;
         };
       });
-      await page.getByRole('button', { name: '保存', exact: true }).click();
+      await page.getByRole('textbox', { name: '文件名', exact: true }).press('Enter');
       await page.locator('#toast').filter({ hasText: '重命名失败' }).waitFor();
-      assert.equal(await page.getByLabel('标题', { exact: true }).inputValue(), 'Updated');
-      assert.equal(await page.getByRole('button', { name: '保存', exact: true }).isEnabled(), true);
+      assert.equal(await page.locator('.card-t').textContent(), 'Review');
+      assert.equal(await page.getByRole('button', { name: '更多操作', exact: true }).isEnabled(), true);
       assert.equal(await page.evaluate(async (id) => (await (await import('/js/library.js')).getTrack(id)).title, trackId), 'Review');
       await page.evaluate(() => { IDBObjectStore.prototype.put = window.originalPut; });
-      await page.getByRole('button', { name: '保存', exact: true }).click();
+      await page.getByRole('button', { name: '更多操作', exact: true }).click();
+      await page.getByRole('menuitem', { name: '重命名', exact: true }).click();
+      await page.getByRole('textbox', { name: '文件名', exact: true }).fill('Updated');
+      await page.getByRole('textbox', { name: '文件名', exact: true }).press('Enter');
       await page.getByRole('button', { name: 'Updated · 打开', exact: true }).waitFor();
       const storageResult = await page.evaluate(async (id) => {
         const store = await import('/js/store.js'), lib = await import('/js/library.js');

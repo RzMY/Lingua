@@ -12,7 +12,7 @@
  * 也不再需要联网就能重听已经导入过的音频。
  */
 
-import { del, get, getMany, values, wipeTrack, wipeTrackAll, writeBatch } from './store.js';
+import { del, get, getMany, values, wipeTrack, wipeTrackAll, writeBatch, updateRecord } from './store.js';
 import { dropTrackCfg } from './trackcfg.js';
 import { randomId } from './util.js';
 import { isMediaFile } from './media.js';
@@ -87,13 +87,12 @@ export async function createTrack(file, { title = '', lang = 'ja' } = {}) {
 }
 
 export async function patchTrack(id, fields) {
-  const record = await getTrack(id);
-  if (!record) return null;
-  const next = { ...record, id, updatedAt: now() };
-  // undefined 表示「这次不改」而不是「清空」—— 展开对象会把 undefined 也盖上去
-  for (const [k, v] of Object.entries(fields || {})) if (v !== undefined) next[k] = v;
-  await writeBatch({ tracks: [{ key: id, value: next, track: id }] });
-  return next;
+  return updateRecord('tracks', id, (record) => {
+    const next = { ...record, id, updatedAt: now() };
+    // undefined 表示「这次不改」而不是「清空」—— 展开对象会把 undefined 也盖上去
+    for (const [k, v] of Object.entries(fields || {})) if (v !== undefined) next[k] = v;
+    return next;
+  });
 }
 
 /** 分析结果落库, 并把统计回填进元数据. */

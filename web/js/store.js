@@ -164,6 +164,47 @@ export async function writeBatch(batches, { addOnly = false, persistent = false,
   });
 }
 
+/** Read and change an existing record in ONE transaction; change must be synchronous.
+ * Separate get/put transactions can lose a rename when a player writes its old title
+ * back with a new position. IndexedDB serializes this transaction across documents.
+ */
+export async function updateRecord(store, key, change, { timeoutMs = 15000 } = {}) {
+  let db;
+  if (!degraded) {
+    try { db = await open(); } catch { /* Use the same memory fallback as writeBatch. */ }
+  }
+  if (!db) {
+    const bag = mem.get(store);
+    if (!bag.has(key)) return null;
+    const next = change(structuredClone(bag.get(key)));
+    bag.set(key, structuredClone(next));
+    return next;
+  }
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(store, 'readwrite');
+    const os = transaction.objectStore(store);
+    let next = null, failure;
+    const timer = timeoutMs ? setTimeout(() => {
+      failure = new Error('保存超时，请检查浏览器存储空间后重试');
+      try { transaction.abort(); } catch { /* A closed connection can no longer abort. */ }
+      reject(failure);
+    }, timeoutMs) : null;
+    transaction.oncomplete = () => { clearTimeout(timer); resolve(next); };
+    transaction.onabort = () => {
+      clearTimeout(timer);
+      reject(failure || transaction.error || new Error('本地数据保存失败，请重试'));
+    };
+    os.get(key).onsuccess = (event) => {
+      const row = event.target.result;
+      if (!row) return;
+      try {
+        next = change(row.v);
+        os.put({ ...row, v: next, at: Date.now() }, key);
+      } catch (error) { failure = error; transaction.abort(); }
+    };
+  });
+}
+
 export async function get(store, key, { strict = false } = {}) {
   const os = await tx(store, 'readonly', strict);
   if (!os) return mem.get(store).get(key);
