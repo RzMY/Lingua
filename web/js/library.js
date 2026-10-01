@@ -46,7 +46,8 @@ export async function audioBlob(id) {
   // One transaction per bounded batch, instead of one round trip per MiB.
   for (let i = 0; i < audio.count; i += 8) {
     const keys = Array.from({ length: Math.min(8, audio.count - i) }, (_, n) => `${audio.prefix}|${i + n}`);
-    const batch = await getMany('audioChunks', keys);
+    // A failed read must surface as such, not as missing chunks ("re-import").
+    const batch = await getMany('audioChunks', keys, new Map(), { strict: true });
     for (const key of keys) {
       const bytes = batch.get(key);
       if (!(bytes instanceof ArrayBuffer)) throw new Error('音频数据不完整，请重新导入');
@@ -263,10 +264,60 @@ export async function setPosition(id, seconds) {
   return patchTrack(id, { position: Math.round(value * 10) / 10, positionAt: now() });
 }
 
+/*  离开播放页时进度先同步记进 localStorage: 页面可能马上被销毁或冻结, 来不及等
+    IndexedDB 事务。下次打开播放页 / 回到首页时再按写入时刻合并进库, 旧的不覆盖新的。 */
+const STAGED_KEY = 'linguatrack.positions.v1';
+
+function readStaged() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(STAGED_KEY) || '{}');
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return new Map();
+    return new Map(Object.entries(raw).filter(([, e]) => e && Number.isFinite(e.position)
+      && e.position >= 0 && typeof e.at === 'string'));
+  } catch { return new Map(); }
+}
+
+function writeStaged(staged) {
+  try {
+    if (staged.size) localStorage.setItem(STAGED_KEY, JSON.stringify(Object.fromEntries(staged)));
+    else localStorage.removeItem(STAGED_KEY);
+  } catch { /* 存储不可用: 只剩 IndexedDB 那一次写入 */ }
+}
+
+/** 同步记下离开时的位置; 不碰 IndexedDB. */
+export function stagePosition(id, seconds) {
+  const value = Number(seconds);
+  if (!id || !Number.isFinite(value) || value < 0) return;
+  const staged = readStaged();
+  staged.set(String(id), { position: Math.round(value * 10) / 10, at: now() });
+  writeStaged(staged);
+}
+
+export function dropStagedPosition(id) {
+  const staged = readStaged();
+  if (staged.delete(String(id))) writeStaged(staged);
+}
+
+/** 把暂存的位置合并进库; 失败的条目留到下次. */
+export async function flushPositions() {
+  for (const [id, entry] of readStaged()) {
+    try {
+      await updateRecord('tracks', id, (record) => {
+        if (String(record.positionAt || '') >= entry.at) return record;   // 库里的更新
+        return { ...record, position: entry.position, positionAt: entry.at, updatedAt: now() };
+      });
+    } catch { continue; }
+    // 合并期间可能又暂存了更新的位置, 只删掉合并过的那一条。
+    const latest = readStaged();
+    if (latest.get(id)?.at === entry.at) { latest.delete(id); writeStaged(latest); }
+  }
+}
+
 /** 彻底删掉一条音频: 音频 / 分析结果 / 元数据 / 大模型缓存 / 显示配置. */
 export async function removeTrack(id) {
   if (!id) return 0;
   const n = await wipeTrackAll(id);
   dropTrackCfg(id);
+  dropStagedPosition(id);
   return n;
 }

@@ -37,8 +37,8 @@ import { createExplain, openSpeedSheet, openTrackSheet } from './ui.js';
 import { closeSheet, sheetOpen } from './sheet.js';
 import { analyze } from './api.js';
 import { errorMessage } from './errors.js';
-import { audioBlob, audioUrl, getTrack, patchTrack, saveAnalysis, setDuration, setPosition, trackData,
-  transcriptBlob, savePreparedTranscript, SUB_EXT, SUB_RE } from './library.js';
+import { audioBlob, audioUrl, flushPositions, getTrack, patchTrack, saveAnalysis, setDuration, setPosition,
+  stagePosition, trackData, transcriptBlob, savePreparedTranscript, SUB_EXT, SUB_RE } from './library.js';
 import { plainTrack } from './subtitles.js';
 import { createTranslator } from './translate.js';
 import { closeWordCard, isCardOpen, openWordCard } from './card.js';
@@ -407,6 +407,7 @@ async function repairFiles() {
  */
 async function load(id, forceSetup) {
   showState('正在加载…');
+  await flushPositions();            // 上次离开时暂存的进度先合并, 续播位置才是新的
   record = await getTrack(id);
   if (!record) {
     dom.player.hidden = true;
@@ -425,7 +426,7 @@ async function load(id, forceSetup) {
   }
   engine.audio = audio;
   audio.addEventListener('timeupdate', () => engine.backgroundTick());
-  player = setupPlayer({ audio, engine, dom, savePosition: setPosition });
+  player = setupPlayer({ audio, engine, dom, savePosition: setPosition, stagePosition });
   if (isVideo) {
     videoPlayer = setupVideo({ app: dom.app, video: $('video'), media: audio, engine, toggle: () => player.toggle(),
       onLayout: () => relayout(false), overlayOpen: () => sheetOpen() || chatOpen() || isCardOpen(),

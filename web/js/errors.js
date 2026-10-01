@@ -9,6 +9,7 @@ export function errorMessage(error, fallback = '操作失败，请重试') {
     NetworkError: '网络连接失败，请检查网络后重试',
     TimeoutError: '请求超时，请稍后重试',
     AbortError: '操作已取消',
+    VersionError: '应用已更新，请重新打开页面',
     PIP_BUSY: '字幕小窗正在切换，请稍后重试',
     PIP_UNSUPPORTED: '当前设备不支持字幕画中画',
     PIP_SOURCE_NOT_READY: '播放窗口尚未就绪，请稍后重试',

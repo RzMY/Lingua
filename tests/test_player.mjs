@@ -309,6 +309,45 @@ test('progress is written on a coarse cadence and flushed on every exit', (t) =>
   assert.equal(writes.length, 5);
 });
 
+test('leaving the page stages progress synchronously before the database write', (t) => {
+  const steps = [];
+  const audio = Object.assign(new EventTarget(), { currentTime: 0, ended: false });
+  const doc = Object.assign(new EventTarget(), { hidden: false });
+  const win = new EventTarget();
+  for (const [key, value] of Object.entries({ document: doc, window: win })) {
+    const original = Object.getOwnPropertyDescriptor(globalThis, key);
+    Object.defineProperty(globalThis, key, { value, configurable: true });
+    t.after(() => {
+      if (original) Object.defineProperty(globalThis, key, original);
+      else delete globalThis[key];
+    });
+  }
+  const saver = createProgressSaver(audio, (id, s) => steps.push(['save', id, s]),
+    (id, s) => steps.push(['stage', id, s]));
+  win.dispatchEvent(new Event('pagehide'));
+  assert.deepEqual(steps, [], 'nothing to stage before a track is opened');
+  saver.begin('lesson');
+  audio.currentTime = 31;
+  win.dispatchEvent(new Event('pagehide'));
+  doc.hidden = true;
+  doc.dispatchEvent(new Event('visibilitychange'));
+  assert.deepEqual(steps, [['stage', 'lesson', 31], ['save', 'lesson', 31], ['stage', 'lesson', 31]]);
+  audio.ended = true;
+  win.dispatchEvent(new Event('pagehide'));
+  assert.deepEqual(steps.slice(-2), [['stage', 'lesson', 0], ['save', 'lesson', 0]]);
+  audio.dispatchEvent(new Event('pause'));        // ordinary saves are not staged
+  assert.equal(steps.filter(([kind]) => kind === 'stage').length, 3);
+});
+
+test('a failing stage still lets the database write run', (t) => {
+  const { audio, win, writes } = progressFixture(t);
+  audio.currentTime = 9;
+  const saver = createProgressSaver(audio, (id, s) => writes.push([id, s]), () => { throw new Error('quota'); });
+  saver.begin('other');
+  assert.doesNotThrow(() => win.dispatchEvent(new Event('pagehide')));
+  assert.deepEqual(writes.at(-1), ['other', 9]);
+});
+
 test('a failing progress write never disturbs playback', (t) => {
   const { audio } = progressFixture(t, () => { throw new Error('quota'); });
   assert.doesNotThrow(() => audio.dispatchEvent(new Event('timeupdate')));

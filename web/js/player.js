@@ -24,10 +24,20 @@ export function resumeAt(position, duration) {
  * 播放进度落库 —— 播放中每 5 秒一次, 暂停 / 听完 / 切后台 / 离开页面时各补一次.
  *
  * `timeupdate` 在这里只当粗粒度的时间源: 它不驱动渲染 (渲染仍然只有 engine.js 那一个
- * rAF 循环), 回调里也只有一个比较和偶尔一次写库. 直接关掉标签页最多丢 5 秒。
+ * rAF 循环), 回调里也只有一个比较和偶尔一次写库. 离开页面时的那一次另经 `stage`
+ * 同步暂存, 进程被直接杀掉才可能丢最后 5 秒。
  */
-export function createProgressSaver(audio, save) {
+export function createProgressSaver(audio, save, stage) {
   let id = '', written = -1, lastAt = -Infinity;
+  // 切后台 / 离开页面: 先同步暂存 (见 library.stagePosition), 再照常写库。页面可能
+  // 随即被销毁或冻结, 那次事务不一定来得及提交。
+  const leave = () => {
+    if (id && stage) {
+      try { stage(id, audio.ended ? 0 : Math.max(0, Number(audio.currentTime) || 0)); }
+      catch { /* 暂存失败时仍尝试写库 */ }
+    }
+    write(true);
+  };
   const write = (force) => {
     if (!id) return;
     const seconds = audio.ended ? 0 : Math.max(0, Number(audio.currentTime) || 0);
@@ -42,8 +52,8 @@ export function createProgressSaver(audio, save) {
   audio.addEventListener('timeupdate', () => write(false));
   audio.addEventListener('pause', () => write(true));
   audio.addEventListener('ended', () => write(true));
-  document.addEventListener('visibilitychange', () => { if (document.hidden) write(true); });
-  window.addEventListener('pagehide', () => write(true));
+  document.addEventListener('visibilitychange', () => { if (document.hidden) leave(); });
+  window.addEventListener('pagehide', leave);
   return {
     /** 换到某条音频: 记下它的 id, 之后写库都写它. */
     begin(nextId) { id = String(nextId || ''); written = -1; lastAt = -Infinity; },
@@ -55,7 +65,7 @@ export function setupPlayer(ctx) {
   const { audio, engine, dom } = ctx;
   const media = setupMediaSession(ctx);
   // 没传写库回调 (某些测试 / 只读场景) 就不记进度, 播放本身不受影响
-  const progress = ctx.savePosition ? createProgressSaver(audio, ctx.savePosition) : null;
+  const progress = ctx.savePosition ? createProgressSaver(audio, ctx.savePosition, ctx.stagePosition) : null;
   let currentId = '';
 
   audio.addEventListener('play', () => {

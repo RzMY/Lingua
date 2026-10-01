@@ -19,7 +19,7 @@ import {
 import { initSettings, settings, setSetting } from './settings.js';
 import { featureKeys, featureText, mergeCatalog, sourceLangs, sourceName, sourceSpec } from './langs.js';
 import { baseLabel, health } from './api.js';
-import { createTrack, listTracks, patchTrack, removeTrack } from './library.js';
+import { createTrack, flushPositions, listTracks, patchTrack, removeTrack } from './library.js';
 import { MEDIA_ACCEPT, isMediaFile, mediaKind } from './media.js';
 import { probe } from './llm.js';
 import { errorMessage } from './errors.js';
@@ -274,6 +274,8 @@ function render() {
 
 async function refresh() {
   const version = ++refreshVersion;
+  // 播放页离开时暂存的进度顺手落库 (备份导出读的是库); 列表不显示进度, 不必等它。
+  void flushPositions();
   try {
     const next = await listTracks();
     if (version !== refreshVersion) return;
