@@ -61,9 +61,33 @@ export function createProgressSaver(audio, save, stage) {
   };
 }
 
+/** 学习面板共用一次暂停; 最后一个关闭时恢复打开前的播放状态. */
+export function createOverlayPlayback(audio, controls) {
+  const opened = new Set();
+  let resume = false, source = '';
+  const reset = () => { opened.clear(); resume = false; source = ''; };
+  return {
+    open(key) {
+      if (!opened.size) source = audio.src;
+      resume ||= !audio.paused && !audio.ended;
+      opened.add(key);
+      controls.pause();
+    },
+    close(key) {
+      if (!opened.delete(key) || opened.size) return;
+      const shouldResume = resume && source === audio.src && audio.paused && !audio.ended;
+      reset();
+      if (shouldResume) controls.play();
+    },
+    reset,
+  };
+}
+
 export function setupPlayer(ctx) {
   const { audio, engine, dom } = ctx;
   const media = setupMediaSession(ctx);
+  const overlays = createOverlayPlayback(audio, media);
+  window.addEventListener('pagehide', overlays.reset);
   // 没传写库回调 (某些测试 / 只读场景) 就不记进度, 播放本身不受影响
   const progress = ctx.savePosition ? createProgressSaver(audio, ctx.savePosition, ctx.stagePosition) : null;
   let currentId = '';
@@ -109,11 +133,13 @@ export function setupPlayer(ctx) {
   setupKeys(ctx, toggle);
   return {
     toggle,
+    overlays,
     /**
      * 换到某条音频: 记住它的库 id 以便落库, 并按存档的位置续播.
      * @param {object} t `{id, title, position}` —— position 是上次停下的秒数
      */
     setTrack({ id = '', title = '', position = 0 } = {}) {
+      overlays.reset();
       currentId = String(id || '');
       progress?.begin(currentId);
       media.setTrack({ title });

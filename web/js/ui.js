@@ -110,7 +110,7 @@ export function openSpeedSheet(audio, onPick) {
 /**
  * 当前句的逐词拆解 (长按句子打开). 只在句子变化时重建 DOM, 词变化时只挪一个 class.
  */
-export function createExplain(dom, onPick) {
+export function createExplain(dom, onPick, onClose) {
   let track = null, open = false, shown = -1, curRow = null;
   const rows = [];
 
@@ -157,9 +157,11 @@ export function createExplain(dom, onPick) {
       if (sIdx >= 0) build(sIdx);
     },
     close() {
+      if (!open) return;
       open = false;
       dom.explainPanel.hidden = true;
       if (dom.btnExplain) dom.btnExplain.setAttribute('aria-pressed', 'false');
+      onClose?.();
     },
     /** 由渲染循环的游标回调驱动. */
     cursor(sIdx, wIdx, sentenceChanged) {

@@ -19,6 +19,7 @@ let host = null;
 let scrim = null;
 let ctl = null;
 let returnFocus = null;
+let closeCb = null;
 // 同 sheet.js: `.is-open` 下一帧才加, 状态另用变量记
 let openFlag = false;
 
@@ -63,6 +64,9 @@ export function closeWordCard() {
   host.setAttribute('aria-hidden', 'true');
   host.classList.remove('is-open');
   scrim.classList.remove('is-open');
+  const onClose = closeCb;
+  closeCb = null;
+  onClose?.();
 }
 
 const keyOf = (trackId, lang, i, j, word, text) =>
@@ -104,13 +108,14 @@ function askLLM(track, s, w, i, j, lang, signal) {
 
 /**
  * 打开卡片.
- * @param {object} o `{track, i, j, lang}`; i 句序, j 词序
+ * @param {object} o `{track, i, j, lang, onClose}`; i 句序, j 词序
  */
-export async function openWordCard({ track, i, j, lang }) {
+export async function openWordCard({ track, i, j, lang, onClose }) {
   const s = track.sentences[i];
   const w = s && s.words[j];
   if (!w) return;
   ensureHost();
+  closeCb = onClose || null;
   if (!host.contains(document.activeElement)) returnFocus = document.activeElement;
   if (ctl) ctl.abort();
   ctl = new AbortController();

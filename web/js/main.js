@@ -13,8 +13,9 @@
  *
  * * **翻译**: `trackCfg.tr` 打开后才创建请求; 译文到达 → `Reader.setTranslation`
  *   → `VirtualList.invalidate` 只重量受影响的几行。
- * * **词卡**: 点词先 seek, 再按开关弹卡片。
- * * **讲解**: 工具条的「讲解」开 2/3 屏对话框; 长按句子仍是本地逐词拆解。
+ * * **词卡**: 点词先 seek, 再按开关暂停播放并弹卡片。
+ * * **讲解**: 工具条的「讲解」开 2/3 屏对话框; 长按句子仍是本地逐词拆解, 打开时均暂停播放。
+ *   学习面板全部关闭后, 仅恢复打开前正在播放的媒体。
  */
 
 import { $, debounce, el, fmtTime, fmtSize, icon, isIOS, rafOnce, toast } from './util.js';
@@ -105,7 +106,7 @@ function syncFollowAlign() {
 const engine = new Engine({ audio, reader: null, vlist: null, scroller: dom.scroller, dom });
 const explain = createExplain({
   explainPanel: dom.explainPanel, explainSub: dom.explainSub, explainBody: dom.explainBody,
-}, (i, j) => seekWord(i, j));
+}, (i, j) => seekWord(i, j), () => player?.overlays.close('explain'));
 
 // ---------------------------------------------------------------- 空态 / 提示
 
@@ -131,6 +132,7 @@ function clearState() {
  * 参数, 换回一份 track.json, 由浏览器负责存。
  */
 function showSetup() {
+  player?.overlays.reset();
   audio.pause();
   engine.setSuspended(true);
   engine.noteUserScroll();
@@ -494,6 +496,7 @@ async function openTrack() {
 
 /** 用新曲目重建阅读区: Reader / VirtualList / Translator 都是一曲一份. */
 function apply(next) {
+  player?.overlays.reset();
   track = next;
   document.documentElement.dataset.subtitleMode = next.raw.subtitleMode || 'analyzed';
   const title = (record && record.title) || next.title;
@@ -641,7 +644,7 @@ function seekWord(i, j) {
   engine.kick();
 }
 
-/** 点词: 先 seek, 再按开关弹释义卡片. */
+/** 点词: 先 seek, 再按开关暂停播放并弹释义卡片. */
 function onReaderClick(e) {
   if (!track) return;
   if (pressFired) { pressFired = false; return; }
@@ -654,7 +657,9 @@ function onReaderClick(e) {
   seekWord(i, j);
   const w = track.sentences[i] && track.sentences[i].words[j];
   if (trackCfg.card && w && w.pos !== 'punct') {
-    openWordCard({ track, i, j, lang: trackCfg.lang });
+    player.overlays.open('word');
+    openWordCard({ track, i, j, lang: trackCfg.lang,
+      onClose: () => player.overlays.close('word') });
   }
 }
 
@@ -742,6 +747,7 @@ function wireReader() {
 function openExplain(i) {
   if (!track?.S || track.raw.subtitleMode === 'plain') return;
   const at = i >= 0 ? i : curIndex();
+  player.overlays.open('explain');
   explain.open(at);
   // 引擎只在游标变化时回调, 面板刚打开时得自己补一次当前词.
   if (reader && reader.activeS === at) explain.cursor(at, reader.activeW, false);
@@ -754,10 +760,14 @@ function toggleChat() {
   if (!track?.S || track.raw.subtitleMode === 'plain') return;
   if (chatOpen()) { closeChat(); return; }
   const i = curIndex();
+  player.overlays.open('chat');
   dom.btnExplain.setAttribute('aria-pressed', 'true');
   openChat({
     track, i, lang: trackCfg.lang,
-    onClose: () => dom.btnExplain.setAttribute('aria-pressed', 'false'),
+    onClose: () => {
+      dom.btnExplain.setAttribute('aria-pressed', 'false');
+      player.overlays.close('chat');
+    },
   });
 }
 

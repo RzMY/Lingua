@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const { outputFiles } = await build({ stdin: { contents: `
   export { NativeAudio } from './web/js/native-audio.js';
   export { NativeVideo } from './web/js/native-video.js';
-  export { setupMediaSession } from './web/js/player.js';
+  export { createOverlayPlayback, setupMediaSession } from './web/js/player.js';
   export { setupNativeCaptionPip } from './web/js/native-caption-pip.js';
   export { Engine } from './web/js/engine.js';`, resolveDir: fileURLToPath(new URL('../', import.meta.url)) },
   bundle: true, write: false, format: 'iife', globalName: 'NativeAudioTest' });
@@ -95,6 +95,29 @@ function harness(t, overrides = {}, { video: withVideo = false } = {}) {
       await audio.attach(new w.Blob([bytes]), { title: 'Lesson', audio: { name: 'lesson.wav' } });
     },
   };
+}
+
+for (const video of [false, true]) {
+  test(`native ${video ? 'video' : 'audio'} pauses for learning panels and resumes through the bridge`, async (t) => {
+    const h = harness(t, {}, { video });
+    await h.attach(); await h.audio.play(); await flush();
+    h.audio.currentTime = 12; h.audio.playbackRate = 1.5; await flush();
+    const controls = h.w.NativeAudioTest.setupMediaSession({ audio: h.audio, engine: {} });
+    const panels = h.w.NativeAudioTest.createOverlayPlayback(h.audio, controls);
+    h.calls.length = 0;
+    panels.open('explain'); panels.open('word'); await flush();
+    assert.equal(h.audio.paused, true);
+    if (video) assert.equal(h.video.paused, true);
+    panels.close('explain'); await flush();
+    assert.equal(h.audio.paused, true);
+    panels.close('word'); await flush();
+    assert.equal(h.audio.paused, false);
+    if (video) assert.equal(h.video.paused, false);
+    assert.equal(h.audio.currentTime, 12);
+    assert.equal(h.audio.playbackRate, 1.5);
+    assert.deepEqual(h.calls.filter(([type]) => type === 'command').map(([, value]) => value.action),
+      ['pause', 'pause', 'play']);
+  });
 }
 
 test('audio bytes are transferred in bounded, ordered chunks without changing them', async (t) => {
