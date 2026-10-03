@@ -188,6 +188,50 @@ test('native back exits manual landscape without navigating away', async (t) => 
   assert.equal(h.w.dispatchEvent(new h.w.CustomEvent('native-back', { cancelable: true })), true);
 });
 
+test('leaving physical landscape restores the regular player until rotation or manual re-entry', async (t) => {
+  const h = harness(t);
+  const back = h.doc.getElementById('btnBack');
+  h.video.currentTime = 12; h.video.playbackRate = 1.5;
+  await h.rotate(); await h.player.leaveHorizontal();
+  await h.turn(true);
+  assert.equal(h.player.isImmersive(), true);
+  assert.equal(back.getAttribute('aria-label'), '返回竖屏播放');
+  await h.player.leaveHorizontal();
+  h.w.dispatchEvent(new h.w.Event('resize'));
+  h.w.dispatchEvent(new h.w.Event('pageshow'));
+  assert.equal(h.player.isImmersive(), false);
+  assert.equal(back.getAttribute('aria-label'), '返回首页');
+  assert.equal(h.video.currentTime, 12);
+  assert.equal(h.video.playbackRate, 1.5);
+  await h.rotate();
+  assert.equal(h.player.isImmersive(), true);
+  await h.player.leaveHorizontal();
+  await h.turn(false); await h.turn(true);
+  assert.equal(h.player.isImmersive(), true);
+});
+
+test('native back exits physical landscape and releases browser fullscreen and orientation lock', async (t) => {
+  const h = harness(t, { native: false });
+  let exits = 0, unlocks = 0;
+  h.doc.documentElement.requestFullscreen = async () => {
+    h.doc.fullscreenElement = h.doc.documentElement;
+    h.doc.dispatchEvent(new h.w.Event('fullscreenchange'));
+  };
+  h.doc.exitFullscreen = async () => {
+    exits++; h.doc.fullscreenElement = null;
+    h.doc.dispatchEvent(new h.w.Event('fullscreenchange'));
+  };
+  h.w.screen.orientation.unlock = () => { unlocks++; };
+  await h.turn(true);
+  assert.equal(h.player.isFullscreen(), true);
+  assert.equal(h.w.dispatchEvent(new h.w.CustomEvent('native-back', { cancelable: true })), false);
+  await flush();
+  assert.equal(h.player.isImmersive(), false);
+  assert.equal(h.player.isFullscreen(), false);
+  assert.equal(exits, 1); assert.ok(unlocks > 0);
+  assert.equal(h.w.dispatchEvent(new h.w.CustomEvent('native-back', { cancelable: true })), true);
+});
+
 test('a late wake-lock result is released after leaving immersion', async (t) => {
   let resolveLock, released = 0;
   const h = harness(t, { wakeRequest: () => new Promise((resolve) => { resolveLock = resolve; }) });

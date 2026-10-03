@@ -87,6 +87,7 @@ function syncVideoLayout() {
   dom.app.classList.toggle('has-video', visible);
   dom.videoStage.hidden = !visible;
   videoPlayer?.syncLayout();
+  if (!videoPlayer) dom.btnBack.setAttribute('aria-label', dom.setup.hidden ? '返回首页' : '返回播放');
   syncFollowAlign();
 }
 
@@ -224,13 +225,10 @@ function showSetup() {
   go.disabled = true;
   const only = button('只导入字幕', { glyph: 'i-doc', onPick: () => start(false) });
   only.disabled = true;
-  const back = button('返回播放',
-    { glyph: 'i-play', onPick: () => openTrack() });
-  back.classList.add('setup-back');
   const bottom = buttonBar(only, go);
   bottom.classList.add('setup-actions');
   fields.append(bottom);
-  box.append(bar, log, back);
+  box.append(bar, log);
   dom.scroller.scrollTop = 0;
   enterView(box);
 
@@ -289,7 +287,7 @@ function showSetup() {
     go.disabled = true;
     choose.disabled = true;
     only.disabled = true;
-    back.disabled = true;
+    dom.btnBack.disabled = true;
     bar.hidden = false;
     bar.classList.add('is-busy');
     log.textContent = '';
@@ -328,7 +326,7 @@ function showSetup() {
       go.disabled = false;
       choose.disabled = false;
       only.disabled = false;
-      back.disabled = false;
+      dom.btnBack.disabled = false;
       busy = false;
       fields.disabled = false;
       box.removeAttribute('aria-busy');
@@ -900,6 +898,8 @@ async function boot() {
   wireReader();
   nativeReady(); // A valid entry point is ready before network or large media reads.
   dom.btnBack.addEventListener('click', () => {
+    if (!dom.setup.hidden) { void openTrack(); return; }
+    if (videoPlayer?.isImmersive()) { void videoPlayer.leaveHorizontal(); return; }
     if (history.length > 1) history.back();
     else location.href = 'index.html';
   });

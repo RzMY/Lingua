@@ -225,6 +225,19 @@ const fixture = process.argv[4];
     await page.setViewportSize({ width: 844, height: 390 });
     await page.waitForFunction(() => getComputedStyle(document.querySelector('#scroller')).position === 'absolute');
     await bounds(true);
+    // 左上角先回普通播放布局；设备仍横放时也不能立即重进沉浸或导航回首页。
+    const playbackUrl = page.url();
+    await reveal();
+    await page.getByRole('button', { name: '返回竖屏播放', exact: true }).click();
+    await bounds(false);
+    assert.equal(page.url(), playbackUrl);
+    assert.deepEqual(await page.evaluate(() => ({ sameMedia: mediaBeforeRotation === document.querySelector('#video'),
+      sameReader: readerBeforeRotation === LT.reader, loads: loadEvents, at: document.querySelector('#video').currentTime,
+      rate: document.querySelector('#video').playbackRate })), { sameMedia: true, sameReader: true, loads: 0, at: 9, rate: 1.5 });
+    assert.equal(await page.locator('#btnBack').getAttribute('aria-label'), '返回首页');
+    await reveal();
+    await page.getByRole('button', { name: '横屏播放', exact: true }).click();
+    await bounds(true);
     await page.waitForFunction(() => !document.querySelector('#app').classList.contains('controls-visible'));
     await page.waitForFunction(() => getComputedStyle(document.querySelector('#player')).visibility === 'hidden');
     assert.equal(await page.locator('#btnPlay').isVisible(), false);

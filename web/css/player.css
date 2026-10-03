@@ -504,7 +504,6 @@ body.video-rotated {
 .setup-options[open] > .rows { margin-top: 10px; }
 .setup-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
 .setup-actions .btn { justify-content: center; min-height: 48px; padding: 12px 8px; border-radius: 16px; }
-.setup-back { display: flex; margin: 16px auto 0; background: transparent; color: var(--ink-3); font-size: 13px; }
 .setup-fields:disabled .setup-pick { opacity: .55; cursor: wait; }
 @media (max-width: 380px) {
   .setup { padding: 20px 14px calc(22px + var(--safe-b)); }

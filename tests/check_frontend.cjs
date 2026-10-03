@@ -57,6 +57,8 @@ const base = process.argv[3] || 'http://127.0.0.1:5173';
 
     await page.goto(base + '/player.html?track=' + id + '&setup=1&debug');
     await page.locator('.setup-pick').waitFor();
+    assert.equal(await page.locator('#setup').getByRole('button', { name: '返回播放', exact: true }).count(), 0);
+    assert.equal(await page.locator('#btnBack').getAttribute('aria-label'), '返回播放');
     assert.equal(await page.getByRole('button', { name: '开始分析', exact: true }).isDisabled(), true);
     const noOverflow = async () => assert.equal(await page.evaluate(() => {
       const s = document.getElementById('setup'); return s.scrollWidth > s.clientWidth;
@@ -92,11 +94,13 @@ const base = process.argv[3] || 'http://127.0.0.1:5173';
     await page.waitForFunction(() => document.querySelector('.setup-bar.is-busy'));
     assert.equal(await page.locator('.setup-pick').isDisabled(), true);
     assert.equal(await page.locator('#setup fieldset').evaluate((n) => n.disabled), true);
+    assert.equal(await page.locator('#btnBack').isDisabled(), true);
     await page.emulateMedia({ reducedMotion: 'reduce' });
     assert.equal(await page.locator('.setup-bar i').evaluate((n) => getComputedStyle(n).animationName), 'none');
     while (!release) await new Promise((resolve) => setTimeout(resolve, 10));
     release();
     await page.waitForFunction(() => !document.querySelector('#setup fieldset').disabled);
+    assert.equal(await page.locator('#btnBack').isEnabled(), true);
     await page.getByRole('button', { name: '只导入字幕', exact: true }).click();
     await page.waitForFunction(() => window.LT?.track?.S === 1 && !LT.engine.suspended);
     assert.equal(await page.locator('#setup').isVisible(), false);
@@ -105,6 +109,10 @@ const base = process.argv[3] || 'http://127.0.0.1:5173';
     // URL still requests setup: the saved subtitle must be available without another picker.
     await page.waitForFunction(() => document.querySelector('.setup-pick.has-file'));
     assert.equal(await page.getByRole('button', { name: '开始分析', exact: true }).isEnabled(), true);
+    await page.locator('#btnBack').click();
+    await page.waitForFunction(() => window.LT?.track?.S === 1 && !LT.engine.suspended && document.querySelector('#setup').hidden);
+    assert.equal(new URL(page.url()).pathname, '/player.html');
+    assert.equal(new URL(page.url()).searchParams.get('track'), id);
     assert.deepEqual(errors, []);
     console.log('PASS: lazy modules, unchanged card reuse/focus, navigation, responsive setup, drag/drop, error recovery, raw import and reduced motion');
   } finally { await browser.close(); }

@@ -1,12 +1,13 @@
 /** Video presentation and gestures. Playback and subtitles share the existing engine clock. */
 import { trackCfg, setVideoCfg } from './trackcfg.js';
-import { isIOS, toast } from './util.js';
+import { isIOS } from './util.js';
 import { setupVideoGestures } from './video-gestures.js';
 import { setupVideoPip } from './video-pip.js';
 import { setupAudioPip } from './audio-pip.js';
 import { nativeApp } from './native.js';
 
 export function setupVideo({ app, video, media = video, engine, toggle, onLayout, overlayOpen, openSettings }) {
+  const back = document.getElementById('btnBack');
   const rotate = document.getElementById('btnVideoRotate');
   const toolFit = document.getElementById('btnToolFit');
   const fitText = document.getElementById('fitText');
@@ -22,7 +23,7 @@ export function setupVideo({ app, video, media = video, engine, toggle, onLayout
   const themeMeta = document.querySelector('meta[name="theme-color"]');
   const landscape = window.matchMedia('(orientation: landscape)');
   const nativeIOS = nativeApp()?.platform === 'ios';
-  let forceLandscape = false, chromeTimer = 0, hintTimer = 0, orientationRequest = 0;
+  let forceLandscape = false, forcePortrait = false, chromeTimer = 0, hintTimer = 0, orientationRequest = 0;
   let layoutSignature = '';
   let gestures, wakeLock = null, themedImmersive = false, wakeRequest = 0;
   const isFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
@@ -86,13 +87,15 @@ export function setupVideo({ app, video, media = video, engine, toggle, onLayout
     document.body.style.setProperty('--rotated-height', innerWidth + 'px');
     document.body.style.setProperty('--video-view-w', (rotated ? innerHeight : innerWidth) + 'px');
     document.body.style.setProperty('--video-view-h', (rotated ? innerWidth : innerHeight) + 'px');
-    const immersive = active && !pip?.isActive() && !app.classList.contains('is-audio-pip')
+    const immersive = active && !forcePortrait && !pip?.isActive() && !app.classList.contains('is-audio-pip')
       && (landscape.matches || forceLandscape || isFullscreen());
     const changed = immersive !== isImmersive();
     app.classList.toggle('is-immersive', immersive);
     if (changed) app.classList.remove('controls-visible');
     rotate.setAttribute('aria-label', immersive ? '退出横屏' : '横屏播放');
     rotate.setAttribute('aria-pressed', String(immersive));
+    back.setAttribute('aria-label', document.getElementById('setup')?.hidden === false
+      ? '返回播放' : immersive ? '返回竖屏播放' : '返回首页');
     syncStatusBar(immersive);
     onLayout();
   };
@@ -104,15 +107,17 @@ export function setupVideo({ app, video, media = video, engine, toggle, onLayout
   async function leaveHorizontal() {
     orientationRequest++;
     forceLandscape = false;
+    // Keep the regular player visible even while the device is still held sideways.
+    forcePortrait = true;
     try { screen.orientation?.unlock?.(); } catch { /* unsupported */ }
     try {
       if (document.fullscreenElement) await document.exitFullscreen();
       else if (document.webkitFullscreenElement) document.webkitExitFullscreen();
     } catch { /* inline layout can still exit */ }
+    if (!landscape.matches && !isFullscreen()) forcePortrait = false;
     syncLayout();
-    if (landscape.matches) toast('竖起设备即可退出横屏');
   }
-  /** 进入小窗后松开整页全屏、方向锁和主页面沉浸状态，不弹「竖起设备」提示。 */
+  /** 进入小窗后松开整页全屏、方向锁和主页面沉浸状态。 */
   async function releaseLandscape() {
     forceLandscape = false;
     orientationRequest++;
@@ -126,6 +131,7 @@ export function setupVideo({ app, video, media = video, engine, toggle, onLayout
   async function horizontal() {
     if (isImmersive()) { await leaveHorizontal(); return; }
     const request = ++orientationRequest;
+    forcePortrait = false;
     forceLandscape = true;
     syncLayout();
     try { await enterFullscreen(); } catch { /* inline landscape remains available */ }
@@ -173,7 +179,8 @@ export function setupVideo({ app, video, media = video, engine, toggle, onLayout
   landscape.addEventListener('change', async () => {
     // A real rotation takes over from the manual CSS fallback, so turning back exits it.
     if (landscape.matches) forceLandscape = false;
-    if (landscape.matches && app.classList.contains('has-video') && !pip?.isActive()
+    else forcePortrait = false;
+    if (landscape.matches && !forcePortrait && app.classList.contains('has-video') && !pip?.isActive()
       && !app.classList.contains('is-audio-pip') && !isFullscreen()) {
       try { await enterFullscreen(); } catch { /* iOS/PWA keeps the CSS immersive fallback */ }
     }
@@ -181,7 +188,7 @@ export function setupVideo({ app, video, media = video, engine, toggle, onLayout
   });
   window.addEventListener('resize', syncLayout);
   window.addEventListener('native-back', (event) => {
-    if (!overlayOpen() && (forceLandscape || isFullscreen())) {
+    if (!overlayOpen() && isImmersive()) {
       event.preventDefault(); void leaveHorizontal();
     }
   });
@@ -262,6 +269,6 @@ export function setupVideo({ app, video, media = video, engine, toggle, onLayout
   new MutationObserver(() => { if (themedImmersive && themeMeta) themeMeta.content = '#000000'; })
     .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   apply();
-  return { apply, syncLayout, showControls, media: video, isFullscreen, isImmersive, pip, audioPip,
+  return { apply, syncLayout, showControls, media: video, isFullscreen, isImmersive, leaveHorizontal, pip, audioPip,
     refreshPip: () => pip.refresh() };
 }

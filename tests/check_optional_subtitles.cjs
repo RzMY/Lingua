@@ -74,7 +74,11 @@ const fixture = process.argv[4];
         await page.waitForFunction(() => LT.engine.audio.currentTime > .1);
         await page.locator('#btnPlay').click();
         await page.getByRole('button', { name: '导入字幕', exact: true }).click();
-        await page.getByRole('button', { name: '返回播放', exact: true }).click();
+        assert.equal(await page.locator('#setup').getByRole('button', { name: '返回播放', exact: true }).count(), 0);
+        assert.equal(await page.locator('#btnBack').getAttribute('aria-label'), '返回播放');
+        await page.locator('#btnBack').click();
+        await page.waitForFunction(() => window.LT?.track && !LT.engine.suspended && document.querySelector('#setup').hidden);
+        assert.equal(page.url(), base + '/player.html?track=' + id + '&debug');
         assert.equal(await page.locator('#setup').isVisible(), false);
         await page.getByRole('button', { name: '导入字幕', exact: true }).click();
         await page.locator('#setup input[type=file]').setInputFiles({ name: 'optional.srt', mimeType: 'text/plain',
@@ -122,8 +126,9 @@ const fixture = process.argv[4];
         assert.ok(setup.y >= 0 && setup.y < viewport.height / 2, JSON.stringify(setup));
         assert.equal(await page.locator('#viewport').isVisible(), false);
         assert.equal(await page.evaluate(() => LT.engine.suspended), true);
-        await page.getByRole('button', { name: '返回播放', exact: true }).click();
+        await page.locator('#btnBack').click();
         await page.waitForFunction(() => !LT.engine.suspended);
+        assert.equal(page.url(), base + '/player.html?track=' + ids.video + '&debug');
       }
       assert.deepEqual(errors, []);
       console.log('PASS ' + browserType.name() + ': optional subtitles, playback, later analysis, global inheritance and previews');
