@@ -163,7 +163,7 @@ export function openFontSheet({ track = null, video = false, onClose, onBack } =
     previousWidth = entry.contentRect.width;
     scheduleFit();
   });
-  openSheet(track ? '字幕字号 · 当前媒体' : '字幕字号', body, {
+  openSheet(track ? '字幕字号 · 当前媒体' : '字幕字号 · 全局', body, {
     cls: 'sheet-tall', onBack, onClose: () => {
       landscape?.dispose();
       observer.disconnect();

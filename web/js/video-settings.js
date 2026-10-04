@@ -24,7 +24,8 @@ export function openCaptionSheet({ track = null, onBack } = {}) {
     else setGlobalVideo({ captionSize });
     preview.update(get());
   };
-  const row = stepRow('系统字幕字号', '', get, set, { min: 12, max: 36, step: 1, unit: 'px' });
+  const row = stepRow('系统字幕字号', '仅影响画中画和悬浮窗中字幕的大小', get, set,
+    { min: 12, max: 36, step: 1, unit: 'px' });
   body.append(preview.element,
     group(row), buttonBar(button(track ? '恢复全局字号' : '恢复默认字号', { onPick: () => {
       if (track) resetVideoCfg(['captionSize']);

@@ -1,7 +1,7 @@
 /** Per-video preferences, stored in the existing track config and user-data backup. */
 export const VIDEO_DEFAULTS = Object.freeze({
-  fit: 'contain', subtitles: 1, position: 0, width: 96, height: 55,
-  transparency: 15, blur: 10, captionSize: 20, volume: 100, muted: 0,
+  fit: 'contain', subtitles: 1, position: 0, width: 95, height: 55,
+  transparency: 80, blur: 0, captionSize: 20, volume: 100, muted: 0,
 });
 export const VIDEO_RANGES = Object.freeze({
   position: [0, 100], width: [50, 100], height: [25, 75], transparency: [0, 100], blur: [0, 30], volume: [0, 100],

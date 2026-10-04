@@ -437,7 +437,6 @@ function renameCard(titleNode, save, onSettled) {
 
 function cardMenu(anchor, t, startRename) {
   openMenu(anchor, [
-    { label: '打开', icon: 'i-play', onPick: () => openTrack(t.id) },
     { label: '重命名', icon: 'i-pen', onPick: startRename },
     (t.audio?.missing || t.transcript?.missing) && {
       label: '补充文件', icon: 'i-upload',
@@ -448,7 +447,7 @@ function cardMenu(anchor, t, startRename) {
       onPick: () => openSetup(t.id),
     },
     {
-      label: '清空模型缓存', icon: 'i-refresh',
+      label: '清空翻译和讲解', icon: 'i-refresh',
       onPick: async () => {
         try {
           const n = await wipeTrack(t.id);
