@@ -1,5 +1,6 @@
 // Platform-independent update policy; native plugin owns atomic extraction and rollback.
 export const NATIVE_REVISION = 3;
+export const CHECK_TIMEOUT_MS = 45000;
 
 export class NativeUpdateRequiredError extends Error {
   constructor() {
@@ -29,22 +30,53 @@ export class UpdateManager {
     this.busy = null;
   }
   check() {
-    if (!this.busy) this.busy = this.inspect().finally(() => { this.busy = null; });
+    if (this.busy) return this.busy;
+    const controller = new AbortController();
+    const check = { controller, timer: setTimeout(() => this.cancelCheck(
+      Error('检查更新超时，请检查网络后重试')), CHECK_TIMEOUT_MS) };
+    this.checking = check;
+    const cancelled = new Promise((_, reject) => {
+      controller.signal.addEventListener('abort', () => reject(controller.signal.reason), { once: true });
+    });
+    const task = Promise.race([this.inspect(check), cancelled]).finally(() => {
+      this.finishCheck(check);
+      // A cancelled native request may finish after a new operation has started.
+      if (this.busy === task) this.busy = null;
+    });
+    this.busy = task;
     return this.busy;
   }
-  async inspect() {
+  finishCheck(check) {
+    clearTimeout(check.timer);
+    if (this.checking === check) this.checking = null;
+  }
+  cancelCheck(reason = new DOMException('检查更新已取消', 'AbortError')) {
+    const check = this.checking;
+    if (!check) return false;
+    this.finishCheck(check);
     this.available = null;
-    const { data, manifestUrl, bundleUrl } = await this.fetchManifest(this.state.source);
+    this.busy = null;
+    check.controller.abort(reason);
+    return true;
+  }
+  async inspect(check) {
+    const signal = check.controller.signal;
+    this.available = null;
+    const { data, manifestUrl, bundleUrl } = await this.fetchManifest(this.state.source, signal);
+    if (signal.aborted) throw signal.reason;
     const manifest = validateManifest(data, manifestUrl, bundleUrl);
     if (manifest.version === this.currentVersion) {
       // A maintainer may roll a channel back while a newer bundle is still pending locally.
       if (this.state.pending) {
         const next = { ...this.state, pending: null };
+        // Preferences writes cannot be cancelled safely. Keep the busy lock until commit.
+        this.finishCheck(check);
         await this.save(next); this.state = next;
       }
       return null;
     }
     const { bundles } = await this.updater.list();
+    if (signal.aborted) throw signal.reason;
     if (bundles.some((b) => b.version === manifest.version && b.status === 'error')) {
       throw Error('此版本曾启动失败，已保留可用版本；请等待站点发布修复');
     }

@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { build } from 'esbuild';
 import { JSDOM } from 'jsdom';
 import { fileURLToPath } from 'node:url';
-import { NATIVE_REVISION } from '../mobile/src/update.js';
+import { CHECK_TIMEOUT_MS, NATIVE_REVISION } from '../mobile/src/update.js';
 import releaseConfig from '../mobile/release-config.json' with { type: 'json' };
 
 const result = await build({
@@ -242,6 +242,129 @@ test('a cancelled manual check suppresses an overlapping startup incompatibility
   finish({ status: 200, data: { ...updateManifest, nativeRevision: NATIVE_REVISION + 1 } });
   await manual; await flush();
   assert.equal(h.window.document.querySelector('#native-update'), null);
+});
+
+for (const channel of ['stable', 'preview', 'own', 'development']) {
+  test(`switching to ${channel} cancels a stalled startup check and ignores its late result`, async (t) => {
+    let finish;
+    const pending = { id: 'pending', version: 'd'.repeat(64), checksum: 'e'.repeat(64) };
+    const initialState = { source: ownSource, pending };
+    const h = await harness({ ...ownSaved, 'lingua.native.state': JSON.stringify(initialState) }, {
+      response: () => new Promise((resolve) => { finish = resolve; }),
+      updater: { list: async () => ({ bundles: [pending] }) },
+    }); t.after(h.close);
+    await h.window.LinguaNative.markReady(); await flush();
+    h.window.LinguaNative.settings();
+    const select = h.window.document.querySelector('select');
+    select.value = channel; select.dispatchEvent(new h.window.Event('change'));
+    h.window.document.querySelector('input').value = channel === 'development' ? 'http://localhost:5173/' : 'https://new.example/';
+    clickText(h, '保存并切换'); await flush();
+    assert.equal(h.values.get('lingua.channel'), channel);
+    assert.equal(h.window.document.querySelector('[data-native-status]').textContent, '');
+    if (channel === 'development') {
+      assert.ok(h.calls.some((call) => Array.isArray(call) && call[0] === 'development'));
+      assert.deepEqual(JSON.parse(h.values.get('lingua.native.state')), initialState);
+    } else {
+      assert.ok(h.calls.includes('reset'));
+      assert.equal(JSON.parse(h.values.get('lingua.native.state')).pending, null);
+    }
+    const switchedState = h.values.get('lingua.native.state');
+    // Old same-version results used to clear pending and write the old source back.
+    finish({ status: 200, data: { ...updateManifest, version: 'a'.repeat(64), bundle: `bundle-${'a'.repeat(64)}.zip` } });
+    await flush();
+    assert.equal(h.values.get('lingua.native.state'), switchedState);
+    assert.equal(h.window.document.querySelector('#native-update'), null);
+  });
+}
+
+for (const dismiss of ['cancel button', 'dialog close', 'Android back']) {
+  test(`${dismiss} releases a hung manual check and allows an immediate retry`, async (t) => {
+    const finishes = [];
+    const h = await harness(ownSaved, { platform: 'android', response: () => new Promise((resolve) => finishes.push(resolve)) });
+    t.after(h.close);
+    await h.window.LinguaNative.markReady(); await flush();
+    const manual = h.window.LinguaNative.checkUpdates();
+    if (dismiss === 'cancel button') clickText(h, '取消');
+    else if (dismiss === 'dialog close') h.window.document.querySelector('#native-update').close();
+    else h.events.backButton({ canGoBack: false });
+    await manual;
+    assert.equal(h.window.document.querySelector('#native-update'), null);
+    const retry = h.window.LinguaNative.checkUpdates();
+    assert.equal(finishes.length, 2);
+    finishes[0]({ status: 200, data: { ...updateManifest, nativeRevision: NATIVE_REVISION + 1 } }); await flush();
+    assert.equal(h.window.document.querySelector('#native-update h2').textContent, '正在检查更新');
+    finishes[1](await updateResponse()); await retry;
+    assert.equal(h.window.document.querySelector('#native-update h2').textContent, '发现新版本');
+  });
+}
+
+for (const manual of [false, true]) {
+  test(`${manual ? 'manual' : 'startup'} checks recover from a native HTTP timeout without restarting`, async (t) => {
+    const h = await harness(ownSaved, { response: () => new Promise(() => {}) }); t.after(h.close);
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    h.window.setTimeout = globalThis.setTimeout;
+    h.window.clearTimeout = globalThis.clearTimeout;
+    const task = manual ? h.window.LinguaNative.checkUpdates() : h.window.LinguaNative.markReady();
+    await flush();
+    t.mock.timers.tick(CHECK_TIMEOUT_MS);
+    await task; await flush();
+    if (manual) {
+      assert.match(h.window.document.querySelector('#native-update').textContent, /无法检查更新.*检查更新超时.*重试/);
+      h.window.adapters.CapacitorHttp.get = updateResponse;
+      clickText(h, '重试'); await flush();
+      assert.equal(h.window.document.querySelector('#native-update h2').textContent, '发现新版本');
+    } else assert.equal(h.window.document.querySelector('#native-update'), null);
+    h.window.LinguaNative.settings();
+    h.window.document.querySelector('select').value = 'preview';
+    clickText(h, '保存并切换'); await flush();
+    assert.equal(h.values.get('lingua.channel'), 'preview');
+    assert.ok(h.calls.includes('reset'));
+  });
+}
+
+test('restoring builtin cancels a stalled check and suppresses its late update prompt', async (t) => {
+  let finish;
+  const h = await harness(ownSaved, { response: () => new Promise((resolve) => { finish = resolve; }) }); t.after(h.close);
+  await h.window.LinguaNative.markReady(); await flush();
+  h.window.LinguaNative.settings(); clickText(h, '恢复内置版本'); await flush();
+  assert.ok(h.calls.includes('reset'));
+  finish(await updateResponse()); await flush();
+  assert.equal(h.window.document.querySelector('#native-update'), null);
+});
+
+test('a cancelled GitHub release request cannot start a later manifest request', async (t) => {
+  let finish;
+  const h = await harness({}, { response: () => new Promise((resolve) => { finish = resolve; }) }); t.after(h.close);
+  const task = h.window.LinguaNative.checkUpdates();
+  clickText(h, '取消'); await task;
+  finish({ status: 200, data: { draft: false, prerelease: false, assets: [{ id: 1, name: 'manifest.json',
+    browser_download_url: `https://github.com/${releaseConfig.repository}/releases/download/v1/manifest.json` }] } });
+  await flush();
+  assert.equal(h.calls.filter((call) => call === 'network').length, 1);
+  assert.equal(h.window.document.querySelector('#native-update'), null);
+});
+
+test('branch switching remains blocked throughout download and activation', async (t) => {
+  let finishDownload, finishApply;
+  const bundle = { id: 'downloaded', version: updateManifest.version, checksum: updateManifest.checksum, status: 'pending' };
+  const h = await harness(ownSaved, { response: updateResponse, updater: {
+    list: async () => ({ bundles: finishApply ? [bundle] : [] }),
+    download: () => new Promise((resolve) => { finishDownload = () => resolve(bundle); }),
+    set: () => new Promise((resolve) => { finishApply = resolve; }),
+  } }); t.after(h.close);
+  h.window.LinguaNative.settings();
+  h.window.document.querySelector('select').value = 'preview';
+  await h.window.LinguaNative.checkUpdates(); clickText(h, '立即更新'); await flush();
+  clickText(h, '保存并切换'); await flush();
+  assert.match(h.window.document.querySelector('[data-native-status]').textContent, /等待更新完成/);
+  assert.equal(h.values.get('lingua.channel'), 'own');
+  assert.equal(h.calls.includes('reset'), false);
+  h.window.adapters.CapacitorUpdater.list = async () => ({ bundles: [bundle] });
+  finishDownload(); await flush();
+  clickText(h, '保存并切换'); await flush();
+  assert.equal(h.values.get('lingua.channel'), 'own');
+  assert.equal(h.calls.includes('reset'), false);
+  finishApply(); await flush();
 });
 
 test('fresh boot defaults to stable and checks releases after readiness without a URL dialog', async (t) => {

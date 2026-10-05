@@ -17,7 +17,7 @@ const KEY = 'lingua.native.state';
 const NativeShell = registerPlugin('NativeShell');
 let source = { channel: 'stable', ownUrl: '', developmentUrl: '' };
 let manager, target = '', status = '', panel, updatePanel, version = '', updating = false;
-let manualChecks = 0;
+let manualChecks = 0, changingFrontend = false;
 const SESSION_CHECK = 'lingua.native.startup-check';
 const save = (state) => Preferences.set({ key: KEY, value: JSON.stringify(state) });
 const node = (tag, text) => { const n = document.createElement(tag); if (text) n.textContent = text; return n; };
@@ -32,10 +32,13 @@ function setStatus(text) {
   status = text;
   document.querySelectorAll('[data-native-status]').forEach((n) => { n.textContent = text; });
 }
-async function getJson(url) {
+async function getJson(url, signal) {
+  if (signal.aborted) throw signal.reason;
   const response = await CapacitorHttp.get({ url, headers: { 'Cache-Control': 'no-cache',
     Accept: url.startsWith('https://api.github.com/') ? 'application/vnd.github+json' : 'application/json' },
     connectTimeout: 15000, readTimeout: 20000, responseType: 'json' });
+  // Native HTTP has no cancellation API; discard late responses before any next request.
+  if (signal.aborted) throw signal.reason;
   if (response.status !== 200) throw Error(`更新服务暂时不可用（HTTP ${response.status}），请稍后重试`);
   return typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
 }
@@ -55,21 +58,32 @@ function clearImplicitBackendToken() {
     localStorage.setItem('linguatrack.config.v1', JSON.stringify(config));
   }
 }
+async function changeFrontend(action) {
+  if (updating || changingFrontend) throw Error('请等待更新完成后再切换分支');
+  manager?.cancelCheck();
+  if (manager?.busy) throw Error('请等待更新完成后再切换分支');
+  changingFrontend = true;
+  manualChecks++;
+  updatePanel?.close();
+  try { await action(); }
+  finally { changingFrontend = false; }
+}
 async function changeSource(next) {
-  if (manager?.busy || updating) throw Error('请等待更新完成后再切换分支');
   next = normalizeSource(next);
-  if (next.channel === 'development') {
-    // The remote view is temporary: retain the local bundle, pending update and source.
-    if (source.channel !== 'development') await Preferences.set({ key: PREVIOUS_CHANNEL_KEY, value: source.channel });
-  } else {
-    if (sourceKey(next) !== sourceKey(source)) clearImplicitBackendToken();
-    await save({ source: next, pending: null });
-  }
-  await Preferences.set({ key: OWN_KEY, value: next.ownUrl });
-  await Preferences.set({ key: DEV_KEY, value: next.developmentUrl });
-  await Preferences.set({ key: CHANNEL_KEY, value: next.channel });
-  if (next.channel === 'development') await NativeShell.openDevelopment({ url: next.developmentUrl });
-  else await CapacitorUpdater.reset();
+  await changeFrontend(async () => {
+    if (next.channel === 'development') {
+      // The remote view is temporary: retain the local bundle, pending update and source.
+      if (source.channel !== 'development') await Preferences.set({ key: PREVIOUS_CHANNEL_KEY, value: source.channel });
+    } else {
+      if (sourceKey(next) !== sourceKey(source)) clearImplicitBackendToken();
+      await save({ source: next, pending: null });
+    }
+    await Preferences.set({ key: OWN_KEY, value: next.ownUrl });
+    await Preferences.set({ key: DEV_KEY, value: next.developmentUrl });
+    await Preferences.set({ key: CHANNEL_KEY, value: next.channel });
+    if (next.channel === 'development') await NativeShell.openDevelopment({ url: next.developmentUrl });
+    else await CapacitorUpdater.reset();
+  });
 }
 function dialog(className, title) {
   const box = node('dialog'); box.className = `native-dialog ${className}`;
@@ -114,9 +128,10 @@ function settings(suggested = source) {
   }), 'native-button native-button-primary'));
   const tools = node('div'); tools.className = 'native-tools';
   tools.append(button('检查更新', () => check(true), 'native-tool'), button('恢复内置版本', async () => {
-      if (manager?.busy || updating) throw Error('请等待更新完成');
       if (confirm('恢复内置版本并重新打开应用？学习数据会保留。')) {
-        await save({ source, pending: null }); await CapacitorUpdater.reset();
+        await changeFrontend(async () => {
+          await save({ source, pending: null }); await CapacitorUpdater.reset();
+        });
       }
     }, 'native-tool'));
   if (manager?.state.pending) tools.append(button('安装已下载的更新', () => offerUpdate(), 'native-tool'));
@@ -164,13 +179,18 @@ function offerAppDownload(error, view = updateDialog('需要更新应用')) {
   actions.replaceChildren(button('稍后', () => box.close()), link);
 }
 async function check(manual = false) {
-  if (updating) return;
+  if (updating || changingFrontend) return;
   if (manual) manualChecks++;
   const manualGeneration = manualChecks;
   const view = manual ? updateDialog('正在检查更新') : null;
   // A newer or dismissed manual check owns the result, including startup failures.
-  const mayShowResult = () => manualGeneration === manualChecks && (manual ? view.box.open : !updatePanel?.open);
-  if (view) view.actions.append(button('取消', () => view.box.close()));
+  const mayShowResult = () => manualGeneration === manualChecks && (manual ? view.box.isConnected && view.box.open : !updatePanel?.open);
+  if (view) {
+    view.actions.append(button('取消', () => view.box.close()));
+    view.box.addEventListener('close', () => {
+      if (manualGeneration === manualChecks) manager.cancelCheck();
+    }, { once: true });
+  }
   try {
     const manifest = await manager.check();
     if (!mayShowResult()) return;
@@ -180,6 +200,7 @@ async function check(manual = false) {
       view.actions.replaceChildren(button('完成', () => view.box.close(), 'native-button native-button-primary'));
     }
   } catch (error) {
+    if (error?.name === 'AbortError') return;
     if (!mayShowResult()) return;
     if (error instanceof NativeUpdateRequiredError) { offerAppDownload(error, view || undefined); return; }
     if (!view) return;
@@ -248,7 +269,9 @@ async function initialize() {
   if (state.pending && (state.pending.version === version || !bundles.some((b) => b.id === state.pending.id && b.status !== 'error'))) {
     state.pending = null; await save(state);
   }
-  manager = new UpdateManager({ updater: CapacitorUpdater, fetchManifest: (selected) => fetchSourceManifest(selected, getJson), save, state, currentVersion: version });
+  manager = new UpdateManager({ updater: CapacitorUpdater,
+    fetchManifest: (selected, signal) => fetchSourceManifest(selected, (url) => getJson(url, signal)),
+    save, state, currentVersion: version });
   let marked = false;
   const audioPlayer = Capacitor.isPluginAvailable('AudioPlayer') ? AudioPlayer : null;
   if (audioPlayer) {

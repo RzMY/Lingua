@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { NATIVE_REVISION, NativeUpdateRequiredError, UpdateManager, validateManifest } from '../mobile/src/update.js';
+import { CHECK_TIMEOUT_MS, NATIVE_REVISION, NativeUpdateRequiredError, UpdateManager, validateManifest } from '../mobile/src/update.js';
 import { normalizeTarget } from '../mobile/src/channels.js';
 import { apiUrl } from '../web/js/api.js';
 import { config } from '../web/js/config.js';
@@ -21,6 +21,96 @@ function fixture(overrides = {}) {
     currentVersion: 'c'.repeat(64) });
   return { manager, calls, saved, updater };
 }
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+for (const step of ['manifest', 'bundle list']) {
+  test(`a stalled ${step} check times out, releases the lock and can be retried`, async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const { manager, updater, saved } = fixture();
+    const owner = step === 'manifest' ? manager : updater;
+    const key = step === 'manifest' ? 'fetchManifest' : 'list';
+    const original = owner[key];
+    let finish;
+    owner[key] = () => new Promise((resolve) => { finish = resolve; });
+    const task = manager.check();
+    const timedOut = assert.rejects(task, /检查更新超时/);
+    await flush();
+    t.mock.timers.tick(CHECK_TIMEOUT_MS - 1);
+    assert.equal(manager.busy, task);
+    t.mock.timers.tick(1);
+    await timedOut;
+    assert.equal(manager.busy, null);
+    assert.equal(manager.available, null);
+    assert.equal(saved.length, 0);
+    owner[key] = original;
+    const current = await manager.check();
+    finish(await original()); await flush();
+    assert.equal(manager.available, current, 'a late response cannot replace the retry result');
+    assert.equal(manager.busy, null);
+  });
+}
+
+test('cancellation immediately releases a hung check without unlocking a newer check', async () => {
+  const { manager } = fixture();
+  const original = manager.fetchManifest;
+  const finishes = [];
+  manager.fetchManifest = () => new Promise((resolve) => finishes.push(resolve));
+  const cancelled = assert.rejects(manager.check(), { name: 'AbortError' });
+  assert.equal(manager.cancelCheck(), true);
+  assert.equal(manager.busy, null);
+  const retry = manager.check();
+  await cancelled;
+  finishes[0](await original()); await flush();
+  assert.equal(manager.busy, retry);
+  assert.equal(manager.available, null);
+  finishes[1](await original());
+  assert.equal((await retry).version, version);
+  assert.equal(manager.busy, null);
+});
+
+test('a cancelled same-version response cannot clear pending state or save the old source', async () => {
+  const { manager, saved } = fixture();
+  manager.currentVersion = version;
+  manager.state.pending = { id: 'pending', version: 'd'.repeat(64), checksum };
+  const original = manager.fetchManifest;
+  let finish;
+  manager.fetchManifest = () => new Promise((resolve) => { finish = resolve; });
+  const cancelled = assert.rejects(manager.check(), { name: 'AbortError' });
+  manager.cancelCheck(); await cancelled;
+  finish(await original()); await flush();
+  assert.equal(saved.length, 0);
+  assert.equal(manager.state.pending.id, 'pending');
+});
+
+test('cancellation and the check deadline cannot release an in-flight preferences commit', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { manager } = fixture();
+  manager.currentVersion = version;
+  manager.state.pending = { id: 'obsolete' };
+  let finish;
+  manager.save = () => new Promise((resolve) => { finish = resolve; });
+  const task = manager.check(); await flush();
+  assert.equal(manager.cancelCheck(), false);
+  t.mock.timers.tick(CHECK_TIMEOUT_MS);
+  assert.equal(manager.busy, task);
+  finish(); await task;
+  assert.equal(manager.busy, null);
+  assert.equal(manager.state.pending, null);
+});
+
+test('check cancellation and timeout never unlock an actual download', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let finish;
+  const { manager } = fixture({ download: () => new Promise((resolve) => { finish = resolve; }) });
+  const task = manager.download(await manager.check()); await flush();
+  assert.equal(manager.cancelCheck(), false);
+  t.mock.timers.tick(CHECK_TIMEOUT_MS);
+  assert.equal(manager.busy, task);
+  await assert.rejects(manager.download(), /等待当前更新/);
+  finish({ id: 'downloaded', version, checksum, status: 'pending' });
+  await task;
+  assert.equal(manager.busy, null);
+});
 test('target normalization accepts a site or index and rejects unsafe transports and credentials', () => {
   assert.equal(normalizeTarget(' https://example.org/lingua/index.html '), 'https://example.org/lingua/');
   assert.equal(normalizeTarget('https://example.org/lingua'), 'https://example.org/lingua/');
