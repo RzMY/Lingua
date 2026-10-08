@@ -563,6 +563,8 @@ body.video-rotated {
 /*  小窗入口: 竖屏贴在横屏按钮左边, 横屏统一走工具栏, 所以这里跟着横屏按钮一起显隐。
     画面被搬进系统小窗后, 原位只剩这块可以点回来的提示。                              */
 .video-pip { position: absolute; right: 60px; bottom: 10px; z-index: 2; border-radius: 12px; color: var(--ink-2); background: var(--sheet); }
+/* 扁矩形图案放大以匹配横屏图标的视觉大小，同时保持描边粗细一致。 */
+.video-pip .ic { width: 26px; height: 26px; stroke-width: 1.6; }
 .has-video.is-pip .video-rotate { display: none; }
 .video-pip-note {
   pointer-events: auto;
