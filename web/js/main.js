@@ -81,13 +81,15 @@ let objUrl = '';                   // 当前 <audio> 用的 blob URL, 换曲要 
 let videoReady = false;
 let videoPlayer = null;
 let audioPip = null;
+let setupOnBack = null;
 
 function syncVideoLayout() {
   const visible = videoReady && dom.setup.hidden;
   dom.app.classList.toggle('has-video', visible);
   dom.videoStage.hidden = !visible;
   videoPlayer?.syncLayout();
-  if (!videoPlayer) dom.btnBack.setAttribute('aria-label', dom.setup.hidden ? '返回首页' : '返回播放');
+  if (!dom.setup.hidden) dom.btnBack.setAttribute('aria-label', setupOnBack ? '返回设置' : '返回播放');
+  else if (!videoPlayer) dom.btnBack.setAttribute('aria-label', '返回首页');
   syncFollowAlign();
 }
 
@@ -132,7 +134,8 @@ function clearState() {
  * 分析后端是无状态的: 它不认识这条音频, 也不保存任何东西 —— 请求带上字幕原文和几个
  * 参数, 换回一份 track.json, 由浏览器负责存。
  */
-function showSetup() {
+function showSetup(onBack = null) {
+  setupOnBack = onBack;
   player?.overlays.reset();
   audio.pause();
   engine.setSuspended(true);
@@ -396,7 +399,7 @@ async function repairFiles() {
       if (track) track.audioUrl = objUrl;
       updateFileState();
     },
-    onClose: () => { if (!dom.setup.hidden) showSetup(); },
+    onClose: () => { if (!dom.setup.hidden) showSetup(setupOnBack); },
   });
 }
 
@@ -465,6 +468,7 @@ async function load(id, forceSetup) {
 }
 
 async function openTrack() {
+  setupOnBack = null;
   dom.setup.hidden = true;
   dom.viewport.hidden = false;
   syncVideoLayout();
@@ -539,7 +543,7 @@ function apply(next) {
   if (next.S) clearState();
   else {
     showState('');
-    dom.readerState.append(button('导入字幕', { main: true, glyph: 'i-doc', onPick: showSetup }));
+    dom.readerState.append(button('导入字幕', { main: true, glyph: 'i-doc', onPick: () => showSetup() }));
   }
   dom.btnPin.disabled = !next.S;
   dom.btnExplain.disabled = !next.S || next.raw.subtitleMode === 'plain';
@@ -772,7 +776,7 @@ function toggleChat() {
 /** Topbar and the immersive toolbar share one settings entry. */
 function openDisplay() {
   if (track) openTrackSheet(track, { translator, video: videoPlayer,
-    onSubtitles: () => { closeSheet(); showSetup(); } });
+    onSubtitles: () => { closeSheet(); showSetup(openDisplay); } });
 }
 
 function paintRepeat() {
@@ -897,11 +901,21 @@ async function boot() {
   initSettings(onSetting);
   wireReader();
   nativeReady(); // A valid entry point is ready before network or large media reads.
-  dom.btnBack.addEventListener('click', () => {
-    if (!dom.setup.hidden) { void openTrack(); return; }
+  dom.btnBack.addEventListener('click', async () => {
+    if (!dom.setup.hidden) {
+      const onBack = setupOnBack;
+      await openTrack();
+      onBack?.();
+      return;
+    }
     if (videoPlayer?.isImmersive()) { void videoPlayer.leaveHorizontal(); return; }
     if (history.length > 1) history.back();
     else location.href = 'index.html';
+  });
+  window.addEventListener('native-back', (event) => {
+    if (dom.setup.hidden) return;
+    event.preventDefault();
+    dom.btnBack.click();
   });
 
   const q = new URLSearchParams(location.search);

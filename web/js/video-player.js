@@ -94,8 +94,9 @@ export function setupVideo({ app, video, media = video, engine, toggle, onLayout
     if (changed) app.classList.remove('controls-visible');
     rotate.setAttribute('aria-label', immersive ? '退出横屏' : '横屏播放');
     rotate.setAttribute('aria-pressed', String(immersive));
-    back.setAttribute('aria-label', document.getElementById('setup')?.hidden === false
-      ? '返回播放' : immersive ? '返回竖屏播放' : '返回首页');
+    if (document.getElementById('setup')?.hidden !== false) {
+      back.setAttribute('aria-label', immersive ? '返回竖屏播放' : '返回首页');
+    }
     syncStatusBar(immersive);
     onLayout();
   };
@@ -188,6 +189,7 @@ export function setupVideo({ app, video, media = video, engine, toggle, onLayout
   });
   window.addEventListener('resize', syncLayout);
   window.addEventListener('native-back', (event) => {
+    if (event.defaultPrevented) return;
     if (!overlayOpen() && isImmersive()) {
       event.preventDefault(); void leaveHorizontal();
     }
