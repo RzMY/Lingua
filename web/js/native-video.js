@@ -27,6 +27,7 @@ export class NativeVideo extends NativeAudio {
       });
     }
     video.addEventListener('loadedmetadata', () => this._syncVideo());
+    video.addEventListener('loadeddata', () => this._syncVideo());
     video.addEventListener('canplay', () => this._syncVideo());
     for (const event of ['enterpictureinpicture', 'leavepictureinpicture', 'webkitpresentationmodechanged']) {
       video.addEventListener(event, () => this._syncVideo());
@@ -104,7 +105,11 @@ export class NativeVideo extends NativeAudio {
     }
     // Keep the silent decoder running through native seeks. Pausing it while an
     // HTML seek is pending can leave Android at HAVE_METADATA indefinitely.
-    this._visualPlaying = showFrames && !this.paused && !this.ended && !this._waiting;
+    // Mobile decoders may stop at metadata until play(), even with preload=auto.
+    // Warm only the muted picture, then park it at the native (paused) position.
+    // Keep decoding through its alignment seek so Android can finish that frame.
+    const prepareFrame = this.readyState > 0 && (this.video.readyState < 2 || this.video.seeking);
+    this._visualPlaying = showFrames && !this.ended && !this._waiting && (!this.paused || prepareFrame);
     if (showFrames) {
       const position = this.currentTime, drift = position - this.video.currentTime, now = performance.now();
       let rate = this.playbackRate;
@@ -152,6 +157,7 @@ export class NativeVideo extends NativeAudio {
     this._visualRequest = null;
     this.video.preload = 'auto';
     this.video.muted = true; this.video.src = this._url;
+    this.video.load();
     try {
       await super.attach(blob, record);
       if (this._url === url) { this._setVolume(); this._syncVideo(); }

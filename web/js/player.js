@@ -144,7 +144,9 @@ export function setupPlayer(ctx) {
       progress?.begin(currentId);
       media.setTrack({ title });
       const at = resumeAt(position, engine.track?.duration || audio.duration || 0);
-      if (at <= 0) return;
+      // An explicit initial video seek dismisses the poster/black frame on WebKit,
+      // even when this is the first visit and the restored position is zero.
+      if (at <= 0 && audio.tagName !== 'VIDEO') return;
       // 元数据还没读完时写 currentTime 会被忽略, 等一次 loadedmetadata 再跳
       if (audio.readyState >= 1) engine.seek(at);
       else audio.addEventListener('loadedmetadata', () => {

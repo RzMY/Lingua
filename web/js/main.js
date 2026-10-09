@@ -371,6 +371,8 @@ async function attachAudio(id) {
     return;
   }
   audio.src = next;
+  // Request video data immediately, including on a paused first visit.
+  if (videoPlayer) audio.load();
   audio.preservesPitch = true;
   audio.playbackRate = settings.rate || 1;
   updateFileState();

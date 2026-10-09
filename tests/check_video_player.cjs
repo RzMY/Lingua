@@ -89,6 +89,7 @@ const fixture = process.argv[4];
       else assert.ok(boxes.video.y === 0 && boxes.video.height >= boxes.height - 1);
     }
     const reveal = async () => {
+      assert.equal(await page.locator('.sheet.is-open').count(), 0, 'close settings before revealing playback controls');
       if (!await page.locator('#app').evaluate((el) => el.classList.contains('controls-visible'))) {
         await page.waitForFunction(() => !document.querySelector('.scrim.is-open'));
         const point = await page.evaluate(() => {
@@ -103,6 +104,18 @@ const fixture = process.argv[4];
         await page.waitForFunction(() => document.querySelector('#app').classList.contains('controls-visible'));
       }
       await page.waitForFunction(() => getComputedStyle(document.querySelector('#player')).visibility === 'visible');
+    };
+    // ad1715a: child settings return to the video settings menu on Escape.
+    const backToVideoSettings = async (title) => {
+      await page.getByRole('dialog', { name: title, exact: true }).waitFor();
+      await page.keyboard.press('Escape');
+      await page.getByRole('dialog', { name: '视频设置', exact: true }).waitFor();
+      assert.equal(await page.locator('#btnToolFit').isVisible(), false, 'the parent settings menu still hides the toolbar');
+    };
+    const closeVideoSettings = async () => {
+      await page.getByRole('dialog', { name: '视频设置', exact: true }).waitFor();
+      await page.keyboard.press('Escape');
+      await page.waitForFunction(() => !document.documentElement.classList.contains('sheet-open'));
     };
     await bounds(false);
     assert.equal(await page.evaluate(() => document.querySelector('#app').style.getPropertyValue('--cue-size')), '20px');
@@ -137,8 +150,9 @@ const fixture = process.argv[4];
         note: !document.querySelector('#videoPipNote').hidden,
         pressed: document.querySelector('#btnVideoPip').getAttribute('aria-pressed') };
     });
+    // c4e15c9: the default subtitle window width changed from 96% to 95%.
     assert.deepEqual(pipShot, { hasVideo: true, text: 'Welcome to the video lesson.', tr: '欢迎来到视频课。',
-      trShown: true, theme: true, widthVar: '96%', videoAway: true, note: true, pressed: 'true' });
+      trShown: true, theme: true, widthVar: '95%', videoAway: true, note: true, pressed: 'true' });
     const pipPage = context.pages().find((candidate) => candidate !== page);
     if (pipPage) await pipPage.screenshot({ path: path.join(shots, 'pip.png') });
     const pipTime = await page.evaluate(() => LT.engine.audio.currentTime);
@@ -396,8 +410,9 @@ const fixture = process.argv[4];
     await page.evaluate(async () => (await import('/js/trackcfg.js')).setVideoCfg({ captionSize: 26 }));
     assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('#app'))
       .getPropertyValue('--cue-size').trim()), '26px');
-    await page.keyboard.press('Escape');
+    await backToVideoSettings('视频布局 · 当前媒体');
     assert.equal(await page.locator('#app').evaluate((el) => el.style.getPropertyValue('--subtitle-blur')), '18px');
+    await closeVideoSettings();
     await reveal();
     await page.locator('#btnToolFit').click();
     await page.waitForFunction(() => getComputedStyle(document.querySelector('#video')).objectFit === 'cover');
@@ -433,9 +448,7 @@ const fixture = process.argv[4];
     await page.locator('#btnToolSettings').click();
     await page.getByRole('button', { name: /^视频字幕布局/ }).click();
     await page.getByRole('button', { name: '恢复全局字幕布局', exact: true }).click();
-    await page.keyboard.press('Escape');
-    await reveal();
-    await page.locator('#btnToolSettings').click();
+    await backToVideoSettings('视频布局 · 当前媒体');
     await page.getByRole('button', { name: 'IPA', exact: true }).click();
     await page.getByRole('button', { name: 'Lemma', exact: true }).click();
     await page.getByRole('button', { name: '翻译', exact: true }).click();
@@ -451,10 +464,8 @@ const fixture = process.argv[4];
     await page.getByRole('button', { name: '字幕字号', exact: true }).click();
     const font = page.locator('.sheet.is-open input[type=number]').first();
     await font.fill('28'); await font.press('Tab');
-    await page.keyboard.press('Escape');
+    await backToVideoSettings('字幕字号 · 当前媒体');
     await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--fs-text').trim() === '28px');
-    await reveal();
-    await page.locator('#btnToolSettings').click();
     await page.getByRole('button', { name: 'IPA', exact: true }).click();
     await page.getByRole('button', { name: 'Lemma', exact: true }).click();
     await page.keyboard.press('Escape');
@@ -507,7 +518,11 @@ const fixture = process.argv[4];
     await page.screenshot({ path: path.join(shots, 'home-dark.png') });
     await page.goto(base + '/player.html?track=' + trackId + '&debug');
     await page.waitForFunction(() => window.LT?.track && document.querySelector('.has-video'));
-    await page.evaluate(async (id) => { const { setPosition } = await import('/js/library.js'); await setPosition(id, 9); }, trackId);
+    // b198813: pagehide stages the live media clock, overriding an older DB-only seed.
+    // Seek the actual player so navigation exercises the real progress-saving path.
+    await page.evaluate(() => LT.engine.seek(9));
+    await page.waitForFunction(() => Math.abs(document.querySelector('#video').currentTime - 9) < 0.1
+      && !document.querySelector('#video').seeking);
     await page.reload();
     await page.waitForFunction(() => Math.abs(document.querySelector('#video').currentTime - 9) < 0.1);
 

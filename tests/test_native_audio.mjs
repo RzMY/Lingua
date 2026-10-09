@@ -63,7 +63,7 @@ function harness(t, overrides = {}, { video: withVideo = false } = {}) {
   const video = w.document.createElement('video');
   let visualPaused = true, visualPosition = 0, visualSeeking = false, seekVersion = 0;
   const seeks = [];
-  Object.defineProperties(video, { readyState: { value: 4 }, paused: { get: () => visualPaused },
+  Object.defineProperties(video, { readyState: { configurable: true, value: 4 }, paused: { get: () => visualPaused },
     duration: { value: 120 }, videoWidth: { value: 1280 }, videoHeight: { value: 720 },
     seeking: { get: () => visualSeeking },
     currentTime: { get: () => visualPosition, set: (value) => {
@@ -248,6 +248,77 @@ test('native playback errors reach the user instead of being hidden by a synthet
   await controls.play();
   assert.match(h.w.document.getElementById('toast').textContent, /播放失败.*重试/);
   assert.doesNotMatch(h.w.document.getElementById('toast').textContent, /AVAudioSession/);
+});
+
+for (const position of [0, 37]) {
+  test(`paused native video decodes a frame at ${position}s without starting native sound`, async (t) => {
+    const h = harness(t, {}, { video: true });
+    Object.defineProperty(h.video, 'readyState', { configurable: true, value: 0 });
+    let loads = 0, plays = 0;
+    h.video.load = () => { loads++; };
+    const play = h.video.play;
+    h.video.play = () => { plays++; assert.equal(h.video.muted, true); return play(); };
+    await h.attach();
+    h.audio.currentTime = position; await flush();
+    assert.equal(loads, 1);
+    assert.equal(plays, 0, 'metadata has not arrived yet');
+    Object.defineProperty(h.video, 'readyState', { configurable: true, value: 1 });
+    h.video.dispatchEvent(new h.w.Event('loadedmetadata')); await flush();
+    assert.equal(plays, 1, 'wake the metadata-only decoder without a user gesture');
+    assert.equal(h.audio.paused, true);
+    assert.equal(h.video.paused, false);
+    assert.deepEqual(h.seeks, [], 'do not strand an Android seek before the first frame');
+    Object.defineProperty(h.video, 'readyState', { configurable: true, value: 2 });
+    h.video.dispatchEvent(new h.w.Event('loadeddata')); await flush();
+    assert.equal(h.video.currentTime, position);
+    assert.equal(h.video.paused, true, 'park the decoded frame at the restored position');
+    assert.equal(h.audio.currentTime, position);
+    assert.equal(h.audio.paused, true);
+    assert.ok(!h.calls.some(([name, value]) => name === 'command' && value.action === 'play'));
+  });
+}
+
+test('paused video preparation follows the latest seek and survives a rejected decoder play', async (t) => {
+  const h = harness(t, {}, { video: true });
+  Object.defineProperty(h.video, 'readyState', { configurable: true, value: 1 });
+  const play = h.video.play;
+  h.video.play = () => Promise.reject(new h.w.DOMException('Gesture required', 'NotAllowedError'));
+  await h.attach(); await flush();
+  h.audio.currentTime = 12; await flush();
+  assert.equal(h.audio.error, null);
+  h.audio.currentTime = 45; await flush();
+  h.video.play = play;
+  await h.audio.play(); await flush();
+  Object.defineProperty(h.video, 'readyState', { configurable: true, value: 2 });
+  h.video.dispatchEvent(new h.w.Event('loadeddata')); await flush();
+  assert.equal(h.video.currentTime, 45);
+  assert.equal(h.video.paused, false);
+  assert.equal(h.audio.paused, false);
+});
+
+test('backgrounding suspends initial frame preparation and returning uses the latest native position', async (t) => {
+  const h = harness(t, {}, { video: true });
+  Object.defineProperty(h.video, 'readyState', { configurable: true, value: 1 });
+  await h.attach(); await flush();
+  assert.equal(h.video.paused, false);
+  h.w.dispatchEvent(new h.w.CustomEvent('native-app-state', { detail: { active: false } }));
+  assert.equal(h.video.paused, true);
+  h.emit({ position: 24 });
+  h.video.dispatchEvent(new h.w.Event('loadedmetadata')); await flush();
+  assert.equal(h.video.paused, true, 'metadata must not restart a hidden decoder');
+  h.w.dispatchEvent(new h.w.CustomEvent('native-app-state', { detail: { active: true } }));
+  await flush();
+  assert.equal(h.video.paused, false);
+  Object.defineProperty(h.video, 'readyState', { configurable: true, value: 2 });
+  h.video.dispatchEvent(new h.w.Event('loadeddata')); await flush();
+  assert.equal(h.video.currentTime, 24);
+  assert.equal(h.video.paused, true);
+  assert.equal(h.audio.paused, true);
+  assert.ok(!h.calls.some(([name, value]) => name === 'command' && value.action === 'play'));
+  await h.audio.release();
+  h.video.dispatchEvent(new h.w.Event('loadedmetadata'));
+  h.video.dispatchEvent(new h.w.Event('loadeddata')); await flush();
+  assert.equal(h.video.paused, true, 'late frame events must not revive a released source');
 });
 
 test('video frames stay muted and background WebKit pauses never stop the native sound', async (t) => {
