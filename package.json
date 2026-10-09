@@ -1,10 +1,10 @@
 {
   "name": "lingua",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Lingua web and native mobile shell",
   "scripts": {
     "test": "node --test tests/test_*.mjs",
-    "version": "node mobile/scripts/version.mjs",
+    "version": "node mobile/scripts/version.mjs && git add web/js/version.js",
     "mobile:build": "node mobile/scripts/build.mjs",
     "icons": "python mobile/scripts/icons.py",
     "mobile:sync": "npm run mobile:permissions && npm run mobile:build && cap sync",
