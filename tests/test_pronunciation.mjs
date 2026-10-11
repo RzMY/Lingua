@@ -9,6 +9,7 @@ import { wordAudioRange, selectSpeechVoice } from '../web/js/pronunciation.js';
 const { outputFiles } = await build({ stdin: { contents: `
   export * from './web/js/pronunciation.js';
   export * from './web/js/settings.js';
+  export * from './web/js/trackcfg.js';
   export * from './web/js/card.js';
   export * from './web/js/pronunciation-settings.js';
   export { closeSheet } from './web/js/sheet.js';`,
@@ -62,6 +63,7 @@ function harness(t, speech = true) {
   w.eval(outputFiles[0].text);
   const api = w.PronunciationTest;
   api.initSettings();
+  api.initTrackCfg(track.id, track.lang);
   const events = [];
   const session = api.createPronunciation({ track, sentence, word, onState: (event) => events.push(event) });
   t.after(() => { session.dispose(); api.closeWordCard(); api.closeSheet(); });
@@ -182,7 +184,7 @@ test('stalled clips time out and reject word timestamps beyond the actual file',
 
 test('word card can pronounce before definitions load and cancels speech when closed', async (t) => {
   const h = harness(t);
-  h.api.setPronunciation({ source: 'standard', autoPlay: true });
+  h.api.setTrackPronunciation({ source: 'standard', autoPlay: true });
   const loading = h.api.openWordCard({ track, i: 0, j: 0, lang: 'zh-CN' });
   assert.equal(h.utterances.length, 1, 'autoplay begins within the opening user gesture');
   const button = h.w.document.querySelector('[aria-label="播放标准发音"]');
@@ -312,17 +314,78 @@ test('volume balance persists, resets to enabled and applies to voice previews',
   h.api.openPronunciationSheet({ track: currentTrack });
   const toggle = () => h.w.document.querySelector('[aria-label="音量均衡"]');
   assert.equal(toggle().getAttribute('aria-pressed'), 'true');
-  toggle().click(); h.api.initSettings();
-  assert.equal(h.api.settings.pronunciation.volumeBalance, false);
+  toggle().click(); h.api.initTrackCfg(track.id, track.lang);
+  assert.equal(h.api.trackCfg.pronunciation.volumeBalance, false);
+  assert.equal(h.api.settings.pronunciation.volumeBalance, true);
   h.w.document.querySelector('[data-voice-language="en"]').click();
   h.w.document.querySelector('.voice-listen').click();
   assert.equal(h.utterances.at(-1).volume, 1);
   h.api.closeSheet();
   [...h.w.document.querySelectorAll('button')].find((b) => b.textContent === '恢复默认').click();
   assert.equal(toggle().getAttribute('aria-pressed'), 'true');
-  h.api.initSettings();
-  assert.equal(h.api.settings.pronunciation.volumeBalance, true);
+  h.api.initTrackCfg(track.id, track.lang);
+  assert.equal(h.api.trackCfg.pronunciation.volumeBalance, true);
   h.w.document.querySelector('[data-voice-language="en"]').click();
   h.w.document.querySelector('.voice-listen').click();
   assert.equal(h.utterances.at(-1).volume, .3);
+});
+
+
+test('player preferences and word-card source stay with their audio across switching and reload', async (t) => {
+  const h = harness(t);
+  const globalBefore = JSON.stringify(h.api.settings.pronunciation);
+  h.api.openPronunciationSheet({ track });
+  const buttons = () => [...h.w.document.querySelectorAll('button')];
+  buttons().find((b) => b.textContent === '标准').click();
+  h.w.document.querySelector('[aria-label="打开词卡自动发音"]').click();
+  h.w.document.querySelector('[data-voice-language="en"]').click();
+  h.w.document.querySelectorAll('[role="radio"]')[2].click();
+  const voice = h.api.trackCfg.pronunciation.voices.en;
+  h.api.closeSheet(); h.api.closeSheet();
+  assert.equal(JSON.stringify(h.api.settings.pronunciation), globalBefore);
+  h.api.initSettings(); h.api.initTrackCfg(track.id, track.lang);
+  const count = h.utterances.length;
+  await h.api.openWordCard({ track, i: 0, j: 0, lang: 'zh-CN' });
+  assert.equal(h.utterances.length, count + 1);
+  assert.equal(h.api.speechVoiceKey(h.utterances.at(-1).voice), voice);
+  h.w.document.querySelector('.wc-sound-source').click();
+  assert.equal(h.api.trackCfg.pronunciation.source, 'audio');
+  h.api.closeWordCard();
+  assert.equal(JSON.stringify(h.api.settings.pronunciation), globalBefore);
+  assert.equal(h.w.localStorage.getItem('linguatrack.settings.v1'), null);
+
+  const other = { ...track, id: 'other' };
+  h.api.initTrackCfg(other.id, other.lang);
+  assert.equal(h.api.trackCfg.pronunciation.autoPlay, false);
+  assert.equal(h.api.trackCfg.pronunciation.voices.en, undefined);
+  await h.api.openWordCard({ track: other, i: 0, j: 0, lang: 'zh-CN' });
+  assert.equal(h.utterances.length, count + 1, 'second audio does not inherit autoplay');
+  h.api.closeWordCard();
+  h.api.initTrackCfg(track.id, track.lang);
+  assert.equal(h.api.trackCfg.pronunciation.source, 'audio');
+  assert.equal(h.api.trackCfg.pronunciation.autoPlay, true);
+  assert.equal(h.api.trackCfg.pronunciation.voices.en, voice);
+});
+
+test('track voice migration and reset never modify global defaults or another audio', (t) => {
+  const h = harness(t);
+  h.api.setPronunciation({ source: 'standard', autoPlay: true, volumeBalance: false, voices: { en: 'uk' } });
+  const globalBefore = h.w.localStorage.getItem('linguatrack.settings.v1');
+  h.api.initTrackCfg('other', 'en');
+  h.api.setTrackPronunciation({ voices: { en: 'us' } });
+  const otherBefore = h.w.localStorage.getItem('linguatrack.track.other');
+  h.api.initTrackCfg(track.id, track.lang);
+  h.api.openPronunciationSheet({ track });
+  h.w.document.querySelector('[data-voice-language="en"]').click();
+  assert.ok(h.api.trackCfg.pronunciation.voices.en.startsWith('voice:'));
+  assert.equal(h.api.settings.pronunciation.voices.en, 'uk');
+  h.api.closeSheet();
+  [...h.w.document.querySelectorAll('button')].find((b) => b.textContent === '恢复默认').click();
+  assert.equal(JSON.stringify(h.api.trackCfg.pronunciation), JSON.stringify(normalizePronunciation()));
+  h.api.initTrackCfg(track.id, track.lang);
+  assert.equal(h.api.trackCfg.pronunciation.source, 'audio');
+  assert.equal(h.api.trackCfg.pronunciation.autoPlay, false);
+  assert.equal(h.api.trackCfg.pronunciation.voices.en, undefined);
+  assert.equal(h.w.localStorage.getItem('linguatrack.settings.v1'), globalBefore);
+  assert.equal(h.w.localStorage.getItem('linguatrack.track.other'), otherBefore);
 });

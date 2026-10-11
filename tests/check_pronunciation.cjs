@@ -172,8 +172,9 @@ const base = process.argv[3] || 'http://127.0.0.1:5185';
       // Verify the installed WebView's persisted settings directly; CDP viewport emulation
       // does not resize Android's native input surface for subsequent home navigation.
       assert.deepEqual(await page.evaluate(async () => {
-        const { initSettings, settings } = await import('/js/settings.js'); initSettings();
-        return { source: settings.pronunciation.source, autoPlay: settings.pronunciation.autoPlay };
+        const { readTrackCfg } = await import('/js/trackcfg.js');
+        const { pronunciation } = readTrackCfg('pronunciation', 'en');
+        return { source: pronunciation.source, autoPlay: pronunciation.autoPlay };
       }), { source: 'standard', autoPlay: true });
       assert.deepEqual(errors, []);
       console.log('Android native playback and pronunciation settings passed:', shots);
@@ -182,9 +183,9 @@ const base = process.argv[3] || 'http://127.0.0.1:5185';
     await page.goto(base + '/index.html#set');
     await page.locator('#viewSet').waitFor();
     await page.getByRole('button', { name: '发音设置', exact: true }).click();
-    assert.equal(await page.getByRole('button', { name: '标准', exact: true }).getAttribute('aria-pressed'), 'true');
-    assert.equal(await page.getByRole('button', { name: '打开词卡自动发音', exact: true }).getAttribute('aria-pressed'), 'true');
-    assert.equal(await page.getByRole('button', { name: '音量均衡', exact: true }).getAttribute('aria-pressed'), 'false');
+    assert.equal(await page.getByRole('button', { name: '标准', exact: true }).getAttribute('aria-pressed'), 'false');
+    assert.equal(await page.getByRole('button', { name: '打开词卡自动发音', exact: true }).getAttribute('aria-pressed'), 'false');
+    assert.equal(await page.getByRole('button', { name: '音量均衡', exact: true }).getAttribute('aria-pressed'), 'true');
     assert.deepEqual(errors, []);
     console.log('Pronunciation browser checks passed:', shots);
   } finally { await browser.close(); }

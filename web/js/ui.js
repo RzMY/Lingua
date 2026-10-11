@@ -72,6 +72,7 @@ export function openTrackSheet(track, { translator, video, onSubtitles } = {}) {
 
   rows.push(navRow('字幕字号', '', { onPick: () => openFontSheet({ track, video: !!video, onBack }) }));
   rows.push(navRow('系统字幕字号', '', { value: trackCfg.video.captionSize + ' px', onPick: () => openCaptionSheet({ track, onBack }) }));
+  rows.push(navRow('发音设置', '', { onPick: () => openPronunciationSheet({ track, onBack }) }));
   if (onSubtitles) rows.push(navRow('字幕管理', '', { onPick: onSubtitles }));
   body.append(sectionTitle(video ? '当前视频' : '当前音频'), group(...rows));
   body.append(group(infoRow('源语言', track.langName)));
@@ -82,7 +83,6 @@ export function openTrackSheet(track, { translator, video, onSubtitles } = {}) {
   body.append(
     sectionTitle('全局'),
     group(
-      navRow('发音设置', '', { onPick: () => openPronunciationSheet({ track, onBack }) }),
       segRow('主题', '', () => settings.theme, (v) => setSetting('theme', v), THEMES),
     ),
   );

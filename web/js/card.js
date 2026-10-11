@@ -14,7 +14,7 @@ import { chatJSON, once } from './llm.js';
 import { errorMessage } from './errors.js';
 import { get as cacheGet, put as cachePut } from './store.js';
 import { el, copyText, hash53, icon, toast } from './util.js';
-import { settings, setPronunciation } from './settings.js';
+import { trackCfg, setTrackPronunciation } from './trackcfg.js';
 import { createPronunciation } from './pronunciation.js';
 
 let host = null;
@@ -150,11 +150,11 @@ export async function openWordCard({ track, i, j, lang, onClose, getAudioBlob })
   const session = createPronunciation({ track, sentence: s, word: w, getAudioBlob,
     onState: ({ state, source, message }) => {
       for (const [key, button] of choices) {
-        button.setAttribute('aria-pressed', String(settings.pronunciation.source === key));
+        button.setAttribute('aria-pressed', String(trackCfg.pronunciation.source === key));
         button.classList.toggle('is-playing', source === key && state === 'playing');
         button.setAttribute('aria-busy', String(source === key && state === 'loading'));
       }
-      soundStatus.textContent = message || session.availability()[settings.pronunciation.source] || '';
+      soundStatus.textContent = message || session.availability()[trackCfg.pronunciation.source] || '';
       soundStatus.hidden = !soundStatus.textContent;
     },
   });
@@ -165,16 +165,16 @@ export async function openWordCard({ track, i, j, lang, onClose, getAudioBlob })
     button.type = 'button';
     button.append(el('span', null, label), icon('i-speaker', 'ic ic-sm'));
     button.setAttribute('aria-label', `播放${label}发音`);
-    button.setAttribute('aria-pressed', String(settings.pronunciation.source === source));
+    button.setAttribute('aria-pressed', String(trackCfg.pronunciation.source === source));
     button.disabled = !!availability[source];
     button.title = availability[source] || `播放${label}发音`;
     button.addEventListener('click', () => {
-      setPronunciation({ source });
-      void session.play(source, settings.pronunciation);
+      setTrackPronunciation({ source });
+      void session.play(source, trackCfg.pronunciation);
     });
     choices.set(source, button); soundButtons.append(button);
   }
-  soundStatus.textContent = availability[settings.pronunciation.source] || '';
+  soundStatus.textContent = availability[trackCfg.pronunciation.source] || '';
   soundStatus.hidden = !soundStatus.textContent;
   readingLine.append(soundButtons); top.append(soundStatus);
 
@@ -213,7 +213,7 @@ export async function openWordCard({ track, i, j, lang, onClose, getAudioBlob })
   host.inert = false;
   host.removeAttribute('aria-hidden');
   // 必须在用户点击的调用栈内触发 TTS, 不等待缓存/大模型网络响应。
-  if (settings.pronunciation.autoPlay) void session.play(settings.pronunciation.source, settings.pronunciation);
+  if (trackCfg.pronunciation.autoPlay) void session.play(trackCfg.pronunciation.source, trackCfg.pronunciation);
   requestAnimationFrame(() => {
     if (!openFlag) return;               // 同一帧内开又关: 别把卡片补回来
     scrim.classList.add('is-open');

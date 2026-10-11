@@ -23,6 +23,7 @@ import { config, langDefaults } from './config.js';
 import { sourceSpec } from './langs.js';
 import { FONT_DEFAULTS, fontSizes, normFontSize, normalizeFonts, setFontContext, settings } from './settings.js';
 import { normalizeVideo, videoOverrides } from './video-config.js';
+import { normalizePronunciation } from './pronunciation-config.js';
 
 const PREFIX = 'linguatrack.track.';
 
@@ -46,6 +47,7 @@ export const trackCfg = {
   lang: 'zh-CN',    // 译文语言
   fonts: {},       // 只保存这条音频明确调整过的字号
   video: normalizeVideo(),
+  pronunciation: normalizePronunciation(),
 };
 
 const bit = (v, fallback) => (v === undefined || v === null ? fallback : (v ? 1 : 0));
@@ -62,7 +64,8 @@ export const cfgSupports = (key) => supported.has(key);
  */
 export function readTrackCfg(id, srcLang = '') {
   const out = { ...langDefaults(srcLang), id, lang: config.targetLang || 'zh-CN', fonts: {},
-    video: normalizeVideo(settings.video), videoOverrides: {} };
+    video: normalizeVideo(settings.video), videoOverrides: {},
+    pronunciation: normalizePronunciation(settings.pronunciation) };
   try {
     const saved = JSON.parse(localStorage.getItem(PREFIX + id) || 'null');
     if (saved && typeof saved === 'object') {
@@ -71,6 +74,9 @@ export function readTrackCfg(id, srcLang = '') {
       out.fonts = normalizeFonts(saved.fonts);
       out.videoOverrides = videoOverrides(saved.video);
       out.video = normalizeVideo({ ...settings.video, ...out.videoOverrides });
+      if (saved.pronunciation && typeof saved.pronunciation === 'object' && !Array.isArray(saved.pronunciation)) {
+        out.pronunciation = normalizePronunciation(saved.pronunciation);
+      }
     }
   } catch { /* 坏了就用默认 */ }
   return out;
@@ -123,7 +129,7 @@ function save() {
   if (!trackCfg.id) return;
   let previous = {};
   try { previous = JSON.parse(localStorage.getItem(PREFIX + trackCfg.id) || '{}') || {}; } catch { /* ignore */ }
-  const out = { lang: trackCfg.lang };
+  const out = { lang: trackCfg.lang, pronunciation: trackCfg.pronunciation };
   if (Object.keys(trackCfg.fonts).length) out.fonts = trackCfg.fonts;
   if (Object.keys(trackCfg.videoOverrides || {}).length) out.video = trackCfg.videoOverrides;
   for (const k of SAVED) {
@@ -187,6 +193,14 @@ export function setVideoCfg(fields) {
   trackCfg.videoOverrides = overrides;
   save();
   onChange('video', next, false);
+}
+
+/** 发音偏好随当前音频保存; 不修改首页的默认值。 */
+export function setTrackPronunciation(fields) {
+  if (!trackCfg.id) return;
+  trackCfg.pronunciation = normalizePronunciation({ ...trackCfg.pronunciation, ...fields });
+  save();
+  onChange('pronunciation', trackCfg.pronunciation, false);
 }
 
 export function resetVideoCfg(keys) {

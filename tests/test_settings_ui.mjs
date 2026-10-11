@@ -47,6 +47,13 @@ for (const video of [false, true]) test(`${video ? 'video' : 'audio'} submenus r
   opener.focus();
   h.api.openTrackSheet(h.track, { video });
   await h.frame();
+  assert.equal(h.row('发音设置').closest('.rows').previousElementSibling.textContent, video ? '当前视频' : '当前音频');
+  h.row('发音设置').click();
+  h.w.document.querySelector('[aria-label="打开词卡自动发音"]').click();
+  assert.equal(h.api.trackCfg.pronunciation.autoPlay, true);
+  h.close();
+  assert.equal(h.w.document.getElementById('sheetTitle').textContent, title);
+  h.changes.length = 0;
   for (const label of ['字幕字号', '系统字幕字号', ...(video ? ['视频字幕布局'] : [])]) {
     h.row(label).click();
     const input = h.w.document.querySelector('.sheet input');

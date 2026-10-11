@@ -16,13 +16,14 @@ globalThis.localStorage = {
 };
 const {
   settings, initSettings, setSetting, FONT_DEFAULTS, fontSizes, setLangFontSize, resetLangFontSizes,
-  setGlobalVideo,
+  setGlobalVideo, setPronunciation,
 } = await import('../web/js/settings.js');
 const {
   trackCfg, initTrackCfg, readTrackCfg, setTrackCfg, setTrackFontSize, resetTrackFontSizes, dropTrackCfg,
   deferTrackFontSizes,
   setVideoCfg,
   resetVideoCfg,
+  setTrackPronunciation,
 } = await import('../web/js/trackcfg.js');
 const fonts = () => Object.fromEntries(Object.keys(FONT_DEFAULTS).map((key) => [key, settings[key]]));
 
@@ -30,6 +31,42 @@ beforeEach(() => {
   saved.clear();
   styles.clear();
   initSettings(() => {});
+});
+
+test('pronunciation inherits legacy defaults, stays isolated and survives unrelated audio edits', () => {
+  setPronunciation({ source: 'standard', autoPlay: true, voices: { en: 'uk' } });
+  saved.set('linguatrack.track.legacy', JSON.stringify({ read: 0 }));
+  const changes = [];
+  initTrackCfg('legacy', 'en', null, (...args) => changes.push(args));
+  assert.deepEqual(trackCfg.pronunciation, settings.pronunciation);
+  assert.notEqual(trackCfg.pronunciation.voices, settings.pronunciation.voices);
+  setTrackPronunciation({ autoPlay: false, volumeBalance: false, voices: { en: 'us' } });
+  assert.deepEqual(changes.at(-1), ['pronunciation', trackCfg.pronunciation, false]);
+  setTrackCfg('pos', 0);
+  setTrackFontSize('textSize', 32);
+  setVideoCfg({ captionSize: 28 });
+  const prefs = { ...trackCfg.pronunciation };
+  initTrackCfg('second', 'en');
+  assert.deepEqual(trackCfg.pronunciation, settings.pronunciation);
+  initTrackCfg('legacy', 'en');
+  assert.deepEqual(trackCfg.pronunciation, prefs);
+  dropTrackCfg('legacy');
+  assert.deepEqual(readTrackCfg('legacy').pronunciation, settings.pronunciation);
+});
+
+test('corrupt pronunciation archives normalize safely and storage failure still permits edits', () => {
+  saved.set('linguatrack.track.corrupt', JSON.stringify({ pronunciation: {
+    source: 'bad', autoPlay: 'false', volumeBalance: null, voices: [], speechRate: 2,
+  } }));
+  initTrackCfg('corrupt', 'en');
+  assert.deepEqual(trackCfg.pronunciation, { source: 'audio', autoPlay: false, volumeBalance: true, voices: {} });
+  const write = localStorage.setItem;
+  localStorage.setItem = () => { throw Error('storage unavailable'); };
+  try {
+    setTrackPronunciation({ source: 'standard' });
+    assert.equal(trackCfg.pronunciation.source, 'standard');
+    assert.equal(settings.pronunciation.source, 'audio');
+  } finally { localStorage.setItem = write; }
 });
 
 test('video defaults inherit per field and font/display edits do not freeze them', () => {

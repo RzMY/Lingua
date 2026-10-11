@@ -2,6 +2,7 @@ import { el, icon } from './util.js';
 import { group, sectionTitle, segRow, switchRow, navRow, buttonBar, button } from './rows.js';
 import { openSheet } from './sheet.js';
 import { settings, setPronunciation } from './settings.js';
+import { trackCfg, setTrackPronunciation } from './trackcfg.js';
 import { normalizePronunciation, speechLanguage } from './pronunciation-config.js';
 import { languageVoices, speechVoices, supportsSpeech, speechVoiceKey, createPronunciation } from './pronunciation.js';
 import { sourceLangs } from './langs.js';
@@ -21,22 +22,24 @@ const VOICE_SAMPLES = {
   de: 'Hallo! Heute ist ein schöner Tag.', es: '¡Hola! Hoy hace un día precioso.',
 };
 
-function savedVoice(code, voices) {
-  const saved = settings.pronunciation.voices[code];
+function savedVoice(code, voices, preferences) {
+  const saved = preferences.voices[code];
   // 旧版本只保存 voiceURI; 有多个匹配时迁移到唯一的第一个候选。
   return voices.find((voice) => speechVoiceKey(voice) === saved) || voices.find((voice) => voice.voiceURI === saved);
 }
 
 /** 语言列表只显示当前选择, 点入后用单选列表选择声音。 */
 export function openPronunciationSheet({ track, onBack } = {}) {
+  const get = () => track ? trackCfg.pronunciation : settings.pronunciation;
+  const set = track ? setTrackPronunciation : setPronunciation;
   const body = el('div', 'pronunciation-settings');
   const back = () => openPronunciationSheet({ track, onBack });
-  const source = segRow('默认发音来源', '', () => settings.pronunciation.source,
-    (value) => setPronunciation({ source: value }), [['audio', '音频'], ['standard', '标准']]);
-  const auto = switchRow('打开词卡自动发音', '', () => settings.pronunciation.autoPlay,
-    (value) => setPronunciation({ autoPlay: value }));
-  const balance = switchRow('音量均衡', '根据当前音频的平均响度调整标准发音音量', () => settings.pronunciation.volumeBalance,
-    (value) => setPronunciation({ volumeBalance: value }));
+  const source = segRow('默认发音来源', '', () => get().source,
+    (value) => set({ source: value }), [['audio', '音频'], ['standard', '标准']]);
+  const auto = switchRow('打开词卡自动发音', '', () => get().autoPlay,
+    (value) => set({ autoPlay: value }));
+  const balance = switchRow('音量均衡', '根据当前音频的平均响度调整标准发音音量', () => get().volumeBalance,
+    (value) => set({ volumeBalance: value }));
   body.append(group(source, auto, balance), sectionTitle('标准音色'));
   const languages = [...sourceLangs()];
   if (track && !languages.some((lang) => lang.code === track.lang)) {
@@ -44,28 +47,28 @@ export function openPronunciationSheet({ track, onBack } = {}) {
   }
   const rows = languages.map((lang) => {
     const code = speechLanguage(lang.code);
-    const row = navRow(lang.name, '', { onPick: () => openVoiceSheet(lang, back, track) });
+    const row = navRow(lang.name, '', { onPick: () => openVoiceSheet(lang, back, track, get, set) });
     row.dataset.voiceLanguage = code;
     return { row, code };
   });
   const refresh = () => {
     const voices = speechVoices();
     for (const { row, code } of rows) {
-      const voice = savedVoice(code, languageVoices(code, voices));
+      const voice = savedVoice(code, languageVoices(code, voices), get());
       row.setValue(!supportsSpeech() ? '暂不可用' : voice ? voiceName(voice) : '自动');
       row.disabled = !supportsSpeech();
     }
   };
   body.append(group(...rows.map(({ row }) => row)), buttonBar(button('恢复默认', { onPick: () => {
-    setPronunciation(normalizePronunciation()); source.refresh(); auto.refresh(); balance.refresh(); refresh();
+    set(normalizePronunciation()); source.refresh(); auto.refresh(); balance.refresh(); refresh();
   } })));
-  openSheet('发音设置', body, { onBack,
+  openSheet(track ? '发音设置 · 当前音频' : '发音设置', body, { onBack,
     onClose: () => globalThis.speechSynthesis?.removeEventListener?.('voiceschanged', refresh) });
   globalThis.speechSynthesis?.addEventListener?.('voiceschanged', refresh);
   refresh();
 }
 
-function openVoiceSheet(lang, onBack, track) {
+function openVoiceSheet(lang, onBack, track, get, set) {
   const code = speechLanguage(lang.code);
   const body = el('div');
   const sampleText = VOICE_SAMPLES[code.split('-')[0]] ||
@@ -90,10 +93,10 @@ function openVoiceSheet(lang, onBack, track) {
     } });
   const audition = (value) => {
     previewKey = value;
-    void preview.play('standard', { ...settings.pronunciation, voices: { [code]: value } });
+    void preview.play('standard', { ...get(), voices: { [code]: value } });
   };
   const choose = (choice) => {
-    setPronunciation({ voices: { ...settings.pronunciation.voices, [code]: choice.value } });
+    set({ voices: { ...get().voices, [code]: choice.value } });
     for (const item of choices) {
       const selected = item === choice;
       item.button.setAttribute('aria-checked', String(selected));
@@ -135,11 +138,11 @@ function openVoiceSheet(lang, onBack, track) {
     const focused = choices.find(({ button, listen }) => button === document.activeElement || listen === document.activeElement);
     const wasListen = focused?.listen === document.activeElement;
     const voices = languageVoices(code);
-    const selected = savedVoice(code, voices);
+    const selected = savedVoice(code, voices, get());
     const selectedKey = selected ? speechVoiceKey(selected) : '';
     voices.sort((a, b) => a.lang.localeCompare(b.lang) || a.name.localeCompare(b.name) || speechVoiceKey(a).localeCompare(speechVoiceKey(b)));
-    if (selected && settings.pronunciation.voices[code] !== selectedKey) {
-      setPronunciation({ voices: { ...settings.pronunciation.voices, [code]: selectedKey } });
+    if (selected && get().voices[code] !== selectedKey) {
+      set({ voices: { ...get().voices, [code]: selectedKey } });
     }
     preview.stop();
     choices.length = 0; list.replaceChildren();

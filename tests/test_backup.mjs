@@ -131,10 +131,11 @@ test('independent subtitle fonts survive backup restore and reject invalid sizes
   }
 });
 
-test('language and audio font settings survive backups and audio ID remapping', async () => {
+test('language fonts and audio font/pronunciation settings survive backups and audio ID remapping', async () => {
   const backup = fixture();
   const language = { fonts: { ja: { textSize: 32 }, en: { readSize: 18.5 } } };
-  const audio = { read: 0, lang: 'zh-CN', fonts: { textSize: 40, trSize: 24 } };
+  const audio = { read: 0, lang: 'zh-CN', fonts: { textSize: 40, trSize: 24 },
+    pronunciation: { source: 'standard', autoPlay: true, volumeBalance: false, voices: { en: 'uk' } } };
   backup.localStorage[GLOBAL_KEYS[1]] = JSON.stringify(language);
   backup.localStorage['linguatrack.track.lesson'] = JSON.stringify(audio);
   await seed(backup);
