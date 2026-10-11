@@ -61,6 +61,26 @@ const base = process.argv[3] || 'http://127.0.0.1:5185';
     await page.goto(base + '/player.html?track=pronunciation&debug');
     try { await page.waitForFunction(() => window.LT?.track); }
     catch (error) { console.error(await page.locator('body').innerText(), errors); throw error; }
+    if (!fixture && mode !== 'android') {
+      const levels = await page.evaluate(async () => {
+        const reference = LT.track.pronunciationLoudness;
+        await reference.ready;
+        const full = reference.volume(), media = LT.engine.audio;
+        const before = { volume: media.volume, muted: media.muted, time: media.currentTime };
+        media.volume = .5;
+        const half = reference.volume();
+        media.muted = true;
+        const muted = reference.volume();
+        media.volume = before.volume; media.muted = before.muted;
+        return { full, half, muted, moved: media.currentTime !== before.time,
+          canDecode: !!(window.OfflineAudioContext || window.webkitOfflineAudioContext) };
+      });
+      const expected = levels.canDecode ? 4000 / 32768 / Math.sqrt(2) / .1 : 1;
+      assert.ok(Math.abs(levels.full - expected) < .001, JSON.stringify(levels));
+      assert.ok(Math.abs(levels.half - expected / 2) < .001, JSON.stringify(levels));
+      assert.equal(levels.muted, 0); assert.equal(levels.moved, false);
+      console.log('Real decoded loudness:', levels);
+    }
     await page.evaluate(() => {
       window.clips = [];
       const create = document.createElement.bind(document);
@@ -131,6 +151,8 @@ const base = process.argv[3] || 'http://127.0.0.1:5185';
     await page.locator('.wc-a-main').click();
     await page.locator('#btnDisplay').click();
     await page.getByRole('button', { name: '发音设置', exact: true }).click();
+    assert.equal(await page.getByRole('button', { name: '音量均衡', exact: true }).getAttribute('aria-pressed'), 'true');
+    await page.getByRole('button', { name: '音量均衡', exact: true }).click();
     await page.getByRole('button', { name: '标准', exact: true }).click();
     await page.getByRole('button', { name: '打开词卡自动发音', exact: true }).click();
     for (const width of [320, 390, 1440]) {
@@ -162,6 +184,7 @@ const base = process.argv[3] || 'http://127.0.0.1:5185';
     await page.getByRole('button', { name: '发音设置', exact: true }).click();
     assert.equal(await page.getByRole('button', { name: '标准', exact: true }).getAttribute('aria-pressed'), 'true');
     assert.equal(await page.getByRole('button', { name: '打开词卡自动发音', exact: true }).getAttribute('aria-pressed'), 'true');
+    assert.equal(await page.getByRole('button', { name: '音量均衡', exact: true }).getAttribute('aria-pressed'), 'false');
     assert.deepEqual(errors, []);
     console.log('Pronunciation browser checks passed:', shots);
   } finally { await browser.close(); }

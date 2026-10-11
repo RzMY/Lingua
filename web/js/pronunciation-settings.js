@@ -35,7 +35,9 @@ export function openPronunciationSheet({ track, onBack } = {}) {
     (value) => setPronunciation({ source: value }), [['audio', '音频'], ['standard', '标准']]);
   const auto = switchRow('打开词卡自动发音', '', () => settings.pronunciation.autoPlay,
     (value) => setPronunciation({ autoPlay: value }));
-  body.append(group(source, auto), sectionTitle('标准音色'));
+  const balance = switchRow('音量均衡', '根据当前音频的平均响度调整标准发音音量', () => settings.pronunciation.volumeBalance,
+    (value) => setPronunciation({ volumeBalance: value }));
+  body.append(group(source, auto, balance), sectionTitle('标准音色'));
   const languages = [...sourceLangs()];
   if (track && !languages.some((lang) => lang.code === track.lang)) {
     languages.push({ code: track.lang, name: track.langName || track.lang });
@@ -55,7 +57,7 @@ export function openPronunciationSheet({ track, onBack } = {}) {
     }
   };
   body.append(group(...rows.map(({ row }) => row)), buttonBar(button('恢复默认', { onPick: () => {
-    setPronunciation(normalizePronunciation()); source.refresh(); auto.refresh(); refresh();
+    setPronunciation(normalizePronunciation()); source.refresh(); auto.refresh(); balance.refresh(); refresh();
   } })));
   openSheet('发音设置', body, { onBack,
     onClose: () => globalThis.speechSynthesis?.removeEventListener?.('voiceschanged', refresh) });
@@ -77,7 +79,7 @@ function openVoiceSheet(lang, onBack, track) {
   status.setAttribute('role', 'status'); status.hidden = true;
   const choices = [];
   let previewKey = '';
-  const preview = createPronunciation({ track: { lang: code }, word: { text: sampleText },
+  const preview = createPronunciation({ track: { ...track, lang: code }, word: { text: sampleText },
     onState: ({ state, message }) => {
       for (const choice of choices) {
         const active = choice.value === previewKey && (state === 'loading' || state === 'playing');
@@ -88,7 +90,7 @@ function openVoiceSheet(lang, onBack, track) {
     } });
   const audition = (value) => {
     previewKey = value;
-    void preview.play('standard', { voices: { [code]: value } });
+    void preview.play('standard', { ...settings.pronunciation, voices: { [code]: value } });
   };
   const choose = (choice) => {
     setPronunciation({ voices: { ...settings.pronunciation.voices, [code]: choice.value } });

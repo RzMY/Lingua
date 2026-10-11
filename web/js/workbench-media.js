@@ -205,8 +205,8 @@ function segmentDecodeError(message) {
   return Object.assign(new Error(message), { code: 'SEGMENT_DECODE' });
 }
 
-async function convertAudio(sourceAudio, { signal, onStage }) {
-  const file = sourceAudio.file;
+/** Shared bounded decode windows for ASR and background loudness measurement. */
+export async function audioDecodePlan(file, { signal, onStage = () => {} } = {}) {
   const head = new Uint8Array(await file.slice(0, 12).arrayBuffer());
   let plan;
   if (String.fromCharCode(...head.subarray(4, 8)) === 'ftyp') {
@@ -227,6 +227,12 @@ async function convertAudio(sourceAudio, { signal, onStage }) {
       }
     } };
   }
+  return plan;
+}
+
+async function convertAudio(sourceAudio, { signal, onStage }) {
+  const file = sourceAudio.file;
+  const plan = await audioDecodePlan(file, { signal, onStage });
   // Other containers still use the browser decoder, directly at the target sample rate.
   if (!plan) {
     const decoded = await decodeMedia(file, { signal, onStage, sampleRate: SAMPLE_RATE });

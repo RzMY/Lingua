@@ -83,7 +83,9 @@ export function createPronunciation({ track, sentence, word, getAudioBlob, onSta
         const voice = selectSpeechVoice(lang, prefs.voices[lang]);
         utterance.lang = voice?.lang || lang;
         if (voice) utterance.voice = voice;
-        utterance.rate = utterance.pitch = utterance.volume = 1;
+        utterance.rate = utterance.pitch = 1;
+        // Synchronous cached measurement keeps speak() inside the user gesture.
+        utterance.volume = prefs.volumeBalance ? (track.pronunciationLoudness?.volume() ?? 1) : 1;
         const timeout = setTimeout(() => finish('语音合成未响应，请重试或更换声音'), 20000);
         utterance.onstart = () => { if (current()) publish('playing', source); };
         utterance.onend = () => finish();

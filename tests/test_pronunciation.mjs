@@ -82,6 +82,9 @@ test('preferences bound corrupt input and match saved voices only within the sou
   const prefs = normalizePronunciation({ source: 'bad', autoPlay: 'false', before: 9999, volume: 2,
     pitch: null, speechRate: '0.71', audioRate: {}, voices: { EN_us: 'us', '__proto__': 'bad', ja: [] } });
   assert.equal(prefs.source, 'audio'); assert.equal(prefs.autoPlay, false);
+  assert.equal(prefs.volumeBalance, true, 'older and corrupt settings default to enabled');
+  for (const value of [false, 0]) assert.equal(normalizePronunciation({ volumeBalance: value }).volumeBalance, false);
+  for (const value of [true, 1, null, 'false', {}]) assert.equal(normalizePronunciation({ volumeBalance: value }).volumeBalance, true);
   for (const key of ['before', 'after', 'volume', 'pitch', 'speechRate', 'audioRate']) assert.equal(key in prefs, false);
   assert.deepEqual(prefs.voices, { 'en-us': 'us' });
   const voices = [{ lang: 'en-US', voiceURI: 'us' }, { lang: 'en-GB', voiceURI: 'uk' }, { lang: 'ja', voiceURI: 'ja' }];
@@ -286,4 +289,40 @@ test('late load pause and pre-seek clock events cannot stop a clip before positi
   h.fire(audio, 'loadedmetadata'); h.fire(audio, 'pause'); h.fire(audio, 'seeked');
   assert.equal(h.session.active, 'audio'); assert.equal(h.events.at(-1).state, 'playing');
   await playing;
+});
+
+test('balanced speech reads the current cached level synchronously and bypasses it when disabled', async (t) => {
+  const h = harness(t);
+  let volume = .24;
+  const session = h.api.createPronunciation({ track: { ...track, pronunciationLoudness: { volume: () => volume } }, word });
+  t.after(() => session.dispose());
+  const pending = session.play('standard');
+  assert.equal(h.utterances.at(-1).volume, .24, 'speech remains in the user gesture');
+  await pending;
+  volume = 0;
+  await session.play('standard');
+  assert.equal(h.utterances.at(-1).volume, 0);
+  await session.play('standard', { volumeBalance: false });
+  assert.equal(h.utterances.at(-1).volume, 1);
+});
+
+test('volume balance persists, resets to enabled and applies to voice previews', (t) => {
+  const h = harness(t);
+  const currentTrack = { ...track, pronunciationLoudness: { volume: () => .3 } };
+  h.api.openPronunciationSheet({ track: currentTrack });
+  const toggle = () => h.w.document.querySelector('[aria-label="音量均衡"]');
+  assert.equal(toggle().getAttribute('aria-pressed'), 'true');
+  toggle().click(); h.api.initSettings();
+  assert.equal(h.api.settings.pronunciation.volumeBalance, false);
+  h.w.document.querySelector('[data-voice-language="en"]').click();
+  h.w.document.querySelector('.voice-listen').click();
+  assert.equal(h.utterances.at(-1).volume, 1);
+  h.api.closeSheet();
+  [...h.w.document.querySelectorAll('button')].find((b) => b.textContent === '恢复默认').click();
+  assert.equal(toggle().getAttribute('aria-pressed'), 'true');
+  h.api.initSettings();
+  assert.equal(h.api.settings.pronunciation.volumeBalance, true);
+  h.w.document.querySelector('[data-voice-language="en"]').click();
+  h.w.document.querySelector('.voice-listen').click();
+  assert.equal(h.utterances.at(-1).volume, .3);
 });

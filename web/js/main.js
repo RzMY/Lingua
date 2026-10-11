@@ -38,13 +38,14 @@ import { createExplain, openSpeedSheet, openTrackSheet } from './ui.js';
 import { closeSheet, sheetOpen } from './sheet.js';
 import { analyze } from './api.js';
 import { errorMessage } from './errors.js';
-import { audioBlob, audioUrl, flushPositions, getTrack, patchTrack, saveAnalysis, setDuration, setPosition,
+import { audioBlob, flushPositions, getTrack, patchTrack, saveAnalysis, setDuration, setPosition,
   stagePosition, trackData, transcriptBlob, savePreparedTranscript, SUB_EXT, SUB_RE } from './library.js';
 import { plainTrack } from './subtitles.js';
 import { createTranslator } from './translate.js';
 import { closeWordCard, isCardOpen, openWordCard, stopWordPronunciation } from './card.js';
 import { chatOpen, closeChat, openChat } from './chat.js';
 import { button, buttonBar, group, segRow, switchRow } from './rows.js';
+import { createPronunciationLoudness } from './pronunciation-loudness.js';
 
 const FOLLOW_ALIGN = 0.30;
 const LONG_PRESS = 460;                        // ms: 长按打开逐词拆解
@@ -79,6 +80,7 @@ let translator = null, sweepTimer = 0;
 let record = null;                 // 当前音频的库记录 (library.js)
 let objUrl = '';                   // 当前 <audio> 用的 blob URL, 换曲要 revoke
 let pronunciationBlob = null;      // 原生播放同一份 Blob, 保持点词播放处于用户手势内
+let pronunciationLoudness = null;
 let videoReady = false;
 let videoPlayer = null;
 let audioPip = null;
@@ -346,9 +348,16 @@ function showSetup(onBack = null) {
 async function attachAudio(id) {
   dom.btnPlay.disabled = true;
   pronunciationBlob = null;
+  pronunciationLoudness?.dispose();
+  pronunciationLoudness = null;
+  if (track) track.pronunciationLoudness = null;
+  const blob = await audioBlob(id);
+  if (blob) {
+    pronunciationLoudness = createPronunciationLoudness(blob, audio);
+    if (track) track.pronunciationLoudness = pronunciationLoudness;
+  }
   if (audio.nativeAudio) {
     showState('正在加载…');
-    const blob = await audioBlob(id);
     if (blob) {
       await audio.attach(blob, record);
       pronunciationBlob = blob;
@@ -361,7 +370,7 @@ async function attachAudio(id) {
     clearState();
     updateFileState(); return;
   }
-  const next = await audioUrl(id);
+  const next = blob ? URL.createObjectURL(blob) : '';
   if (objUrl) URL.revokeObjectURL(objUrl);
   objUrl = next;
   if (!next) {
@@ -506,6 +515,7 @@ async function openTrack() {
 function apply(next) {
   player?.overlays.reset();
   track = next;
+  track.pronunciationLoudness = pronunciationLoudness;
   document.documentElement.dataset.subtitleMode = next.raw.subtitleMode || 'analyzed';
   const title = (record && record.title) || next.title;
   dom.trackTitle.textContent = title;
