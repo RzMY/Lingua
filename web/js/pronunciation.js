@@ -1,5 +1,13 @@
 /** 词卡的独立片段播放器与浏览器 TTS。不会 seek 主播放器或写入学习进度。 */
 import { normalizePronunciation, speechLanguage } from './pronunciation-config.js';
+import { settings } from './settings.js';
+import { isIOS, randomId } from './util.js';
+import { nativeApp } from './native.js';
+
+// WebKit cancellation reaches the platform synthesizer asynchronously. Share
+// the recovery window across cards/previews, which all use the same synthesizer.
+const speechRestartAt = new WeakMap();
+const IOS_SPEECH_RESTART_MS = 150;
 
 export function wordAudioRange(sentence, word, duration) {
   if (!sentence?.wordTiming || word?.pos === 'punct' ||
@@ -12,7 +20,14 @@ export function wordAudioRange(sentence, word, duration) {
 }
 
 export function speechVoices(synth = globalThis.speechSynthesis) {
+  if (nativeApp()?.speechAudio) return nativeApp().speechVoices || [];
   try { return synth?.getVoices() || []; } catch { return []; }
+}
+
+export function storedVoiceURI(key) {
+  if (typeof key !== 'string' || !key.startsWith('voice:')) return key;
+  try { const identity = JSON.parse(key.slice(6)); return Array.isArray(identity) ? identity[0] : key; }
+  catch { return key; }
 }
 
 /** voiceURI 并非所有平台上都唯一; 保存完整身份, 不用显示名称或数组下标匹配。 */
@@ -34,13 +49,13 @@ export function languageVoices(lang, voices = speechVoices()) {
 export function selectSpeechVoice(lang, uri, voices = speechVoices()) {
   const matches = languageVoices(lang, voices);
   return matches.find((voice) => speechVoiceKey(voice) === uri) ||
-    matches.find((voice) => voice.voiceURI === uri) ||
+    matches.find((voice) => voice.voiceURI === storedVoiceURI(uri)) ||
     matches.find((voice) => speechLanguage(voice.lang) === speechLanguage(lang)) ||
     matches.find((voice) => voice.default) || matches[0] || null;
 }
 
 export function supportsSpeech() {
-  return !!globalThis.speechSynthesis && typeof globalThis.SpeechSynthesisUtterance === 'function';
+  return !!nativeApp()?.speechAudio || (!!globalThis.speechSynthesis && typeof globalThis.SpeechSynthesisUtterance === 'function');
 }
 
 /** 一张卡一个会话; stop/dispose 使所有迟到的媒体事件、Blob 读取与 play() 失效。 */
@@ -77,6 +92,31 @@ export function createPronunciation({ track, sentence, word, getAudioBlob, onSta
     publish('loading', source);
     try {
       if (source === 'standard') {
+        const nativeSpeech = nativeApp()?.speechAudio;
+        if (nativeSpeech) {
+          const id = randomId(), lang = speechLanguage(track.lang);
+          const voice = selectSpeechVoice(lang, prefs.voices[lang]);
+          const volume = prefs.volumeBalance
+            ? (track.pronunciationLoudness?.volume() ?? 1) * settings.ttsCalibration : 1;
+          let completed = false;
+          const state = ({ detail }) => {
+            if (current() && detail?.id === id && detail.state === 'playing') publish('playing', source);
+          };
+          window.addEventListener('native-speech-state', state);
+          const timeout = setTimeout(() => finish('原生发音未响应，请重试'), 50000);
+          cleanup = () => {
+            clearTimeout(timeout); window.removeEventListener('native-speech-state', state);
+            if (!completed) void nativeSpeech.cancel({ id }).catch(() => {});
+          };
+          try {
+            await nativeSpeech.speak({ id, text: word.text, lang: voice?.lang || lang, voiceURI: voice?.voiceURI || '', volume });
+            completed = true; finish();
+          } catch (error) {
+            completed = true;
+            finish(error?.code === 'SPEECH_CANCELLED' ? '' : (error?.message || '原生发音失败，请重试或更换声音'));
+          }
+          return;
+        }
         const synth = globalThis.speechSynthesis;
         const utterance = new globalThis.SpeechSynthesisUtterance(word.text);
         const lang = speechLanguage(track.lang);
@@ -84,19 +124,47 @@ export function createPronunciation({ track, sentence, word, getAudioBlob, onSta
         utterance.lang = voice?.lang || lang;
         if (voice) utterance.voice = voice;
         utterance.rate = utterance.pitch = 1;
-        // Synchronous cached measurement keeps speak() inside the user gesture.
-        utterance.volume = prefs.volumeBalance ? (track.pronunciationLoudness?.volume() ?? 1) : 1;
-        const timeout = setTimeout(() => finish('语音合成未响应，请重试或更换声音'), 20000);
+        let timeout = 0, restartTimer = 0, submitted = false, completed = false;
         utterance.onstart = () => { if (current()) publish('playing', source); };
-        utterance.onend = () => finish();
-        utterance.onerror = (event) => finish(event.error === 'not-allowed'
-          ? '浏览器阻止了自动发音，请点击「标准」重试' : '标准发音失败，请检查系统语音包或更换声音');
-        cleanup = () => {
-          clearTimeout(timeout);
-          utterance.onstart = utterance.onend = utterance.onerror = null;
-          synth.cancel();
+        utterance.onend = () => {
+          if (!current()) return;
+          completed = true;
+          finish();
         };
-        synth.speak(utterance);
+        utterance.onerror = (event) => {
+          if (!current()) return;
+          completed = true;
+          finish(event.error === 'not-allowed'
+            ? '浏览器阻止了自动发音，请点击「标准」重试' : '标准发音失败，请检查系统语音包或更换声音');
+        };
+        cleanup = () => {
+          clearTimeout(timeout); clearTimeout(restartTimer);
+          utterance.onstart = utterance.onend = utterance.onerror = null;
+          // Natural end/error already completed the native utterance. Cancelling
+          // again needlessly tears down iOS speech/audio state before the next tap.
+          if (submitted && !completed) {
+            if (isIOS()) speechRestartAt.set(synth, performance.now() + IOS_SPEECH_RESTART_MS);
+            synth.cancel();
+          }
+        };
+        const speak = () => {
+          if (!current()) return;
+          try {
+            // Re-read the current calibration/measurement at actual submission,
+            // including retries delayed until the preceding native cancel settles.
+            utterance.volume = prefs.volumeBalance
+              ? (track.pronunciationLoudness?.volume() ?? 1) * settings.ttsCalibration : 1;
+            timeout = setTimeout(() => finish('语音合成未响应，请重试或更换声音'), 20000);
+            submitted = true;
+            synth.speak(utterance);
+          }
+          catch (error) { finish(error?.message || '标准发音失败，请重试'); }
+        };
+        const delay = isIOS() ? Math.max(0, (speechRestartAt.get(synth) || 0) - performance.now()) : 0;
+        // The first speak remains synchronous in the user gesture. Only an
+        // already-started iOS session needs this cancellation recovery delay.
+        if (delay) restartTimer = setTimeout(speak, delay);
+        else speak();
         return;
       }
 

@@ -123,7 +123,7 @@ test('stopping before metadata or switching sources cancels all late playback', 
   const utterance = h.utterances[0];
   assert.equal(utterance.text, 'Hello', 'speak the surface word, never its IPA');
   assert.equal(utterance.lang, 'en-GB'); assert.equal(utterance.voice.voiceURI, 'uk');
-  assert.equal(utterance.rate, 1); assert.equal(utterance.pitch, 1); assert.equal(utterance.volume, 1);
+  assert.equal(utterance.rate, 1); assert.equal(utterance.pitch, 1); assert.equal(utterance.volume, .5);
   const lateStart = utterance.onstart;
   h.session.stop(); lateStart();
   assert.equal(h.events.at(-1).state, 'idle'); assert.equal(h.cancels, 1); assert.equal(h.timers.size, 0);
@@ -299,7 +299,7 @@ test('balanced speech reads the current cached level synchronously and bypasses 
   const session = h.api.createPronunciation({ track: { ...track, pronunciationLoudness: { volume: () => volume } }, word });
   t.after(() => session.dispose());
   const pending = session.play('standard');
-  assert.equal(h.utterances.at(-1).volume, .24, 'speech remains in the user gesture');
+  assert.equal(h.utterances.at(-1).volume, .12, 'calibrated speech remains in the user gesture');
   await pending;
   volume = 0;
   await session.play('standard');
@@ -327,7 +327,85 @@ test('volume balance persists, resets to enabled and applies to voice previews',
   assert.equal(h.api.trackCfg.pronunciation.volumeBalance, true);
   h.w.document.querySelector('[data-voice-language="en"]').click();
   h.w.document.querySelector('.voice-listen').click();
-  assert.equal(h.utterances.at(-1).volume, .3);
+  assert.equal(h.utterances.at(-1).volume, .15);
+});
+
+test('global calibration compares exclusive sample/TTS playback, saves and cleans up on return', async (t) => {
+  const h = harness(t);
+  const find = (label) => h.w.document.querySelector(`[aria-label="${label}"]`);
+  h.api.openPronunciationSheet({ track });
+  assert.equal([...h.w.document.querySelectorAll('button')].some((b) => b.textContent.includes('音量校准')), false);
+  h.api.closeSheet();
+  h.api.setPronunciation({ voices: { en: 'uk' }, volumeBalance: false });
+  const prefs = JSON.stringify(h.api.trackCfg.pronunciation);
+  h.api.openPronunciationSheet();
+  [...h.w.document.querySelectorAll('button')].find((b) => b.textContent.includes('音量校准')).click();
+  assert.equal(h.w.document.getElementById('sheetTitle').textContent, '音量校准');
+  find('播放参考音频').click();
+  const reference = h.media.at(-1);
+  assert.match(reference.src, /assets\/pronunciation-calibration.wav$/);
+  assert.equal(reference.volume, 1); assert.equal(reference.paused, false);
+  h.fire(reference, 'loadedmetadata'); h.fire(reference, 'seeked');
+  assert.equal(reference.currentTime, 0);
+  find('试听标准发音').click();
+  assert.equal(reference.paused, true); assert.equal(reference.isConnected, false);
+  assert.equal(h.utterances.at(-1).text, 'Hello! It is a lovely day.');
+  assert.equal(h.utterances.at(-1).voice.voiceURI, 'uk');
+  assert.equal(h.utterances.at(-1).volume, .5, 'calibration previews work while balance defaults off');
+  find('减小TTS 音量').click();
+  assert.equal(h.api.settings.ttsCalibration, .45);
+  assert.equal(h.cancels, 1, 'editing stops old speech so replay uses the new gain');
+  h.api.initSettings();
+  find('试听标准发音').click();
+  assert.equal(h.utterances.at(-1).volume, .45);
+  find('播放参考音频').click();
+  assert.equal(h.cancels, 2);
+  assert.equal(h.media.at(-1).volume, 1, 'calibration never attenuates the fixed reference');
+  h.api.closeSheet();
+  assert.equal(h.media.at(-1).isConnected, false);
+  assert.equal(h.timers.size, 0);
+  assert.equal(h.w.document.getElementById('sheetTitle').textContent, '发音设置');
+  assert.equal(JSON.stringify(h.api.trackCfg.pronunciation), prefs);
+});
+
+test('global calibration affects existing audio immediately and local resets preserve it', async (t) => {
+  const h = harness(t);
+  const currentTrack = { ...track, pronunciationLoudness: { volume: () => .8 } };
+  const session = h.api.createPronunciation({ track: currentTrack, word });
+  t.after(() => session.dispose());
+  h.api.setTrackPronunciation({ voices: { en: 'uk' } });
+  h.api.setSetting('ttsCalibration', .25);
+  await session.play('standard', h.api.trackCfg.pronunciation);
+  assert.equal(h.utterances.at(-1).volume, .2);
+  h.api.openPronunciationSheet({ track: currentTrack });
+  [...h.w.document.querySelectorAll('button')].find((b) => b.textContent === '恢复默认').click();
+  assert.equal(h.api.settings.ttsCalibration, .25);
+  h.api.closeSheet(); h.api.openPronunciationSheet();
+  [...h.w.document.querySelectorAll('button')].find((b) => b.textContent === '恢复默认').click();
+  await session.play('standard', h.api.trackCfg.pronunciation);
+  assert.equal(h.utterances.at(-1).volume, .4);
+  assert.equal(h.api.settings.ttsCalibration, .5);
+});
+
+test('calibration reset, unsupported speech, blocked reference and page exit remain usable', async (t) => {
+  const h = harness(t, false);
+  h.api.setSetting('ttsCalibration', .8);
+  h.api.openPronunciationSheet();
+  [...h.w.document.querySelectorAll('button')].find((b) => b.textContent.includes('音量校准')).click();
+  const reference = h.w.document.querySelector('[aria-label="播放参考音频"]');
+  assert.equal(h.w.document.querySelector('[aria-label="试听标准发音"]').disabled, true);
+  assert.match(h.w.document.querySelector('[role="status"]').textContent, /不支持/);
+  [...h.w.document.querySelectorAll('button')].find((b) => b.textContent === '恢复默认').click();
+  assert.equal(h.api.settings.ttsCalibration, .5);
+  assert.equal(h.w.document.querySelector('input').value, '50');
+  const play = h.w.HTMLMediaElement.prototype.play;
+  h.w.HTMLMediaElement.prototype.play = () => Promise.reject(Object.assign(Error(), { name: 'NotAllowedError' }));
+  reference.click(); await flush();
+  assert.match(h.w.document.querySelector('[role="status"]').textContent, /再次点击/);
+  h.w.HTMLMediaElement.prototype.play = play;
+  reference.click(); h.fire(h.w, 'pagehide');
+  assert.equal(h.media.at(-1).isConnected, false);
+  assert.equal(h.timers.size, 0);
 });
 
 
@@ -388,4 +466,173 @@ test('track voice migration and reset never modify global defaults or another au
   assert.equal(h.api.trackCfg.pronunciation.voices.en, undefined);
   assert.equal(h.w.localStorage.getItem('linguatrack.settings.v1'), globalBefore);
   assert.equal(h.w.localStorage.getItem('linguatrack.track.other'), otherBefore);
+});
+
+function iosHarness(t, ipad = false) {
+  const h = harness(t);
+  Object.defineProperty(h.w.navigator, 'platform', { value: ipad ? 'MacIntel' : 'iPhone' });
+  Object.defineProperty(h.w.navigator, 'userAgent', { value: ipad ? 'Macintosh' : 'iPhone OS 18_7_2' });
+  Object.defineProperty(h.w.navigator, 'maxTouchPoints', { value: 5 });
+  let now = 0;
+  h.w.performance.now = () => now;
+  h.settleCancel = () => {
+    now += 150;
+    for (const [id, timer] of [...h.timers]) {
+      if (timer.delay <= 150) { h.timers.delete(id); timer.fn(); }
+    }
+  };
+  return h;
+}
+
+test('iOS natural completion keeps calibrated volume for repeated speech without cancelling the finished engine', async (t) => {
+  const h = iosHarness(t);
+  h.api.setSetting('ttsCalibration', .3);
+  const currentTrack = { ...track, pronunciationLoudness: { volume: () => .4 } };
+  for (let card = 0; card < 3; card++) {
+    const session = h.api.createPronunciation({ track: currentTrack, word });
+    for (let replay = 0; replay < 3; replay++) {
+      const count = h.utterances.length;
+      void session.play('standard');
+      assert.equal(h.utterances.length, count + 1, 'finished speech can restart in the tap');
+      const utterance = h.utterances.at(-1);
+      assert.equal(utterance.volume, .12);
+      utterance.onstart(); utterance.onend();
+      assert.equal(session.active, '');
+      assert.equal(h.cancels, 0, 'end must not send an unnecessary native cancel');
+      assert.equal(h.timers.size, 0);
+    }
+    session.dispose();
+    assert.equal(h.cancels, 0, 'disposing a finished card leaves the engine idle');
+  }
+});
+
+test('iOS and iPadOS rapid replay wait for cancellation and only the latest request is spoken', async (t) => {
+  for (const ipad of [false, true]) {
+    const h = iosHarness(t, ipad);
+    await h.session.play('standard');
+    const lateStart = h.utterances[0].onstart, lateEnd = h.utterances[0].onend;
+    const lateError = h.utterances[0].onerror;
+    for (let tap = 0; tap < 5; tap++) await h.session.play('standard');
+    assert.equal(h.utterances.length, 1, 'no speak is submitted in the native cancel window');
+    assert.equal(h.cancels, 1, 'pending replays are discarded without cancelling the idle engine');
+    lateStart(); lateEnd(); lateError({ error: 'interrupted' });
+    assert.equal(h.session.active, 'standard');
+    h.api.setSetting('ttsCalibration', .2);
+    h.settleCancel();
+    assert.equal(h.utterances.length, 2);
+    assert.equal(h.utterances[1].volume, .2, 'the submitted replay uses the latest global calibration');
+    h.utterances[1].onend();
+    assert.equal(h.cancels, 1);
+    assert.equal(h.timers.size, 0);
+  }
+});
+
+test('iOS cancellation recovery crosses cards and pending speech cannot survive page exit', async (t) => {
+  const h = iosHarness(t);
+  await h.session.play('standard');
+  h.session.dispose();
+  const next = h.api.createPronunciation({ track, word: { text: 'world' } });
+  t.after(() => next.dispose());
+  await next.play('standard');
+  assert.equal(h.utterances.length, 1);
+  const lateReplay = [...h.timers.values()].find((timer) => timer.delay <= 150).fn;
+  h.fire(h.w, 'pagehide');
+  h.settleCancel(); lateReplay();
+  assert.equal(h.utterances.length, 1);
+  assert.equal(h.cancels, 1);
+  assert.equal(h.timers.size, 0);
+  await next.play('standard', { volumeBalance: false });
+  assert.equal(h.utterances.at(-1).text, 'world');
+  assert.equal(h.utterances.at(-1).volume, 1);
+});
+
+test('speech errors finish without another cancel; a delayed speak exception releases its timers', async (t) => {
+  const h = iosHarness(t);
+  await h.session.play('standard');
+  h.utterances[0].onerror({ error: 'synthesis-failed' });
+  assert.equal(h.events.at(-1).state, 'error');
+  assert.equal(h.cancels, 0); assert.equal(h.timers.size, 0);
+  await h.session.play('standard');
+  await h.session.play('standard');
+  h.w.speechSynthesis.speak = () => { throw Error('engine failed'); };
+  h.settleCancel();
+  assert.equal(h.events.at(-1).state, 'error');
+  assert.equal(h.timers.size, 0);
+});
+
+function nativeSpeechHarness(t) {
+  const h = iosHarness(t), calls = [], cancelled = [], pending = new Map();
+  const voices = [{ voiceURI: 'uk', name: 'Native British English', lang: 'en-GB', localService: true }];
+  h.w.LinguaNative = { platform: 'ios', speechVoices: voices, speechAudio: {
+    speak: (call) => { calls.push(call); return new Promise((resolve, reject) => pending.set(call.id, { resolve, reject })); },
+    cancel: async ({ id }) => { cancelled.push(id); pending.get(id)?.reject(Object.assign(Error('cancelled'), { code: 'SPEECH_CANCELLED' })); },
+  } };
+  return { ...h, calls, cancelled, pending, voices,
+    nativeEvent(id) { h.w.dispatchEvent(new h.w.CustomEvent('native-speech-state', { detail: { id, state: 'playing' } })); } };
+}
+
+test('installed iOS repeats native PCM speech with live calibration and preserves the saved system voice', async (t) => {
+  const h = nativeSpeechHarness(t);
+  const oldVoice = h.api.speechVoiceKey({ voiceURI: 'uk', lang: 'en-GB', name: 'Old WebKit name', localService: true });
+  for (const gain of [.5, .5, .1, .8]) {
+    h.api.setSetting('ttsCalibration', gain);
+    const play = h.session.play('standard', { voices: { en: oldVoice } });
+    const call = h.calls.at(-1);
+    assert.equal(call.voiceURI, 'uk'); assert.equal(call.volume, gain);
+    assert.equal(call.text, word.text); assert.equal(call.lang, 'en-GB');
+    assert.equal(h.utterances.length, 0, 'native playback never enters Web Speech');
+    h.nativeEvent(call.id); assert.equal(h.events.at(-1).state, 'playing');
+    h.pending.get(call.id).resolve(); await play;
+    assert.equal(h.session.active, ''); assert.equal(h.timers.size, 0);
+  }
+  assert.equal(new Set(h.calls.map((call) => call.id)).size, 4);
+  assert.equal(h.cancelled.length, 0);
+  delete h.w.SpeechSynthesisUtterance;
+  assert.equal(h.api.supportsSpeech(), true);
+});
+
+test('native rapid replay cancels only the previous id; late results and page exit cannot restart it', async (t) => {
+  const h = nativeSpeechHarness(t);
+  const first = h.session.play('standard'), id1 = h.calls[0].id;
+  const next = h.session.play('standard'), id2 = h.calls[1].id;
+  assert.deepEqual(h.cancelled, [id1]);
+  h.nativeEvent(id1); await first;
+  assert.equal(h.session.active, 'standard'); assert.equal(h.events.at(-1).state, 'loading');
+  h.nativeEvent(id2); assert.equal(h.events.at(-1).state, 'playing');
+  h.fire(h.w, 'pagehide'); await next;
+  assert.deepEqual(h.cancelled, [id1, id2]);
+  h.nativeEvent(id2);
+  assert.equal(h.session.active, ''); assert.equal(h.timers.size, 0);
+});
+
+test('native PCM errors never fall back to the broken Web Speech volume path', async (t) => {
+  const h = nativeSpeechHarness(t);
+  const play = h.session.play('standard', { volumeBalance: false });
+  const call = h.calls[0]; assert.equal(call.volume, 1);
+  h.pending.get(call.id).reject(Error('音色不可用')); await play;
+  assert.equal(h.events.at(-1).message, '音色不可用'); assert.equal(h.utterances.length, 0);
+  assert.equal(h.timers.size, 0);
+  const stalled = h.session.play('standard');
+  const watchdog = [...h.timers.values()].find((timer) => timer.delay === 50000);
+  watchdog.fn(); await stalled;
+  assert.equal(h.events.at(-1).state, 'error'); assert.equal(h.cancelled.length, 1);
+});
+
+test('native calibration and voice previews use system voices and advertise the installed fix', async (t) => {
+  const h = nativeSpeechHarness(t);
+  h.api.openPronunciationSheet();
+  h.w.document.querySelector('[data-voice-language="en"]').click();
+  const radios = [...h.w.document.querySelectorAll('[role="radio"]')];
+  assert.equal(radios.length, 2, 'automatic plus the native voice, not the browser catalog');
+  radios[1].click();
+  assert.equal(h.calls.at(-1).voiceURI, 'uk');
+  h.api.closeSheet(); await flush();
+  [...h.w.document.querySelectorAll('button')].find((b) => b.textContent.includes('音量校准')).click();
+  assert.match(h.w.document.querySelector('.pronunciation-calibration').textContent, /原生系统发音/);
+  h.api.setSetting('ttsCalibration', .1);
+  h.w.document.querySelector('[aria-label="试听标准发音"]').click();
+  assert.equal(h.calls.at(-1).volume, .1);
+  assert.equal(h.utterances.length, 0);
+  h.api.closeSheet(); await flush();
+  assert.equal(h.cancelled.length, 2);
 });

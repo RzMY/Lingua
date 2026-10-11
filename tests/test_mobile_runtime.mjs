@@ -29,7 +29,8 @@ async function harness(saved = {}, options = {}) {
   window.fetch = async () => ({ json: async () => ({ version: 'a'.repeat(64) }) });
   window.adapters = {
     Capacitor: { isNativePlatform: () => true, getPlatform: () => options.platform || 'ios',
-      isPluginAvailable: (name) => (name === 'CaptionPip' && !!options.captionPip) || (name === 'AudioPlayer' && !!options.audioPlayer) },
+      isPluginAvailable: (name) => (name === 'CaptionPip' && !!options.captionPip) || (name === 'AudioPlayer' && !!options.audioPlayer)
+        || (name === 'SpeechAudio' && !!options.speechAudio) },
     CapacitorHttp: { get: async () => { calls.push('network'); if (options.response) return options.response(); throw Error('offline'); } },
     SystemBars: {
       hide: async (options) => { systemBars.push({ action: 'hide', ...options }); },
@@ -37,6 +38,7 @@ async function harness(saved = {}, options = {}) {
     },
     SystemBarType: { NavigationBar: 'NavigationBar' },
     registerPlugin: (name) => name === 'AudioPlayer' && options.audioPlayer ? options.audioPlayer
+      : name === 'SpeechAudio' && options.speechAudio ? options.speechAudio
       : name === 'CaptionPip' && options.captionPip ? options.captionPip : ({ openDevelopment: async ({ url }) => { calls.push(['development', url]); },
       setPresentation: async (value) => { presentations.push({ ...value }); }, addListener: async () => {} }),
     Preferences: { get: async ({ key }) => ({ value: values.get(key) ?? null }),
@@ -86,6 +88,28 @@ test('video audio is enabled only by binaries supporting the extended native API
     t.after(h.close);
     assert.equal(h.window.LinguaNative.nativeVideoAudio, supported);
   }
+});
+
+test('PCM speech is exposed only on supporting iOS binaries and forwards its own events', async (t) => {
+  for (const platform of ['ios', 'android']) {
+    for (const supported of [false, true]) {
+      let listener;
+      const bridge = { capabilities: async () => ({ pcmVolume: supported, voices: [{ voiceURI: 'system-en', lang: 'en-US' }] }),
+        addListener: async (name, callback) => { assert.equal(name, 'stateChanged'); listener = callback; } };
+      const h = await harness({}, { platform, speechAudio: bridge }); t.after(h.close);
+      const expected = platform === 'ios' && supported;
+      assert.equal(!!h.window.LinguaNative.speechAudio, expected);
+      assert.equal(h.window.LinguaNative.speechVoices.length, expected ? 1 : 0);
+      if (expected) {
+        let detail;
+        h.window.addEventListener('native-speech-state', (event) => { detail = event.detail; });
+        listener({ id: 'utterance', state: 'playing' });
+        assert.equal(detail.id, 'utterance');
+      }
+    }
+  }
+  const old = await harness({}, { speechAudio: { capabilities: async () => { throw Error('unavailable'); } } }); t.after(old.close);
+  assert.equal(old.window.LinguaNative.speechAudio, null);
 });
 
 test('caption windows are exposed only by mobile binaries reporting native support', async (t) => {

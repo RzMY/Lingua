@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A1000000000000000000000A /* SpeechAudioPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000009 /* SpeechAudioPlugin.swift */; };
+		A1000000000000000000000C /* SpeechPCM.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000000B /* SpeechPCM.swift */; };
 		A10000000000000000000008 /* AudioPlayerPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000007 /* AudioPlayerPlugin.swift */; };
 		A10000000000000000000006 /* CaptionPipPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000005 /* CaptionPipPlugin.swift */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
@@ -23,6 +25,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A10000000000000000000009 /* SpeechAudioPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechAudioPlugin.swift; sourceTree = "<group>"; };
+		A1000000000000000000000B /* SpeechPCM.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechPCM.swift; sourceTree = "<group>"; };
 		A10000000000000000000007 /* AudioPlayerPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayerPlugin.swift; sourceTree = "<group>"; };
 		A10000000000000000000005 /* CaptionPipPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptionPipPlugin.swift; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
@@ -77,6 +81,8 @@
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				A10000000000000000000005 /* CaptionPipPlugin.swift */,
 				A10000000000000000000007 /* AudioPlayerPlugin.swift */,
+				A10000000000000000000009 /* SpeechAudioPlugin.swift */,
+				A1000000000000000000000B /* SpeechPCM.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -175,6 +181,8 @@
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				A10000000000000000000006 /* CaptionPipPlugin.swift in Sources */,
 				A10000000000000000000008 /* AudioPlayerPlugin.swift in Sources */,
+				A1000000000000000000000A /* SpeechAudioPlugin.swift in Sources */,
+				A1000000000000000000000C /* SpeechPCM.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

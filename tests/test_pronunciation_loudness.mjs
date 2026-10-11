@@ -1,7 +1,28 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readFile } from 'node:fs/promises';
 import { balancedSpeechVolume, measureAudioRms, createPronunciationLoudness } from '../web/js/pronunciation-loudness.js';
 import { encodeWav } from '../web/js/workbench-media.js';
+
+test('bundled calibration speech has the RMS reference level and unclipped PCM', async () => {
+  const wav = await readFile(new URL('../web/assets/pronunciation-calibration.wav', import.meta.url));
+  assert.equal(wav.toString('ascii', 0, 4), 'RIFF');
+  assert.equal(wav.toString('ascii', 8, 12), 'WAVE');
+  assert.equal(wav.readUInt16LE(20), 1);
+  assert.equal(wav.readUInt16LE(22), 1);
+  assert.equal(wav.readUInt32LE(24), 16000);
+  assert.equal(wav.readUInt16LE(34), 16);
+  assert.equal(wav.readUInt32LE(40), wav.length - 44);
+  let energy = 0, peak = 0;
+  for (let i = 44; i < wav.length; i += 2) {
+    const sample = wav.readInt16LE(i) / 32768;
+    energy += sample * sample; peak = Math.max(peak, Math.abs(sample));
+  }
+  const samples = (wav.length - 44) / 2;
+  assert.ok(samples / 16000 > 2 && samples / 16000 < 10);
+  assert.ok(Math.abs(Math.sqrt(energy / samples) - .1) < .00001);
+  assert.ok(peak < .99);
+});
 
 function wavDecoder(t, beforeDecode = async () => {}) {
   const calls = [];

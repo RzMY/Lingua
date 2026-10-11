@@ -3,6 +3,14 @@ export const PRONUNCIATION_DEFAULTS = Object.freeze({
   source: 'audio', autoPlay: false, volumeBalance: true,
 });
 
+// Device-wide calibration, deliberately separate from per-track preferences.
+export const TTS_CALIBRATION_DEFAULT = .5;
+export function normalizeTtsCalibration(value) {
+  if (!['number', 'string'].includes(typeof value) || String(value).trim() === '') return TTS_CALIBRATION_DEFAULT;
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.min(1, Math.max(.1, Math.round(n * 100) / 100)) : TTS_CALIBRATION_DEFAULT;
+}
+
 export const speechLanguage = (value) => String(value || '').trim().replaceAll('_', '-').toLowerCase();
 
 export function normalizePronunciation(value) {

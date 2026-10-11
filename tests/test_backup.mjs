@@ -133,7 +133,7 @@ test('independent subtitle fonts survive backup restore and reject invalid sizes
 
 test('language fonts and audio font/pronunciation settings survive backups and audio ID remapping', async () => {
   const backup = fixture();
-  const language = { fonts: { ja: { textSize: 32 }, en: { readSize: 18.5 } } };
+  const language = { fonts: { ja: { textSize: 32 }, en: { readSize: 18.5 } }, ttsCalibration: .35 };
   const audio = { read: 0, lang: 'zh-CN', fonts: { textSize: 40, trSize: 24 },
     pronunciation: { source: 'standard', autoPlay: true, volumeBalance: false, voices: { en: 'uk' } } };
   backup.localStorage[GLOBAL_KEYS[1]] = JSON.stringify(language);
@@ -146,6 +146,7 @@ test('language fonts and audio font/pronunciation settings survive backups and a
   applyLocalData(plan.changes);
   assert.deepEqual(JSON.parse(localStorage.getItem('linguatrack.track.' + copyId)), audio);
   assert.deepEqual(JSON.parse(localStorage.getItem(GLOBAL_KEYS[1])).fonts, language.fonts);
+  assert.equal(JSON.parse(localStorage.getItem(GLOBAL_KEYS[1])).ttsCalibration, .35);
 
   for (const invalid of [null, [], 'large', { textSize: -1 }, { readSize: '24px' }]) {
     backup.localStorage[GLOBAL_KEYS[1]] = JSON.stringify({ fonts: { ja: invalid } });

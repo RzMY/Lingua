@@ -17,8 +17,11 @@ test('native caption plugin is included in the iOS target and registered by the 
   const phase = project.pbxSourcesBuildPhaseObj('504EC3031FED79650016851F');
   assert.ok(phase.files.some((file) => file.comment === 'CaptionPipPlugin.swift in Sources'));
   assert.ok(phase.files.some((file) => file.comment === 'AudioPlayerPlugin.swift in Sources'));
+  assert.ok(phase.files.some((file) => file.comment === 'SpeechAudioPlugin.swift in Sources'));
+  assert.ok(phase.files.some((file) => file.comment === 'SpeechPCM.swift in Sources'));
   assert.match((await read('ios/App/App/AppDelegate.swift')).toString(), /registerPluginInstance\(CaptionPipPlugin\(\)\)/);
   assert.match((await read('ios/App/App/AppDelegate.swift')).toString(), /registerPluginInstance\(AudioPlayerPlugin\(\)\)/);
+  assert.match((await read('ios/App/App/AppDelegate.swift')).toString(), /registerPluginInstance\(SpeechAudioPlugin\(\)\)/);
   const plugin = (await read('ios/App/App/CaptionPipPlugin.swift')).toString();
   assert.match(plugin, /AVPictureInPictureVideoCallViewController/);
   assert.doesNotMatch(plugin, /AVPlayerLayer|AVSampleBufferDisplayLayer|setValue\(|forKey:|NSSelectorFromString/);

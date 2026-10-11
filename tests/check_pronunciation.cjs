@@ -152,6 +152,7 @@ const base = process.argv[3] || 'http://127.0.0.1:5185';
     await page.locator('#btnDisplay').click();
     await page.getByRole('button', { name: '发音设置', exact: true }).click();
     assert.equal(await page.getByRole('button', { name: '音量均衡', exact: true }).getAttribute('aria-pressed'), 'true');
+    assert.equal(await page.getByRole('button', { name: /音量校准/ }).count(), 0, 'calibration belongs to global settings');
     await page.getByRole('button', { name: '音量均衡', exact: true }).click();
     await page.getByRole('button', { name: '标准', exact: true }).click();
     await page.getByRole('button', { name: '打开词卡自动发音', exact: true }).click();
@@ -186,6 +187,42 @@ const base = process.argv[3] || 'http://127.0.0.1:5185';
     assert.equal(await page.getByRole('button', { name: '标准', exact: true }).getAttribute('aria-pressed'), 'false');
     assert.equal(await page.getByRole('button', { name: '打开词卡自动发音', exact: true }).getAttribute('aria-pressed'), 'false');
     assert.equal(await page.getByRole('button', { name: '音量均衡', exact: true }).getAttribute('aria-pressed'), 'true');
+    await page.getByRole('button', { name: /音量校准/ }).click();
+    assert.equal(await page.getByRole('spinbutton', { name: 'TTS 音量 (%)', exact: true }).inputValue(), '50');
+    await page.getByRole('button', { name: '播放参考音频', exact: true }).click();
+    await page.waitForFunction(() => document.querySelector('audio')?.currentTime > .1);
+    assert.equal(await page.locator('audio').evaluate((node) => node.volume), 1);
+    if (await page.getByRole('button', { name: '试听标准发音', exact: true }).isEnabled()) {
+      await page.evaluate(() => {
+        window.calibrationSpeech = [];
+        speechSynthesis.speak = (u) => { calibrationSpeech.push({ text: u.text, volume: u.volume }); u.onstart?.(); };
+      });
+      await page.getByRole('button', { name: '试听标准发音', exact: true }).click();
+      assert.equal(await page.locator('audio').count(), 0, 'TTS stops the reference');
+      assert.deepEqual(await page.evaluate(() => calibrationSpeech.at(-1)), { text: 'Hello! It is a lovely day.', volume: .5 });
+    }
+    await page.getByRole('button', { name: '减小TTS 音量', exact: true }).click();
+    assert.equal(await page.getByRole('spinbutton', { name: 'TTS 音量 (%)', exact: true }).inputValue(), '45');
+    if (await page.getByRole('button', { name: '试听标准发音', exact: true }).isEnabled()) {
+      await page.getByRole('button', { name: '试听标准发音', exact: true }).click();
+      assert.ok(Math.abs(await page.evaluate(() => calibrationSpeech.at(-1).volume) - .45) < 1e-6);
+    }
+    await page.getByRole('button', { name: '停止试听', exact: true }).click();
+    for (const width of [320, 390, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      for (const theme of ['light', 'dark']) {
+        await page.evaluate(async (theme) => (await import('/js/settings.js')).setSetting('theme', theme), theme);
+        assert.equal(await page.locator('.sheet-body').evaluate((node) => node.scrollWidth > node.clientWidth), false);
+        await page.screenshot({ path: path.join(shots, `calibration-${width}-${theme}.png`), animations: 'disabled' });
+      }
+    }
+    await page.getByRole('button', { name: '播放参考音频', exact: true }).click();
+    await page.locator('.sheet-head [aria-label="关闭"]').click();
+    assert.equal(await page.locator('audio').count(), 0);
+    assert.match(await page.getByRole('button', { name: /音量校准/ }).textContent(), /45%/);
+    await page.reload();
+    await page.getByRole('button', { name: '发音设置', exact: true }).click();
+    assert.match(await page.getByRole('button', { name: /音量校准/ }).textContent(), /45%/);
     assert.deepEqual(errors, []);
     console.log('Pronunciation browser checks passed:', shots);
   } finally { await browser.close(); }

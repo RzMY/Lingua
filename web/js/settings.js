@@ -7,7 +7,7 @@
  */
 
 import { normalizeVideo, videoOverrides } from './video-config.js';
-import { normalizePronunciation } from './pronunciation-config.js';
+import { normalizePronunciation, normalizeTtsCalibration, TTS_CALIBRATION_DEFAULT } from './pronunciation-config.js';
 
 const KEY = 'linguatrack.settings.v1';
 
@@ -27,6 +27,7 @@ const DEFAULTS = {
   ...FONT_DEFAULTS,
   theme: 'auto',  // auto | light | dark
   rate: 1,
+  ttsCalibration: TTS_CALIBRATION_DEFAULT,
   track: '',      // 上次打开的曲目
 };
 
@@ -95,7 +96,8 @@ export function initSettings(handler) {
       Object.assign(settings, legacyFonts(saved.size));
       for (const k of Object.keys(DEFAULTS)) {
         if (saved[k] === undefined) continue;
-        settings[k] = Object.hasOwn(FONT_DEFAULTS, k) ? normFontSize(saved[k], settings[k]) : saved[k];
+        settings[k] = Object.hasOwn(FONT_DEFAULTS, k) ? normFontSize(saved[k], settings[k])
+          : k === 'ttsCalibration' ? normalizeTtsCalibration(saved[k]) : saved[k];
       }
       if (saved.fonts && typeof saved.fonts === 'object' && !Array.isArray(saved.fonts)) {
         for (const [code, sizes] of Object.entries(saved.fonts)) {
@@ -168,7 +170,8 @@ export function resetLangFontSizes(code) {
 export function setSetting(key, value) {
   if (!Object.hasOwn(DEFAULTS, key)) return;
   const layout = Object.hasOwn(FONT_DEFAULTS, key);
-  const next = layout ? normFontSize(value, settings[key]) : value;
+  const next = layout ? normFontSize(value, settings[key])
+    : key === 'ttsCalibration' ? normalizeTtsCalibration(value) : value;
   if (settings[key] === next) return;
   settings[key] = next;
   save();

@@ -13,6 +13,7 @@ import { CHANNELS, CHANNEL_KEY, OWN_KEY, DEV_KEY, PREVIOUS_CHANNEL_KEY, normaliz
 const NativeMedia = registerPlugin('NativeMedia');
 const CaptionPip = registerPlugin('CaptionPip');
 const AudioPlayer = registerPlugin('AudioPlayer');
+const SpeechAudio = registerPlugin('SpeechAudio');
 const KEY = 'lingua.native.state';
 const NativeShell = registerPlugin('NativeShell');
 let source = { channel: 'stable', ownUrl: '', developmentUrl: '' };
@@ -273,6 +274,17 @@ async function initialize() {
     fetchManifest: (selected, signal) => fetchSourceManifest(selected, (url) => getJson(url, signal)),
     save, state, currentVersion: version });
   let marked = false;
+  let speechAudio = null, speechVoices = [];
+  if (Capacitor.getPlatform() === 'ios' && Capacitor.isPluginAvailable('SpeechAudio')) {
+    try {
+      const capabilities = await SpeechAudio.capabilities();
+      if (capabilities.pcmVolume === true) {
+        await SpeechAudio.addListener('stateChanged', (detail) => window.dispatchEvent(new CustomEvent('native-speech-state', { detail })));
+        speechAudio = SpeechAudio;
+        speechVoices = capabilities.voices || [];
+      }
+    } catch { /* Older binaries retain Web Speech; PCM playback requires a new IPA. */ }
+  }
   const audioPlayer = Capacitor.isPluginAvailable('AudioPlayer') ? AudioPlayer : null;
   if (audioPlayer) {
     await audioPlayer.addListener('stateChanged', (detail) => window.dispatchEvent(new CustomEvent('native-audio-state', { detail })));
@@ -309,6 +321,7 @@ async function initialize() {
     captionPip,
     audioPlayer,
     nativeVideoAudio,
+    speechAudio, speechVoices,
     refreshCaptionPip,
     async markReady() {
       if (marked) return; marked = true;

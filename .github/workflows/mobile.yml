@@ -123,7 +123,12 @@ jobs:
           xcode-version: '26.0'
       - run: npm ci
       - run: npm run mobile:sync
-      - name: Compile for iPhone without signing
+      - name: Verify native speech PCM attenuation
+        # This test uses the production PCM encoder and verifies encoded sample amplitudes.
+        run: |
+          swiftc ios/App/App/SpeechPCM.swift tests/ios/SpeechPCMTests.swift -o "$RUNNER_TEMP/speech-pcm-tests"
+          "$RUNNER_TEMP/speech-pcm-tests"
+      - name: Compile iOS application without signing
         run: >-
           xcodebuild -project ios/App/App.xcodeproj -scheme App
           -configuration Release -destination 'generic/platform=iOS'

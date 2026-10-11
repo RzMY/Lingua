@@ -1,11 +1,12 @@
 import { el, icon } from './util.js';
 import { group, sectionTitle, segRow, switchRow, navRow, buttonBar, button } from './rows.js';
 import { openSheet } from './sheet.js';
-import { settings, setPronunciation } from './settings.js';
+import { settings, setPronunciation, setSetting } from './settings.js';
 import { trackCfg, setTrackPronunciation } from './trackcfg.js';
-import { normalizePronunciation, speechLanguage } from './pronunciation-config.js';
-import { languageVoices, speechVoices, supportsSpeech, speechVoiceKey, createPronunciation } from './pronunciation.js';
+import { normalizePronunciation, speechLanguage, TTS_CALIBRATION_DEFAULT } from './pronunciation-config.js';
+import { languageVoices, speechVoices, supportsSpeech, speechVoiceKey, storedVoiceURI, createPronunciation } from './pronunciation.js';
 import { sourceLangs } from './langs.js';
+import { openPronunciationCalibration } from './pronunciation-calibration.js';
 
 function voiceName(voice) {
   return voice.name.replace(/^Microsoft\s+/i, '').replace(/\s*(?:Online \(Natural\)|Desktop)\s*/gi, ' ').trim();
@@ -25,7 +26,7 @@ const VOICE_SAMPLES = {
 function savedVoice(code, voices, preferences) {
   const saved = preferences.voices[code];
   // 旧版本只保存 voiceURI; 有多个匹配时迁移到唯一的第一个候选。
-  return voices.find((voice) => speechVoiceKey(voice) === saved) || voices.find((voice) => voice.voiceURI === saved);
+  return voices.find((voice) => speechVoiceKey(voice) === saved) || voices.find((voice) => voice.voiceURI === storedVoiceURI(saved));
 }
 
 /** 语言列表只显示当前选择, 点入后用单选列表选择声音。 */
@@ -40,7 +41,11 @@ export function openPronunciationSheet({ track, onBack } = {}) {
     (value) => set({ autoPlay: value }));
   const balance = switchRow('音量均衡', '根据当前音频的平均响度调整标准发音音量', () => get().volumeBalance,
     (value) => set({ volumeBalance: value }));
-  body.append(group(source, auto, balance), sectionTitle('标准音色'));
+  const calibration = !track ? navRow('音量校准', '对照试听参考音频与标准发音', {
+    value: Math.round(settings.ttsCalibration * 100) + '%',
+    onPick: () => openPronunciationCalibration({ onBack: back }),
+  }) : null;
+  body.append(group(source, auto, balance, calibration), sectionTitle('标准音色'));
   const languages = [...sourceLangs()];
   if (track && !languages.some((lang) => lang.code === track.lang)) {
     languages.push({ code: track.lang, name: track.langName || track.lang });
@@ -60,6 +65,10 @@ export function openPronunciationSheet({ track, onBack } = {}) {
     }
   };
   body.append(group(...rows.map(({ row }) => row)), buttonBar(button('恢复默认', { onPick: () => {
+    if (!track) {
+      setSetting('ttsCalibration', TTS_CALIBRATION_DEFAULT);
+      calibration.setValue(Math.round(settings.ttsCalibration * 100) + '%');
+    }
     set(normalizePronunciation()); source.refresh(); auto.refresh(); balance.refresh(); refresh();
   } })));
   openSheet(track ? '发音设置 · 当前音频' : '发音设置', body, { onBack,

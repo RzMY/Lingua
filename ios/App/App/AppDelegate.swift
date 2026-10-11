@@ -78,6 +78,7 @@ class LinguaViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(NativeShellPlugin())
         bridge?.registerPluginInstance(CaptionPipPlugin())
         bridge?.registerPluginInstance(AudioPlayerPlugin())
+        bridge?.registerPluginInstance(SpeechAudioPlugin())
     }
 }
 

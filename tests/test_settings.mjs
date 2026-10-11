@@ -33,6 +33,26 @@ beforeEach(() => {
   initSettings(() => {});
 });
 
+test('TTS calibration defaults lower, validates old/corrupt settings and stays global', () => {
+  assert.equal(settings.ttsCalibration, .5);
+  for (const invalid of [null, true, {}, [], '', 'bad']) {
+    saved.set(KEY, JSON.stringify({ ttsCalibration: invalid })); initSettings();
+    assert.equal(settings.ttsCalibration, .5);
+  }
+  setSetting('ttsCalibration', 2); assert.equal(settings.ttsCalibration, 1);
+  setSetting('ttsCalibration', 0); assert.equal(settings.ttsCalibration, .1);
+  setSetting('ttsCalibration', .357); assert.equal(settings.ttsCalibration, .36);
+  initSettings(); assert.equal(settings.ttsCalibration, .36);
+  initTrackCfg('calibration-a', 'en');
+  setTrackPronunciation({ source: 'standard', ttsCalibration: .9 });
+  assert.equal('ttsCalibration' in trackCfg.pronunciation, false);
+  const local = saved.get('linguatrack.track.calibration-a');
+  setSetting('ttsCalibration', .6);
+  initTrackCfg('calibration-b', 'ja');
+  assert.equal(settings.ttsCalibration, .6);
+  assert.equal(saved.get('linguatrack.track.calibration-a'), local);
+});
+
 test('pronunciation inherits legacy defaults, stays isolated and survives unrelated audio edits', () => {
   setPronunciation({ source: 'standard', autoPlay: true, voices: { en: 'uk' } });
   saved.set('linguatrack.track.legacy', JSON.stringify({ read: 0 }));
