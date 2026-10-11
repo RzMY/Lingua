@@ -14,12 +14,15 @@ import { chatJSON, once } from './llm.js';
 import { errorMessage } from './errors.js';
 import { get as cacheGet, put as cachePut } from './store.js';
 import { el, copyText, hash53, icon, toast } from './util.js';
+import { settings, setPronunciation } from './settings.js';
+import { createPronunciation } from './pronunciation.js';
 
 let host = null;
 let scrim = null;
 let ctl = null;
 let returnFocus = null;
 let closeCb = null;
+let pronunciation = null;
 // 同 sheet.js: `.is-open` 下一帧才加, 状态另用变量记
 let openFlag = false;
 
@@ -51,10 +54,12 @@ function ensureHost() {
 }
 
 export const isCardOpen = () => openFlag;
+export const stopWordPronunciation = () => pronunciation?.stop();
 
 export function closeWordCard() {
   if (!openFlag) return;
   openFlag = false;
+  pronunciation?.dispose(); pronunciation = null;
   if (ctl) { ctl.abort(); ctl = null; }
   if (host.contains(document.activeElement)) {
     if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
@@ -108,13 +113,14 @@ function askLLM(track, s, w, i, j, lang, signal) {
 
 /**
  * 打开卡片.
- * @param {object} o `{track, i, j, lang, onClose}`; i 句序, j 词序
+ * @param {object} o `{track, i, j, lang, onClose, getAudioBlob}`; i 句序, j 词序
  */
-export async function openWordCard({ track, i, j, lang, onClose }) {
+export async function openWordCard({ track, i, j, lang, onClose, getAudioBlob }) {
   const s = track.sentences[i];
   const w = s && s.words[j];
   if (!w) return;
   ensureHost();
+  pronunciation?.dispose();
   closeCb = onClose || null;
   if (!host.contains(document.activeElement)) returnFocus = document.activeElement;
   if (ctl) ctl.abort();
@@ -125,10 +131,52 @@ export async function openWordCard({ track, i, j, lang, onClose }) {
   const top = el('div', 'wc-top');
   const word = el('div', 'wc-word', w.text);
   word.id = 'wordCardTitle';
-  if (w.read && w.read !== w.text) word.append(el('span', 'wc-read', w.read));
   top.append(word);
+  const readingLine = el('div', 'wc-reading-line');
+  const reading = el('span', 'wc-read', w.read && w.read !== w.text ? w.read : '');
+  reading.hidden = !reading.textContent;
+  readingLine.append(reading);
+  top.append(readingLine);
   if (w.roman) top.append(el('div', 'wc-roman', w.roman));
   host.append(top);
+
+  const soundButtons = el('div', 'wc-sound-buttons');
+  soundButtons.setAttribute('role', 'group');
+  soundButtons.setAttribute('aria-label', '单词发音来源');
+  const soundStatus = el('div', 'wc-sound-status');
+  soundStatus.setAttribute('role', 'status');
+  soundStatus.hidden = true;
+  const choices = new Map();
+  const session = createPronunciation({ track, sentence: s, word: w, getAudioBlob,
+    onState: ({ state, source, message }) => {
+      for (const [key, button] of choices) {
+        button.setAttribute('aria-pressed', String(settings.pronunciation.source === key));
+        button.classList.toggle('is-playing', source === key && state === 'playing');
+        button.setAttribute('aria-busy', String(source === key && state === 'loading'));
+      }
+      soundStatus.textContent = message || session.availability()[settings.pronunciation.source] || '';
+      soundStatus.hidden = !soundStatus.textContent;
+    },
+  });
+  pronunciation = session;
+  const availability = session.availability();
+  for (const [source, label] of [['audio', '音频'], ['standard', '标准']]) {
+    const button = el('button', 'wc-sound-source');
+    button.type = 'button';
+    button.append(el('span', null, label), icon('i-speaker', 'ic ic-sm'));
+    button.setAttribute('aria-label', `播放${label}发音`);
+    button.setAttribute('aria-pressed', String(settings.pronunciation.source === source));
+    button.disabled = !!availability[source];
+    button.title = availability[source] || `播放${label}发音`;
+    button.addEventListener('click', () => {
+      setPronunciation({ source });
+      void session.play(source, settings.pronunciation);
+    });
+    choices.set(source, button); soundButtons.append(button);
+  }
+  soundStatus.textContent = availability[settings.pronunciation.source] || '';
+  soundStatus.hidden = !soundStatus.textContent;
+  readingLine.append(soundButtons); top.append(soundStatus);
 
   const gloss = el('h3', 'wc-gloss');
   const note = el('div', 'wc-note');
@@ -164,6 +212,8 @@ export async function openWordCard({ track, i, j, lang, onClose }) {
   openFlag = true;
   host.inert = false;
   host.removeAttribute('aria-hidden');
+  // 必须在用户点击的调用栈内触发 TTS, 不等待缓存/大模型网络响应。
+  if (settings.pronunciation.autoPlay) void session.play(settings.pronunciation.source, settings.pronunciation);
   requestAnimationFrame(() => {
     if (!openFlag) return;               // 同一帧内开又关: 别把卡片补回来
     scrim.classList.add('is-open');
@@ -186,7 +236,7 @@ export async function openWordCard({ track, i, j, lang, onClose }) {
       if (tip) chip.append(el('i', null, tip));
       forms.append(chip);
     }
-    if (data.reading && !w.read) word.append(el('span', 'wc-read', data.reading));
+    if (data.reading && !w.read) { reading.textContent = data.reading; reading.hidden = false; }
     if (data.pos) pos.textContent = data.pos;
     host.classList.remove('is-load');
     copy.onclick = async () => {
@@ -213,6 +263,7 @@ export async function openWordCard({ track, i, j, lang, onClose }) {
     forms.textContent = '';
     if (!force) {
       const hit = await cacheGet('word', cacheKey);
+      if (signal.aborted) return;
       if (hit) { paint(hit); return; }
     }
     if (!llmReady()) {

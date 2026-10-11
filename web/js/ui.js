@@ -16,6 +16,7 @@ import { openSheet } from './sheet.js';
 import { group, infoRow, navRow, sectionTitle, segRow, switchRow } from './rows.js';
 import { setSetting, settings } from './settings.js';
 import { openFontSheet } from './font-settings.js';
+import { openPronunciationSheet } from './pronunciation-settings.js';
 import { setTrackCfg, trackCfg } from './trackcfg.js';
 import { openVideoSheet, openCaptionSheet } from './video-settings.js';
 import { TARGET_LANGS } from './config.js';
@@ -81,6 +82,7 @@ export function openTrackSheet(track, { translator, video, onSubtitles } = {}) {
   body.append(
     sectionTitle('全局'),
     group(
+      navRow('发音设置', '', { onPick: () => openPronunciationSheet({ track, onBack }) }),
       segRow('主题', '', () => settings.theme, (v) => setSetting('theme', v), THEMES),
     ),
   );

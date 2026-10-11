@@ -42,7 +42,7 @@ import { audioBlob, audioUrl, flushPositions, getTrack, patchTrack, saveAnalysis
   stagePosition, trackData, transcriptBlob, savePreparedTranscript, SUB_EXT, SUB_RE } from './library.js';
 import { plainTrack } from './subtitles.js';
 import { createTranslator } from './translate.js';
-import { closeWordCard, isCardOpen, openWordCard } from './card.js';
+import { closeWordCard, isCardOpen, openWordCard, stopWordPronunciation } from './card.js';
 import { chatOpen, closeChat, openChat } from './chat.js';
 import { button, buttonBar, group, segRow, switchRow } from './rows.js';
 
@@ -78,6 +78,7 @@ let player = null;
 let translator = null, sweepTimer = 0;
 let record = null;                 // 当前音频的库记录 (library.js)
 let objUrl = '';                   // 当前 <audio> 用的 blob URL, 换曲要 revoke
+let pronunciationBlob = null;      // 原生播放同一份 Blob, 保持点词播放处于用户手势内
 let videoReady = false;
 let videoPlayer = null;
 let audioPip = null;
@@ -344,11 +345,13 @@ function showSetup(onBack = null) {
 /** 原始音视频 Blob 直接挂到当前媒体元素, 共用字幕时间轴. */
 async function attachAudio(id) {
   dom.btnPlay.disabled = true;
+  pronunciationBlob = null;
   if (audio.nativeAudio) {
     showState('正在加载…');
     const blob = await audioBlob(id);
     if (blob) {
       await audio.attach(blob, record);
+      pronunciationBlob = blob;
       audio.playbackRate = settings.rate || 1;
       objUrl = audio.src;
     } else {
@@ -430,6 +433,7 @@ async function load(id, forceSetup) {
     audio = new NativeVideo(nativeApp().audioPlayer, $('video'));
   }
   engine.audio = audio;
+  audio.addEventListener('play', stopWordPronunciation);
   audio.addEventListener('timeupdate', () => engine.backgroundTick());
   player = setupPlayer({ audio, engine, dom, savePosition: setPosition, stagePosition });
   if (isVideo) {
@@ -663,6 +667,7 @@ function onReaderClick(e) {
   if (trackCfg.card && w && w.pos !== 'punct') {
     player.overlays.open('word');
     openWordCard({ track, i, j, lang: trackCfg.lang,
+      getAudioBlob: pronunciationBlob ? () => pronunciationBlob : undefined,
       onClose: () => player.overlays.close('word') });
   }
 }

@@ -60,11 +60,10 @@ html[data-theme="dark"] .wcard {
   overflow-wrap: anywhere;
 }
 .wc-read {
-  margin-left: 9px;
   /* 与阅读区的注音层同一套字体栈: 拉丁语言这里是 IPA 音标, 系统字体不一定有那些字符 */
   font: 500 14px/1 var(--font-read);
   color: var(--wc-mute);
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .wc-roman {
   margin-top: 4px;
@@ -72,6 +71,18 @@ html[data-theme="dark"] .wcard {
   letter-spacing: .02em;
   color: var(--wc-mute);
 }
+.wc-reading-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin-top: 7px; }
+.wc-sound-buttons { display: inline-flex; align-items: center; gap: 6px; }
+.wc-sound-source {
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  min-height: 28px; padding: 0 9px; border-radius: 999px;
+  font-size: 11.5px; font-weight: 600; color: var(--wc-ink);
+  background: color-mix(in srgb, var(--wc-ink) 11%, transparent);
+}
+.wc-sound-source .ic { width: 14px; height: 14px; }
+.wc-sound-source.is-playing { background: var(--wc-ink); color: var(--wc-bg); }
+.wc-sound-source:disabled { opacity: .4; }
+.wc-sound-status { margin-top: 7px; font-size: 11.5px; line-height: 1.5; color: var(--wc-mute); }
 .wc-pos {
   display: inline-flex;
   align-items: center;

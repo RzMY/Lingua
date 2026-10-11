@@ -7,6 +7,7 @@
  */
 
 import { normalizeVideo, videoOverrides } from './video-config.js';
+import { normalizePronunciation } from './pronunciation-config.js';
 
 const KEY = 'linguatrack.settings.v1';
 
@@ -46,7 +47,7 @@ function legacyFonts(size) {
   ]));
 }
 
-export const settings = { ...DEFAULTS, fonts: {}, video: normalizeVideo() };
+export const settings = { ...DEFAULTS, fonts: {}, video: normalizeVideo(), pronunciation: normalizePronunciation() };
 
 let onChange = () => {};
 let media = null;
@@ -84,12 +85,13 @@ export function setFontContext(code = '', overrides = {}) {
 
 export function initSettings(handler) {
   onChange = handler || onChange;
-  Object.assign(settings, DEFAULTS, { fonts: {}, video: normalizeVideo() });
+  Object.assign(settings, DEFAULTS, { fonts: {}, video: normalizeVideo(), pronunciation: normalizePronunciation() });
   fontContext = { code: '', overrides: {} };
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
     if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
       settings.video = normalizeVideo(saved.video);
+      settings.pronunciation = normalizePronunciation(saved.pronunciation);
       Object.assign(settings, legacyFonts(saved.size));
       for (const k of Object.keys(DEFAULTS)) {
         if (saved[k] === undefined) continue;
@@ -118,6 +120,12 @@ export function setGlobalVideo(fields) {
   settings.video = normalizeVideo({ ...settings.video, ...videoOverrides(fields) });
   save();
   onChange('video', settings.video, false);
+}
+
+export function setPronunciation(fields) {
+  settings.pronunciation = normalizePronunciation({ ...settings.pronunciation, ...fields });
+  save();
+  onChange('pronunciation', settings.pronunciation, false);
 }
 
 export function applyTheme() {
