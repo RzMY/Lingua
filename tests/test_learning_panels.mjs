@@ -6,20 +6,24 @@ import { build } from 'esbuild';
 import { JSDOM } from 'jsdom';
 
 const { outputFiles } = await build({ stdin: { contents: `
-  export { put } from './web/js/store.js';
+  export { put, get } from './web/js/store.js';
   export { setTrackCfg } from './web/js/trackcfg.js';
   export { isCardOpen } from './web/js/card.js';
   export { chatOpen } from './web/js/chat.js';
+  export { listFavorites, favoriteDraft, saveFavorite } from './web/js/favorites.js';
+  export { plainTrack } from './web/js/subtitles.js';
+  export { Track } from './web/js/track.js';
   export const start = () => import('./web/js/main.js');`,
   resolveDir: fileURLToPath(new URL('../', import.meta.url)) },
   bundle: true, write: false, format: 'iife', globalName: 'PanelTest' });
 const html = await readFile(new URL('../web/player.html', import.meta.url), 'utf8');
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
-async function harness(t, kind = 'audio') {
+async function harness(t, kind = 'audio', { plain = false, favoriteTime } = {}) {
   const dom = new JSDOM(html, { url: 'https://localhost/player.html?track=lesson&debug',
     runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window, doc = w.document, errors = [], calls = [];
+  w.structuredClone = structuredClone;
   t.after(() => {
     w.dispatchEvent(new w.Event('pagehide')); w.close();
     assert.deepEqual(errors, []);
@@ -84,6 +88,19 @@ async function harness(t, kind = 'audio') {
       { text: 'Welcome.', start: 10, end: 30, wordTiming: true,
         words: [{ text: 'Welcome', pos: 'noun', start: 10, end: 30 }] },
     ] });
+  if (plain) await api.put('data', 'lesson', api.plainTrack(await api.get('tracks', 'lesson'),
+    [{ text: 'Plain subtitle.', start: 0, end: 10 }]));
+  if (favoriteTime !== undefined) {
+    const data = await api.get('data', 'lesson');
+    const i = favoriteTime === 0 ? 0 : 1;
+    data.sentences[i].start = favoriteTime;
+    data.sentences[i].words[0].start = favoriteTime;
+    await api.put('data', 'lesson', data);
+    const f = api.favoriteDraft({ track: api.Track.fromData(data), i });
+    await api.saveFavorite(f);
+    await api.put('tracks', 'lesson', { ...await api.get('tracks', 'lesson'), position: 17 });
+    w.history.replaceState(null, '', '?track=lesson&debug&favorite=' + encodeURIComponent(f.id));
+  }
   await api.start();
   for (let i = 0; i < 30 && !w.LT?.track; i++) await flush();
   assert.ok(w.LT?.track, 'the real playback page must finish loading');
@@ -125,7 +142,50 @@ async function harness(t, kind = 'audio') {
   return { w, doc, api, media, calls, find, word, pointer, advance, frame, open, close };
 }
 
+test('unanalysed subtitles expose sentence collection without showing fake word analysis', async (t) => {
+  const h = await harness(t, 'audio', { plain: true });
+  const sentence = h.find('#viewport .s');
+  h.pointer(sentence, 'pointerdown'); h.advance(500); h.pointer(sentence, 'pointerup');
+  await flush(); h.frame();
+  assert.equal(h.find('#explainTitle').textContent, '句子');
+  assert.equal(h.doc.querySelectorAll('#explainBody .gw').length, 0);
+  h.find('#explainFavorite button').click();
+  for (let i = 0; i < 12; i++) await flush();
+  assert.equal((await h.api.listFavorites())[0].text, 'Plain subtitle.');
+});
+
+for (const favoriteTime of [0, 28]) test(`favorite entry at ${favoriteTime}s overrides saved progress and bypasses resume thresholds`, async (t) => {
+  const h = await harness(t, 'audio', { favoriteTime });
+  assert.equal(h.media.currentTime, favoriteTime);
+  assert.equal(h.media.paused, true);
+});
+
 for (const kind of ['audio', 'video']) {
+  test(`${kind}: word and long-press sentence favorites work without a model and survive panel reopening`, async (t) => {
+    const h = await harness(t, kind);
+    h.w.structuredClone = structuredClone;
+    await h.open('word');
+    const save = h.find('.wc-favorite');
+    save.click(); save.click();
+    for (let i = 0; i < 12; i++) await flush();
+    assert.equal(save.getAttribute('aria-pressed'), 'true');
+    assert.equal((await h.api.listFavorites()).length, 1);
+    h.close('word'); await h.open('word');
+    assert.equal(h.find('.wc-favorite').getAttribute('aria-pressed'), 'true');
+    h.close('word'); await h.open('explain');
+    h.find('#explainFavorite button').click();
+    for (let i = 0; i < 12; i++) await flush();
+    const saved = await h.api.listFavorites();
+    assert.equal(saved.length, 2);
+    assert.equal(saved.find((f) => f.kind === 'word').text, 'world');
+    assert.equal(saved.find((f) => f.kind === 'sentence').text, 'Hello world.');
+    h.close('explain'); await h.open('explain');
+    assert.equal(h.find('#explainFavorite button').getAttribute('aria-pressed'), 'true');
+    h.find('#explainFavorite button').click();
+    for (let i = 0; i < 12; i++) await flush();
+    assert.equal((await h.api.listFavorites()).length, 1);
+  });
+
   test(`${kind}: learning panels pause and every dismissal resumes at the same time and speed`, async (t) => {
     const h = await harness(t, kind);
     for (const [panel, methods] of [

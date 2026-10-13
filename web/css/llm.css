@@ -138,6 +138,7 @@ html[data-theme="dark"] .wc-err { color: #f0bfb6; }
 
 .wc-acts {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 7px;
   margin-top: 15px;
@@ -163,7 +164,9 @@ html[data-theme="dark"] .wc-err { color: #f0bfb6; }
   background: var(--cta);
   color: var(--cta-ink);
 }
-.wcard.is-load .wc-a:not(.wc-a-main) { opacity: .4; pointer-events: none; }
+.wcard.is-load .wc-a:not(.wc-a-main):not(.wc-favorite) { opacity: .4; pointer-events: none; }
+.wc-favorite[aria-pressed="true"] { background: var(--wc-chip); color: var(--accent-2); }
+.wc-favorite[aria-pressed="true"] .ic { fill: currentColor; }
 .wcard.is-load .wc-pos { opacity: .5; }
 
 /* 骨架屏: 只闪 opacity */

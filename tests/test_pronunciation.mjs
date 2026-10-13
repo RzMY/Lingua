@@ -4,7 +4,7 @@ import { build } from 'esbuild';
 import { JSDOM } from 'jsdom';
 import { fileURLToPath } from 'node:url';
 import { normalizePronunciation } from '../web/js/pronunciation-config.js';
-import { wordAudioRange, selectSpeechVoice } from '../web/js/pronunciation.js';
+import { wordAudioRange, clipAudioRange, selectSpeechVoice } from '../web/js/pronunciation.js';
 
 const { outputFiles } = await build({ stdin: { contents: `
   export * from './web/js/pronunciation.js';
@@ -94,6 +94,25 @@ test('preferences bound corrupt input and match saved voices only within the sou
   assert.equal(selectSpeechVoice('en_GB', 'missing', voices), voices[1]);
   assert.equal(selectSpeechVoice('en', 'ja', voices), voices[0]);
   assert.equal(selectSpeechVoice('ko', '', voices), null);
+});
+
+test('sentence clips use their explicit range and stop at the end without word timing', async (t) => {
+  for (const range of [null, {}, { start: -1, end: 2 }, { start: 4, end: 4 }, { start: 2, end: NaN }]) {
+    assert.equal(clipAudioRange(range, 10), null);
+  }
+  assert.deepEqual(clipAudioRange({ start: 8, end: 12 }, 10), { start: 8, end: 10 });
+  const h = harness(t);
+  const session = h.api.createPronunciation({ track, word: { text: 'Keep going.' }, audioRange: { start: 5, end: 8 } });
+  t.after(() => session.dispose());
+  await session.play('audio');
+  const audio = h.media[0]; h.fire(audio, 'loadedmetadata'); h.fire(audio, 'seeked');
+  assert.equal(audio.currentTime, 5);
+  audio.currentTime = 7.9; h.fire(audio, 'timeupdate'); assert.equal(session.active, 'audio');
+  audio.currentTime = 8; h.fire(audio, 'timeupdate'); assert.equal(session.active, '');
+  assert.equal(audio.isConnected, false);
+  await session.play('standard');
+  assert.equal(h.utterances[0].text, 'Keep going.');
+  session.dispose(); assert.equal(h.cancels, 1);
 });
 
 test('audio starts in the click stack, seeks independently and releases at the end', async (t) => {

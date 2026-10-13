@@ -46,12 +46,14 @@ import { closeWordCard, isCardOpen, openWordCard, stopWordPronunciation } from '
 import { chatOpen, closeChat, openChat } from './chat.js';
 import { button, buttonBar, group, segRow, switchRow } from './rows.js';
 import { createPronunciationLoudness } from './pronunciation-loudness.js';
+import { getFavorite, favoritePosition } from './favorites.js';
 
 const FOLLOW_ALIGN = 0.30;
 const LONG_PRESS = 460;                        // ms: 长按打开逐词拆解
 const REPEAT_LABEL = ['重复', '单句', '全部'];
 const HOT_BACK = 2;                            // 视口上方也顺手补几句译文
 const HOT_AHEAD = 8;
+let entryFavorite = null;
 const SWEEP_DELAY = 1600;                      // ms: 视口翻完再后台补全篇
 
 const dom = {
@@ -112,6 +114,8 @@ function syncFollowAlign() {
 const engine = new Engine({ audio, reader: null, vlist: null, scroller: dom.scroller, dom });
 const explain = createExplain({
   explainPanel: dom.explainPanel, explainSub: dom.explainSub, explainBody: dom.explainBody,
+  explainFavorite: $('explainFavorite'),
+  explainTitle: $('explainTitle'),
 }, (i, j) => seekWord(i, j), () => player?.overlays.close('explain'));
 
 // ---------------------------------------------------------------- 空态 / 提示
@@ -518,6 +522,7 @@ function apply(next) {
   track.pronunciationLoudness = pronunciationLoudness;
   document.documentElement.dataset.subtitleMode = next.raw.subtitleMode || 'analyzed';
   const title = (record && record.title) || next.title;
+  next.title = title;
   dom.trackTitle.textContent = title;
   document.title = title + ' · Lingua';
   setSetting('track', next.id);
@@ -555,7 +560,12 @@ function apply(next) {
   paintSpeed();
   paintShadow('off', -1, 0);
   //  上次停在哪儿由 library.js 记着: 这里把位置交给 player.js 决定要不要续播
-  player.setTrack({ id: next.id, title, position: record?.position });
+  const savedPlace = entryFavorite && next.S ? favoritePosition(entryFavorite, next) : null;
+  player.setTrack({ id: next.id, title, position: record?.position, startAt: savedPlace?.time });
+  if (entryFavorite && next.S) {
+    toast(savedPlace ? '已定位到收藏原文' : '字幕已变更，未找到收藏原文；收藏内容仍保留');
+    entryFavorite = null;
+  }
   if (next.S) clearState();
   else {
     showState('');
@@ -764,7 +774,7 @@ function wireReader() {
 
 /** 长按打开的本地逐词拆解 (不调模型). */
 function openExplain(i) {
-  if (!track?.S || track.raw.subtitleMode === 'plain') return;
+  if (!track?.S) return;
   const at = i >= 0 ? i : curIndex();
   player.overlays.open('explain');
   explain.open(at);
@@ -927,7 +937,7 @@ async function boot() {
     }
     if (videoPlayer?.isImmersive()) { void videoPlayer.leaveHorizontal(); return; }
     if (history.length > 1) history.back();
-    else location.href = 'index.html';
+    else location.href = new URLSearchParams(location.search).has('favorite') ? 'index.html#favorites' : 'index.html';
   });
   window.addEventListener('native-back', (event) => {
     if (dom.setup.hidden) return;
@@ -937,6 +947,12 @@ async function boot() {
 
   const q = new URLSearchParams(location.search);
   const id = q.get('track') || settings.track;
+  if (q.has('favorite')) {
+    try {
+      const favorite = await getFavorite(q.get('favorite'));
+      if (favorite?.track === id) entryFavorite = favorite;
+    } catch (error) { toast(errorMessage(error, '收藏读取失败')); }
+  }
   if (!id) {
     dom.player.hidden = true;
     showState('未选择媒体', '请返回首页选择或导入音频、视频');

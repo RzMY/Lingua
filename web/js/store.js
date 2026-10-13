@@ -21,7 +21,7 @@
  */
 
 const DB_NAME = 'linguatrack';
-const DB_VER = 4;
+const DB_VER = 5;
 const STALL_MS = 15000;            // 事务这么久没有进展就放弃 (只在页面可见时计时)
 const READ_FAIL = '本地数据读取失败，请重试';
 const WRITE_FAIL = '本地数据保存失败，请重试';
@@ -30,7 +30,8 @@ const WRITE_FAIL = '本地数据保存失败，请重试';
 export const CACHE_STORES = ['tr', 'word', 'chat', 'kv'];
 /** 音频库 (键 = trackId): 元数据 / 音频 / 分析结果 / 字幕原件. */
 export const LIB_STORES = ['tracks', 'audio', 'audioChunks', 'data', 'transcripts'];
-export const STORES = [...CACHE_STORES, ...LIB_STORES];
+/** 收藏是独立的用户资产, 删除源媒体或清缓存时保留。 */
+export const STORES = [...CACHE_STORES, ...LIB_STORES, 'favorites'];
 
 const mem = new Map(STORES.map((s) => [s, new Map()]));
 let degraded = false;
@@ -133,7 +134,7 @@ function connect() {
     const dog = watchdog(STALL_MS, () => { abandoned = true; reject(busy()); });
     request.onupgradeneeded = () => {
       const db = request.result;
-      // 升级只新增 store: v2 音频库, v3 字幕原件, v4 音频二进制分块; 保留已有记录。
+      // 升级只新增 store: v2 音频库, v3 字幕原件, v4 音频分块, v5 收藏。
       for (const name of STORES) {
         if (db.objectStoreNames.contains(name)) continue;
         const os = db.createObjectStore(name);
@@ -431,11 +432,33 @@ export async function updateRecord(store, key, change, { timeoutMs = STALL_MS } 
   bag.set(key, structuredClone(next));
   return next;
 }
+
+/** 原子地新增、修改或删除用户记录。change(null) 表示未命中, 返回 null 表示删除。
+ * 与缓存 put/del 不同, 等待事务提交并把失败交给界面处理。
+ */
+export async function mutateRecord(store, key, change) {
+  const out = await transact(store, 'readwrite', (t, ctx) => {
+    const os = t.objectStore(store);
+    let next;
+    ctx.request(os.get(key), (row) => {
+      next = change(row?.v ?? null);
+      if (next === null) { if (row) ctx.request(os.delete(key)); }
+      else if (next !== row?.v) ctx.request(os.put({ v: next, track: next.track || '', at: Date.now() }, key));
+    });
+    return () => next;
+  }, { fallback: WRITE_FAIL });
+  if (out !== MEMORY) return out;
+  const bag = mem.get(store);
+  const next = change(structuredClone(bag.get(key) ?? null));
+  if (next === null) bag.delete(key);
+  else bag.set(key, structuredClone(next));
+  return next;
+}
 /** 删掉某条音频的**大模型缓存** (不动音频本体); 返回删除条数. */
 export const wipeTrack = (track) => removeTrackData(track, CACHE_STORES);
 
 /** 删掉某条音频的全部数据 (音频 / 分析结果 / 元数据 / 缓存). */
-export const wipeTrackAll = (track) => removeTrackData(track, STORES);
+export const wipeTrackAll = (track) => removeTrackData(track, [...CACHE_STORES, ...LIB_STORES]);
 
 async function removeTrackData(track, stores) {
   if (!track) return 0;

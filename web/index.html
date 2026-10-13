@@ -15,6 +15,7 @@
 <meta name="apple-mobile-web-app-title" content="Lingua">
 <link rel="stylesheet" href="css/base.css">
 <link rel="stylesheet" href="css/home.css">
+<link rel="stylesheet" href="css/favorites.css">
 <link rel="stylesheet" href="css/font-settings.css">
 </head>
 <body>
@@ -25,6 +26,7 @@
   <symbol id="i-cc" viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="4"/><path d="M10 10.2a2.6 2.6 0 100 3.6M17 10.2a2.6 2.6 0 100 3.6"/></symbol>
   <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 4.8l11 7.2-11 7.2z" stroke-linejoin="round"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.8l4.2 4.2L19 7.4"/></symbol>
+  <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M6 4a1 1 0 011-1h10a1 1 0 011 1v17l-6-4-6 4z"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
   <symbol id="i-list" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></symbol>
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.4"/><path d="M15.8 15.8l4.4 4.4"/></symbol>
@@ -47,6 +49,7 @@
   <symbol id="i-spark" viewBox="0 0 24 24"><path d="M10.4 2.8l1.8 4.4 4.4 1.8-4.4 1.8-1.8 4.4-1.8-4.4-4.4-1.8 4.4-1.8z"/><path d="M17.6 14.6l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z"/></symbol>
   <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M12 11v5.4M12 7.9h.01"/></symbol>
   <symbol id="i-tune" viewBox="0 0 24 24"><path d="M4 7.4h5M13 7.4h7M4 16.6h7M15 16.6h5"/><circle cx="11" cy="7.4" r="2.2"/><circle cx="13" cy="16.6" r="2.2"/></symbol>
+  <symbol id="i-filter" viewBox="0 0 24 24"><path d="M3 4h18l-7 8v7l-4 2v-9z" stroke-linejoin="round"/></symbol>
   <symbol id="i-wave" viewBox="0 0 24 24"><path d="M3 12v.01M7 8.2v7.6M10.6 5.4v13.2M14.2 8.2v7.6M17.8 10.2v3.6M21.4 12v.01" stroke-width="2"/></symbol>
 </defs></svg>
 
@@ -76,6 +79,11 @@
     <div id="workbenchBody"></div>
   </section>
 
+  <section class="page" id="viewFavorites" hidden aria-label="收藏">
+    <h1 class="page-t">收藏</h1>
+    <div id="favoritesBody"></div>
+  </section>
+
   <section class="page" id="viewSet" hidden aria-label="设置">
     <h1 class="page-t">设置</h1>
     <div class="set" id="setBody"></div>
@@ -86,6 +94,8 @@
       <span class="nav-ic"><svg class="ic"><use href="#i-home"/></svg></span><span class="nav-t">首页</span></button>
     <button class="nav-i" id="navWorkbench" data-go="viewWorkbench" hidden>
       <span class="nav-ic"><svg class="ic"><use href="#i-tune"/></svg></span><span class="nav-t">工作台</span></button>
+    <button class="nav-i" data-go="viewFavorites">
+      <span class="nav-ic"><svg class="ic"><use href="#i-bookmark"/></svg></span><span class="nav-t">收藏</span></button>
     <button class="nav-i" data-go="viewSet">
       <span class="nav-ic"><svg class="ic"><use href="#i-gear"/></svg></span><span class="nav-t">设置</span></button>
   </nav>

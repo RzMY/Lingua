@@ -41,12 +41,12 @@ export function openBackupExport() {
       await saveFile(new Blob([JSON.stringify(backup)], { type: 'application/json' }),
         'lingua-backup-' + backup.exportedAt.replace(/[:.]/g, '-') + '.json');
       const summary = backupSummary(backup);
-      note.textContent = `已导出 ${summary.tracks} 条媒体记录、${summary.analyses} 份分析结果和 ${summary.llm} 条模型缓存`;
+      note.textContent = `已导出 ${summary.tracks} 条媒体记录、${summary.analyses} 份分析结果、${summary.favorites} 条收藏和 ${summary.llm} 条模型缓存`;
     } catch (err) { note.textContent = '导出失败：' + errorText(err); }
     finally { save.disabled = false; credentials.querySelector('button').disabled = false; }
   } });
   body.append(group(
-    infoRow('备份内容', '配置、媒体记录、分析结果、模型缓存'),
+    infoRow('备份内容', '配置、媒体记录、分析结果、收藏、模型缓存'),
     infoRow('媒体与字幕文件', '仅保存文件名，不含原文件'), credentials,
   ), buttonBar(save), note);
   openSheet('导出数据', body);
@@ -107,6 +107,7 @@ export function openBackupImport() {
         infoRow('媒体记录', `${summary.tracks} 条`),
         infoRow('分析结果', `${summary.analyses} 份`),
         infoRow('模型缓存', `${summary.llm} 条`),
+        infoRow('收藏', `${summary.favorites} 条`),
         infoRow('重复媒体', copies ? `${copies} 条保存为副本` : '无'),
         infoRow('待补充文件', `${summary.tracks} 个媒体文件、${parsed.stores.tracks.filter((r) => r.value.transcript).length} 个字幕文件`),
         infoRow('API Key 与访问令牌', parsed.includesCredentials ? '包含在备份中' : '保留本机凭据'),

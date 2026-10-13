@@ -21,6 +21,7 @@ import { setTrackCfg, trackCfg } from './trackcfg.js';
 import { openVideoSheet, openCaptionSheet } from './video-settings.js';
 import { TARGET_LANGS } from './config.js';
 import { featureText } from './langs.js';
+import { favoriteButton } from './favorite-button.js';
 
 const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const THEMES = [['auto', '跟随系统'], ['light', '浅色'], ['dark', '深色']];
@@ -114,13 +115,22 @@ export function openSpeedSheet(audio, onPick) {
  */
 export function createExplain(dom, onPick, onClose) {
   let track = null, open = false, shown = -1, curRow = null;
+  let favoriteCtl = null;
   const rows = [];
 
   function build(sIdx) {
     const s = track.sentences[sIdx];
+    const plain = track.raw?.subtitleMode === 'plain';
+    if (dom.explainTitle) dom.explainTitle.textContent = plain ? '句子' : '逐词拆解';
+    dom.explainPanel.setAttribute('aria-label', plain ? '句子' : '逐词拆解');
+    favoriteCtl?.abort();
+    favoriteCtl = new AbortController();
+    dom.explainFavorite?.replaceChildren(favoriteButton(() => ({ track, i: sIdx, lang: trackCfg.lang }),
+      { signal: favoriteCtl.signal }));
     rows.length = 0;
     const frag = document.createDocumentFragment();
-    s.words.forEach((w, j) => {
+    frag.append(el('p', 'explain-sentence', s.text));
+    (plain ? [] : s.words).forEach((w, j) => {
       if (w.pos === 'punct') { rows.push(null); return; }
       const row = el('div', 'gw p-' + (w.pos || 'other'));
       const left = el('div', 'gw-l');
@@ -149,7 +159,7 @@ export function createExplain(dom, onPick, onClose) {
   }
 
   return {
-    setTrack(t) { track = t; shown = -1; },
+    setTrack(t) { favoriteCtl?.abort(); track = t; shown = -1; },
     get isOpen() { return open; },
     toggle(sIdx) { open ? this.close() : this.open(sIdx); return open; },
     open(sIdx) {
@@ -161,6 +171,7 @@ export function createExplain(dom, onPick, onClose) {
     close() {
       if (!open) return;
       open = false;
+      favoriteCtl?.abort();
       dom.explainPanel.hidden = true;
       if (dom.btnExplain) dom.btnExplain.setAttribute('aria-pressed', 'false');
       onClose?.();

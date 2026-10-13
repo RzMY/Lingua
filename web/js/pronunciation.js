@@ -19,6 +19,14 @@ export function wordAudioRange(sentence, word, duration) {
   return end > start ? { start, end } : null;
 }
 
+/** 句子收藏的显式片段范围, 不伪造词级时间戳。 */
+export function clipAudioRange(range, duration) {
+  if (!Number.isFinite(range?.start) || !Number.isFinite(range?.end) || range.start < 0 || range.end <= range.start) return null;
+  const limit = Number.isFinite(duration) && duration > 0 ? duration : Infinity;
+  const end = Math.min(range.end, limit);
+  return end > range.start ? { start: range.start, end } : null;
+}
+
 export function speechVoices(synth = globalThis.speechSynthesis) {
   if (nativeApp()?.speechAudio) return nativeApp().speechVoices || [];
   try { return synth?.getVoices() || []; } catch { return []; }
@@ -59,9 +67,10 @@ export function supportsSpeech() {
 }
 
 /** 一张卡一个会话; stop/dispose 使所有迟到的媒体事件、Blob 读取与 play() 失效。 */
-export function createPronunciation({ track, sentence, word, getAudioBlob, onState = () => {} }) {
+export function createPronunciation({ track, sentence, word, audioRange, getAudioBlob, onState = () => {} }) {
   let serial = 0, disposed = false, cleanup = () => {}, active = '';
   const publish = (state, source = '', message = '') => onState({ state, source, message });
+  const rangeFor = (duration) => audioRange ? clipAudioRange(audioRange, duration) : wordAudioRange(sentence, word, duration);
   const stop = () => {
     serial++;
     cleanup(); cleanup = () => {}; active = '';
@@ -69,7 +78,7 @@ export function createPronunciation({ track, sentence, word, getAudioBlob, onSta
   };
   const availability = () => ({
     audio: !(track.audioUrl || getAudioBlob) ? '请先补充音频或视频文件' :
-      !wordAudioRange(sentence, word, track.duration) ? '此词没有词级时间戳，请使用「标准」发音' : '',
+      !rangeFor(track.duration) ? (audioRange ? '此收藏没有可用的原文时间戳' : '此词没有词级时间戳，请使用「标准」发音') : '',
     standard: supportsSpeech() ? '' : '当前浏览器不支持语音合成，请使用「音频」发音',
   });
 
@@ -181,7 +190,7 @@ export function createPronunciation({ track, sentence, word, getAudioBlob, onSta
       media.hidden = true;
       media.setAttribute('playsinline', '');
       document.body.append(media);
-      const range = wordAudioRange(sentence, word, track.duration);
+      const range = rangeFor(track.duration);
       let stopTimer = 0, loadTimer = 0, ready = false, positioned = false;
       const loading = () => {
         clearTimeout(loadTimer);
@@ -206,8 +215,8 @@ export function createPronunciation({ track, sentence, word, getAudioBlob, onSta
       };
       listen('loadedmetadata', () => {
         if (!current() || ready) return;
-        const actual = wordAudioRange(sentence, word, media.duration);
-        if (!actual) { finish('词时间戳超出音频范围'); return; }
+        const actual = rangeFor(media.duration);
+        if (!actual) { finish(audioRange ? '原文时间戳超出音频范围' : '词时间戳超出音频范围'); return; }
         range.end = Math.min(range.end, actual.end);
         ready = true;
         try {

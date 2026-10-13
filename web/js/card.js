@@ -13,9 +13,12 @@ import { config, fill, langVars, llmReady } from './config.js';
 import { chatJSON, once } from './llm.js';
 import { errorMessage } from './errors.js';
 import { get as cacheGet, put as cachePut } from './store.js';
-import { el, copyText, hash53, icon, toast } from './util.js';
+import { el, copyText, icon, toast } from './util.js';
 import { trackCfg, setTrackPronunciation } from './trackcfg.js';
 import { createPronunciation } from './pronunciation.js';
+import { favoriteButton } from './favorite-button.js';
+import { favoriteDraft, enrichFavorite } from './favorites.js';
+import { favoriteWordKey } from './favorite-learning.js';
 
 let host = null;
 let scrim = null;
@@ -74,9 +77,6 @@ export function closeWordCard() {
   onClose?.();
 }
 
-const keyOf = (trackId, lang, i, j, word, text) =>
-  `${trackId}|${lang}|${i}|${j}|${hash53(word + '' + text)}`;
-
 /** 骨架屏: 三条灰块, 纯装饰. */
 function skeleton() {
   const box = el('div', 'wc-sk');
@@ -126,6 +126,7 @@ export async function openWordCard({ track, i, j, lang, onClose, getAudioBlob })
   if (ctl) ctl.abort();
   ctl = new AbortController();
   const signal = ctl.signal;
+  let meaning = {};
 
   host.textContent = '';
   const top = el('div', 'wc-top');
@@ -206,7 +207,9 @@ export async function openWordCard({ track, i, j, lang, onClose, getAudioBlob })
   const shut = el('button', 'wc-a wc-a-main', '关闭');
   shut.type = 'button';
   shut.addEventListener('click', closeWordCard);
-  acts.append(pos, copy, again, shut);
+  const favorite = favoriteButton(() => ({ track, i, j, lang, meaning }),
+    { signal, className: 'wc-a wc-favorite' });
+  acts.append(pos, favorite, copy, again, shut);
   host.append(acts);
 
   openFlag = true;
@@ -222,6 +225,9 @@ export async function openWordCard({ track, i, j, lang, onClose, getAudioBlob })
   });
 
   const paint = (data) => {
+    meaning = data;
+    void enrichFavorite(favoriteDraft({ track, i, j, lang, meaning }))
+      .catch(() => toast('收藏释义更新失败，可重新收藏以更新'));
     gloss.textContent = String(data.gloss || '').trim() || '暂无释义';
     note.textContent = '';
     const body = String(data.note || '').trim();
@@ -253,7 +259,7 @@ export async function openWordCard({ track, i, j, lang, onClose, getAudioBlob })
     note.append(el('p', 'wc-err', msg));
   };
 
-  const cacheKey = keyOf(track.id, lang, i, j, w.text, s.text);
+  const cacheKey = favoriteWordKey(track.id, lang, i, j, w.text, s.text);
 
   async function load(force) {
     host.classList.add('is-load');

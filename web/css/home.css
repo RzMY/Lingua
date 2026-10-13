@@ -255,6 +255,7 @@ html[data-theme="dark"] .badge.is-bad { background: #4a231d; color: #f0bfb6; }
 
 .nav {
   position: fixed;
+  max-width: calc(100vw - 24px);
   left: 50%;
   bottom: calc(14px + var(--safe-b));
   z-index: 21;

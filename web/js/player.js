@@ -138,15 +138,16 @@ export function setupPlayer(ctx) {
      * 换到某条音频: 记住它的库 id 以便落库, 并按存档的位置续播.
      * @param {object} t `{id, title, position}` —— position 是上次停下的秒数
      */
-    setTrack({ id = '', title = '', position = 0 } = {}) {
+    setTrack({ id = '', title = '', position = 0, startAt } = {}) {
       overlays.reset();
       currentId = String(id || '');
       progress?.begin(currentId);
       media.setTrack({ title });
-      const at = resumeAt(position, engine.track?.duration || audio.duration || 0);
+      const explicit = Number.isFinite(startAt) && startAt >= 0;
+      const at = explicit ? startAt : resumeAt(position, engine.track?.duration || audio.duration || 0);
       // An explicit initial video seek dismisses the poster/black frame on WebKit,
       // even when this is the first visit and the restored position is zero.
-      if (at <= 0 && audio.tagName !== 'VIDEO') return;
+      if (!explicit && at <= 0 && audio.tagName !== 'VIDEO') return;
       // 元数据还没读完时写 currentTime 会被忽略, 等一次 loadedmetadata 再跳
       if (audio.readyState >= 1) engine.seek(at);
       else audio.addEventListener('loadedmetadata', () => {

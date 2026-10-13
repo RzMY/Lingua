@@ -2,10 +2,11 @@
 import { CACHE_STORES, snapshot, writeBatch } from './store.js';
 import { DEFAULTS } from './config.js';
 import { VIDEO_RANGES } from './video-config.js';
+import { validateFavorite, favoriteId } from './favorites.js';
 
 export const BACKUP_FORMAT = 'linguatrack.user-data';
-export const BACKUP_VERSION = 1;
-export const BACKUP_STORES = ['tracks', 'data', ...CACHE_STORES];
+export const BACKUP_VERSION = 2;
+export const BACKUP_STORES = ['tracks', 'data', ...CACHE_STORES, 'favorites'];
 export const GLOBAL_KEYS = ['linguatrack.config.v1', 'linguatrack.settings.v1', 'linguatrack.langs.v1'];
 const TRACK_PREFIX = 'linguatrack.track.';
 const ID = /^[a-zA-Z0-9_-]{1,128}$/;
@@ -159,14 +160,15 @@ function validateAnalysis(data, id) {
 /** Validate the entire archive before any persistent writes or preview actions. */
 export function validateBackup(backup) {
   require(object(backup) && backup.format === BACKUP_FORMAT, '不是 Lingua 用户数据备份');
-  require(backup.version === BACKUP_VERSION, '备份版本不受支持，请更新应用');
+  require([1, BACKUP_VERSION].includes(backup.version), '备份版本不受支持，请更新应用');
   require(typeof backup.exportedAt === 'string' && Number.isFinite(Date.parse(backup.exportedAt)), '导出时间错误');
   require(typeof backup.includesCredentials === 'boolean', '缺少凭据选项');
   require(object(backup.localStorage) && object(backup.stores), '缺少配置或数据');
   for (const [key, text] of Object.entries(backup.localStorage)) validateLocal(key, text);
-  require(Object.keys(backup.stores).length === BACKUP_STORES.length
-    && Object.keys(backup.stores).every((s) => BACKUP_STORES.includes(s)), '存储区不受支持');
-  for (const name of BACKUP_STORES) {
+  const names = backup.version === 1 ? BACKUP_STORES.filter((s) => s !== 'favorites') : BACKUP_STORES;
+  require(Object.keys(backup.stores).length === names.length
+    && Object.keys(backup.stores).every((s) => names.includes(s)), '存储区不受支持');
+  for (const name of names) {
     const rows = backup.stores[name];
     require(Array.isArray(rows), '缺少存储区 ' + name);
     const keys = new Set();
@@ -175,6 +177,10 @@ export function validateBackup(backup) {
         && !keys.has(row.key) && row.value !== undefined
         && typeof row.track === 'string' && finite(row.at), '记录损坏或键重复：' + name);
       keys.add(row.key);
+      if (name === 'favorites') {
+        validateFavorite(row.value);
+        require(row.value.id === row.key && row.value.track === row.track, '收藏关联错误');
+      }
       require(!row.track || (ID.test(row.track)
         && (row.key === row.track || row.key.startsWith(row.track + '|'))), '缓存关联错误');
       if (name === 'tr') require(typeof row.value === 'string', '译文必须是文本');
@@ -261,9 +267,9 @@ export function prepareImport(backup, current, local, { restoreConfig = true } =
   const batches = {};
   let skipped = 0;
   for (const name of BACKUP_STORES) {
-    const existing = new Set(current[name].map((r) => r.key));
+    const existing = new Set((current[name] || []).map((r) => r.key));
     batches[name] = [];
-    for (const source of backup.stores[name]) {
+    for (const source of backup.stores[name] || []) {
       const row = structuredClone(source);
       const id = name === 'tracks' || name === 'data' ? row.key : owner(row);
       const next = mapping.get(id);
@@ -273,6 +279,11 @@ export function prepareImport(backup, current, local, { restoreConfig = true } =
       }
       if (existing.has(row.key)) { skipped++; continue; }
       if (name === 'tracks' || name === 'data') row.value.id = row.key;
+      if (name === 'favorites') {
+        row.value.track = row.track;
+        row.value.id = favoriteId(row.value);
+        row.key = row.value.id;
+      }
       if (name === 'tracks') {
         row.value.audio = { ...row.value.audio, missing: true };
         if (row.value.transcript) row.value.transcript = { ...row.value.transcript, missing: true };
@@ -333,5 +344,6 @@ export async function importBackup(backup, options = {}) {
 
 export function backupSummary(backup) {
   return { tracks: backup.stores.tracks.length, analyses: backup.stores.data.length,
+    favorites: backup.stores.favorites?.length || 0,
     llm: CACHE_STORES.reduce((n, name) => n + backup.stores[name].length, 0) };
 }

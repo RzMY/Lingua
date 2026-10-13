@@ -58,7 +58,20 @@ const dom = {
   file: $('fileAudio'),
 };
 
-const VIEWS = ['viewHome', 'viewWorkbench', 'viewSet'];
+const VIEWS = ['viewHome', 'viewWorkbench', 'viewFavorites', 'viewSet'];
+let favoritesPage, favoritesLoading;
+function ensureFavorites() {
+  if (favoritesPage) { void favoritesPage.refresh(); return; }
+  if (favoritesLoading) return;
+  const body = $('favoritesBody');
+  body.textContent = '正在读取收藏…';
+  favoritesLoading = import('./favorites-ui.js').then(({ createFavoritesPage }) => {
+    favoritesPage = createFavoritesPage(body);
+  }).catch((error) => {
+    body.replaceChildren(el('p', 'warn', errorMessage(error, '收藏加载失败')),
+      button('重试', { onPick: ensureFavorites }));
+  }).finally(() => { favoritesLoading = null; });
+}
 dom.file.accept = MEDIA_ACCEPT;
 let workbench;
 let workbenchLoading = null;
@@ -497,6 +510,7 @@ function go(id) {
   const previous = currentView;
   currentView = id;
   if (id === 'viewWorkbench') ensureWorkbench();
+  if (id === 'viewFavorites') ensureFavorites();
   for (const v of VIEWS) $(v).hidden = v !== id;
   if (id !== previous) enterView($(id), VIEWS.indexOf(id) < VIEWS.indexOf(previous) ? 'back' : 'forward');
   for (const b of document.querySelectorAll('.nav-i')) {
@@ -507,7 +521,7 @@ function go(id) {
   }
   $('btnAdd').hidden = id !== 'viewHome';
   if (id === 'viewSet') paintSettings();
-  const tag = id === 'viewHome' ? '' : id === 'viewWorkbench' ? '#workbench' : '#set';
+  const tag = id === 'viewHome' ? '' : id === 'viewWorkbench' ? '#workbench' : id === 'viewFavorites' ? '#favorites' : '#set';
   history.replaceState(null, '', location.pathname + location.search + tag);
 }
 
@@ -888,6 +902,7 @@ async function dataPane() {
     audio: infoRow('媒体文件', '…'),
     transcripts: infoRow('字幕文件', '…'),
     data: infoRow('分析结果', '…'),
+    favorites: infoRow('单词与句子', '…'),
   };
   const used = infoRow('已用空间', '…');
   body.append(
@@ -895,6 +910,7 @@ async function dataPane() {
     group(rows.tr, rows.word, rows.chat, rows.kv),
     sectionTitle('媒体库'),
     group(rows.tracks, rows.audio, rows.transcripts, rows.data, used),
+    sectionTitle('收藏'), group(rows.favorites),
     buttonBar(button('清空模型缓存', {
       danger: true, glyph: 'i-trash',
       onPick: async () => { if (await wipeAll()) closeSheet(); },
@@ -923,7 +939,7 @@ function boot() {
   onConfigChange((_cfg, patch) => { if ('experimental' in patch) syncExperiments(); });
   const hash = (location.hash || '').replace('#', '').toLowerCase();
   const start = hash === 'set' || hash === 'restore' ? 'viewSet'
-    : hash === 'workbench' ? 'viewWorkbench' : 'viewHome';
+    : hash === 'workbench' ? 'viewWorkbench' : hash === 'favorites' ? 'viewFavorites' : 'viewHome';
   go(start);
   refresh().then(() => {
     if (hash === 'restore') {
@@ -937,7 +953,7 @@ function boot() {
   });
   addEventListener('pageshow', (e) => { if (e.persisted) refresh(); });
   addEventListener('hashchange', () => go(location.hash === '#workbench' ? 'viewWorkbench'
-    : location.hash === '#set' ? 'viewSet' : 'viewHome'));
+    : location.hash === '#set' ? 'viewSet' : location.hash === '#favorites' ? 'viewFavorites' : 'viewHome'));
 }
 
 boot();

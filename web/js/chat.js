@@ -133,7 +133,7 @@ export async function openChat({ track, i, lang, onClose }) {
     state.pinned = nearBottom();
   }, { passive: true });
 
-  const save = () => cachePut('chat', cacheKey, { msgs: state.msgs, at: Date.now() }, track.id);
+  const save = () => cachePut('chat', cacheKey, { msgs: state.msgs, text: s.text, at: Date.now() }, track.id);
 
   /** 重画整段对话 (打开时/清空后用; 流式过程走增量). */
   function repaint() {

@@ -39,6 +39,7 @@
   <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 5v14M15 5v14" stroke-width="2.4"/></symbol>
   <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2.6" width="6" height="10.4" rx="3"/><path d="M5.5 11.4a6.5 6.5 0 0013 0"/><path d="M12 17.9V21"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.8l4.2 4.2L19 7.4"/></symbol>
+  <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M6 4a1 1 0 011-1h10a1 1 0 011 1v17l-6-4-6 4z"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
   <symbol id="i-list" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></symbol>
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.4"/><path d="M15.8 15.8l4.4 4.4"/></symbol>
@@ -91,7 +92,8 @@
 
   <section class="panel" id="explainPanel" hidden aria-label="逐词拆解">
     <div class="panel-head">
-      <div class="panel-title">逐词拆解<span class="panel-sub" id="explainSub"></span></div>
+      <div class="panel-title"><span id="explainTitle">逐词拆解</span><span class="panel-sub" id="explainSub"></span></div>
+      <div id="explainFavorite"></div>
       <button class="tb-btn tb-btn-sm" id="btnExplainClose" aria-label="关闭拆解"><svg class="ic"><use href="#i-x"/></svg></button>
     </div>
     <div class="panel-body" id="explainBody"></div>

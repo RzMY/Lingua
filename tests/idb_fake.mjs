@@ -28,6 +28,18 @@ class ObjectStore {
     return request;
   }
   getAll() { return this.transaction.issue(() => [...this.transaction.read(this.name).values()].map((v) => structuredClone(v))); }
+  getKey(key) { return this.transaction.issue(() => this.transaction.read(this.name).has(key) ? key : undefined); }
+  openKeyCursor(range) {
+    const tx = this.transaction, name = this.name;
+    let keys = null, index = 0, request;
+    request = tx.issue(() => {
+      keys ||= [...tx.read(name).keys()].filter((key) => !range || range.includes(key)).sort();
+      if (index >= keys.length) return null;
+      const key = keys[index];
+      return { key, primaryKey: key, continue: () => { index++; tx.reissue(request); } };
+    });
+    return request;
+  }
   count() { return this.transaction.issue(() => this.transaction.read(this.name).size); }
   put(value, key) {
     this.transaction.requireWrite();
