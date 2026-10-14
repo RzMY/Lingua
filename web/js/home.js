@@ -388,7 +388,6 @@ function renameCard(titleNode, save, onSettled) {
     titleNode.removeAttribute('contenteditable');
     titleNode.removeAttribute('role');
     titleNode.removeAttribute('aria-label');
-    titleNode.style.height = '';
     card.classList.remove('is-renaming');
     titleNode.blur();
     if (!title || title === original) {
@@ -434,7 +433,6 @@ function renameCard(titleNode, save, onSettled) {
   titleNode.addEventListener('beforeinput', beforeinput);
   titleNode.addEventListener('blur', commit);
   document.addEventListener('pointerdown', outside);
-  titleNode.style.height = titleNode.getBoundingClientRect().height + 'px';
   titleNode.contentEditable = 'plaintext-only';
   titleNode.enterKeyHint = 'done';
   titleNode.setAttribute('role', 'textbox');

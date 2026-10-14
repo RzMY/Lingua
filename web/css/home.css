@@ -113,7 +113,7 @@
 }
 
 /*  照 img/主页.PNG: 外面一圈浅绿托底, 里面一张奶白面板, 左上头像,
-    右侧一枚淡淡的水印, 底部时长 + 两行标题。                          */
+    右侧一枚淡淡的水印, 底部时长 + 单行标题。                          */
 
 .card {
   position: relative;
@@ -135,9 +135,9 @@
 .card-top { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 34px; }
 .card-wm {
   position: absolute;
-  right: 6px; top: 50%;
+  /* 固定在单行标题卡片的位置，不随编辑区增减高度而移动。 */
+  right: 6px; top: 34px;
   width: 96px; height: 96px;
-  transform: translateY(-46%);
   color: var(--ink);
   opacity: .07;
   stroke-width: 1.5;
@@ -195,12 +195,15 @@ html[data-theme="dark"] .card-err { color: #f0bfb6; }
   font-weight: 700;
   line-height: 1.38;
   letter-spacing: -.004em;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   overflow: hidden;
 }
 .card-t[contenteditable] {
+  min-height: 1lh;
+  white-space: pre-wrap;
+  overflow: visible;
+  overflow-wrap: anywhere;
   position: relative;
   z-index: 2;
   outline: none;
