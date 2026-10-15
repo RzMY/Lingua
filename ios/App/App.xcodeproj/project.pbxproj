@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A10000000000000000000010 /* DevelopmentCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000011 /* DevelopmentCache.swift */; };
 		A1000000000000000000000A /* SpeechAudioPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000009 /* SpeechAudioPlugin.swift */; };
 		A1000000000000000000000C /* SpeechPCM.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000000B /* SpeechPCM.swift */; };
 		A10000000000000000000008 /* AudioPlayerPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000007 /* AudioPlayerPlugin.swift */; };
@@ -25,6 +26,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A10000000000000000000011 /* DevelopmentCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevelopmentCache.swift; sourceTree = "<group>"; };
 		A10000000000000000000009 /* SpeechAudioPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechAudioPlugin.swift; sourceTree = "<group>"; };
 		A1000000000000000000000B /* SpeechPCM.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechPCM.swift; sourceTree = "<group>"; };
 		A10000000000000000000007 /* AudioPlayerPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayerPlugin.swift; sourceTree = "<group>"; };
@@ -79,6 +81,7 @@
 				9582B6822FE993A50072D4E8 /* SceneDelegate.swift */,
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
+				A10000000000000000000011 /* DevelopmentCache.swift */,
 				A10000000000000000000005 /* CaptionPipPlugin.swift */,
 				A10000000000000000000007 /* AudioPlayerPlugin.swift */,
 				A10000000000000000000009 /* SpeechAudioPlugin.swift */,
@@ -179,6 +182,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
+				A10000000000000000000010 /* DevelopmentCache.swift in Sources */,
 				A10000000000000000000006 /* CaptionPipPlugin.swift in Sources */,
 				A10000000000000000000008 /* AudioPlayerPlugin.swift in Sources */,
 				A1000000000000000000000A /* SpeechAudioPlugin.swift in Sources */,
@@ -324,7 +328,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.4;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -346,7 +350,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.4;
 				LD_RUNPATH_SEARCH_PATHS = (

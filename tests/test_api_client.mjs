@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { health, analyze, ApiError } from '../web/js/api.js';
+import { health, analyze, ApiError, apiUrl } from '../web/js/api.js';
 import { config, loadConfig } from '../web/js/config.js';
 import { chat } from '../web/js/llm.js';
 
@@ -36,6 +36,19 @@ test('blank token omits Authorization for a local backend', async (t) => {
     return Response.json({ ok: true });
   });
   await health();
+});
+
+test('offline development pages retain their remote backend and respect explicit settings', (t) => {
+  const previous = config.apiBase;
+  globalThis.window = { __linguaDevelopmentTarget: 'http://dev.example:5173' };
+  t.after(() => { config.apiBase = previous; delete globalThis.window; });
+  config.apiBase = '';
+  assert.equal(apiUrl('/health'), 'http://dev.example:5173/api/health');
+  config.apiBase = 'https://analysis.example';
+  assert.equal(apiUrl('/health'), 'https://analysis.example/api/health');
+  delete globalThis.window;
+  config.apiBase = '';
+  assert.equal(apiUrl('/health'), '/api/health');
 });
 
 test('401 responses become an actionable authentication error', async (t) => {

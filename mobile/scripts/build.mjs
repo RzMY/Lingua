@@ -6,15 +6,17 @@ import { build } from 'esbuild';
 import { zipSync } from 'fflate';
 import { NATIVE_REVISION } from '../src/update.js';
 import { frontendVersion } from './version.mjs';
+import { writeDevelopmentManifest, developmentManifest } from './development-cache.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const out = resolve(root, 'mobile/www');
 const release = resolve(root, 'web/mobile');
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
+await writeDevelopmentManifest();
 async function files(dir) {
   const result = [];
   for (const item of await readdir(dir, { withFileTypes: true })) {
-    if (['data', 'mobile'].includes(item.name) || item.name === 'audio-check.html'
+    if (['data', 'mobile'].includes(item.name) || item.name === 'audio-check.html' || item.name === 'development-cache.json'
         || item.name === 'audio-probe.wav') continue;
     const path = resolve(dir, item.name);
     if (item.isDirectory()) result.push(...await files(path));
@@ -64,6 +66,7 @@ if (process.argv.includes('--release')) {
     browserFiles[name] = /\.(?:html|css|js|mjs|json|svg|txt|md)$/.test(path)
       ? Buffer.from(bytes.toString('utf8').replaceAll('\r\n', '\n')) : bytes;
   }
+  browserFiles['development-cache.json'] = Buffer.from(JSON.stringify(developmentManifest(browserFiles)) + '\n');
   await writeFile(resolve(release, 'Lingua-web.zip'), zipSync(browserFiles, { level: 6, mtime: new Date(2020, 0, 1) }));
   console.log(`Release: web/mobile/manifest.json (${zip.length} bytes)`);
 }

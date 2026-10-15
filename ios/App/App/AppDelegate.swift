@@ -122,6 +122,23 @@ private class DevelopmentPresentationHandler: NSObject, WKScriptMessageHandler {
     }
 }
 
+private class DevelopmentSchemeHandler: NSObject, WKURLSchemeHandler {
+    let cache: DevelopmentCache
+    init(cache: DevelopmentCache) { self.cache = cache }
+    func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
+        guard let url = urlSchemeTask.request.url, urlSchemeTask.request.httpMethod == "GET",
+              let entry = cache.entry(url) else {
+            urlSchemeTask.didFailWithError(NSError(domain: NSURLErrorDomain, code: NSURLErrorFileDoesNotExist)); return
+        }
+        let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: [
+            "Content-Type": entry.mime, "Content-Length": String(entry.data.count), "Cache-Control": "no-store",
+            "Access-Control-Allow-Origin": "*"
+        ])!
+        urlSchemeTask.didReceive(response); urlSchemeTask.didReceive(entry.data); urlSchemeTask.didFinish()
+    }
+    func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) { }
+}
+
 class DevelopmentViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
     let url: URL?
     private var web: WKWebView!
@@ -131,6 +148,13 @@ class DevelopmentViewController: UIViewController, WKNavigationDelegate, WKUIDel
     private var dark = false, immersive = false, placed = false
     private var insetKey = ""
     private var presentationHandler: DevelopmentPresentationHandler!
+    private var cache: DevelopmentCache?
+    private let cacheButton = UIButton(type: .system)
+    private var cacheTask: Task<Void, Never>?
+    private var cached = false, cacheNotice = false
+    private var liveTarget: URL?
+    private var pendingNotice: String?
+    private var reloadGeneration = 0
     override var preferredStatusBarStyle: UIStatusBarStyle { dark || immersive ? .lightContent : .darkContent }
     override var prefersStatusBarHidden: Bool { immersive }
     override var prefersHomeIndicatorAutoHidden: Bool { immersive }
@@ -150,6 +174,10 @@ class DevelopmentViewController: UIViewController, WKNavigationDelegate, WKUIDel
         config.allowsAirPlayForMediaPlayback = true
         config.websiteDataStore = .default()
         config.preferences.isElementFullscreenEnabled = false
+        if let url = url {
+            cache = DevelopmentCache(target: url)
+            config.setURLSchemeHandler(DevelopmentSchemeHandler(cache: cache!), forURLScheme: "lingua-dev")
+        }
         presentationHandler = DevelopmentPresentationHandler(); presentationHandler.owner = self
         config.userContentController.add(presentationHandler, name: "linguaPresentation")
         web = WKWebView(frame: .zero, configuration: config)
@@ -172,8 +200,8 @@ class DevelopmentViewController: UIViewController, WKNavigationDelegate, WKUIDel
         menu.layer.shadowOffset = CGSize(width: 0, height: 6); menu.isHidden = true
         errorLabel.font = .systemFont(ofSize: 14); errorLabel.numberOfLines = 0; errorLabel.isHidden = true
         menu.addArrangedSubview(errorLabel)
-        for (title, action) in [("刷新网页", #selector(reloadPage)), ("返回上一个分支", #selector(returnToApp))] {
-            let button = UIButton(type: .system)
+        for (title, action) in [("刷新网页", #selector(reloadPage)), ("缓存前端源码", #selector(cachePage)), ("返回上一个分支", #selector(returnToApp))] {
+            let button = title == "缓存前端源码" ? cacheButton : UIButton(type: .system)
             button.setTitle(title, for: .normal); button.titleLabel?.font = .systemFont(ofSize: 15, weight: .medium)
             button.contentHorizontalAlignment = .leading
             button.heightAnchor.constraint(greaterThanOrEqualToConstant: 48).isActive = true
@@ -188,7 +216,10 @@ class DevelopmentViewController: UIViewController, WKNavigationDelegate, WKUIDel
         bubble.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(moveBubble(_:))))
         view.addSubview(bubble)
         setPresentation(dark: false, immersive: false)
-        updateInsets(); reloadPage()
+        updateInsets()
+        if let url = url, let local = cache?.localURL(url) {
+            cached = true; liveTarget = url; web.load(URLRequest(url: local))
+        } else { reloadPage() }
     }
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
@@ -228,7 +259,7 @@ class DevelopmentViewController: UIViewController, WKNavigationDelegate, WKUIDel
             insetKey = values
             web.configuration.userContentController.removeAllUserScripts()
             web.configuration.userContentController.addUserScript(WKUserScript(
-                source: "window.__linguaInsets=" + values + ";" + Self.presentationScript,
+                source: "window.__linguaInsets=" + values + ";" + cacheTargetScript + Self.presentationScript,
                 injectionTime: .atDocumentStart, forMainFrameOnly: true))
         }
         web.evaluateJavaScript("window.__linguaInsets=" + values + ";window.__linguaApplyInsets?.();", completionHandler: nil)
@@ -263,11 +294,57 @@ class DevelopmentViewController: UIViewController, WKNavigationDelegate, WKUIDel
         errorLabel.text = message; errorLabel.isHidden = false; menu.isHidden = false; placeControls()
     }
     @objc private func reloadPage() {
+        reloadGeneration += 1
         menu.isHidden = true; errorLabel.isHidden = true
-        guard let target = web.url ?? url else { showError("开发地址无效"); return }
-        web.load(URLRequest(url: target, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30))
+        guard let target = web.url.flatMap({ cache?.remoteURL($0) ?? Self.validURL($0.absoluteString) }) ?? liveTarget ?? url else { showError("开发地址无效"); return }
+        cached = false; cacheNotice = false; pendingNotice = nil; liveTarget = target
+        if web.url == target { web.reloadFromOrigin() }
+        else { web.load(URLRequest(url: target, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)) }
+    }
+    private var cacheTargetScript: String {
+        guard let cache = cache else { return "" }
+        // The analysis service remains the remote site's root; snapshots contain frontend files only.
+        var parts = URLComponents(url: cache.base, resolvingAgainstBaseURL: true)!
+        parts.path = ""; parts.query = nil; parts.fragment = nil
+        let origin = parts.url!.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let bytes = try? JSONSerialization.data(withJSONObject: [origin]),
+              let value = String(data: bytes, encoding: .utf8) else { return "" }
+        return "if(location.protocol==='lingua-dev:')window.__linguaDevelopmentTarget=" + value + "[0];"
+    }
+    @objc private func cachePage() {
+        guard let cache = cache, cacheTask == nil else { return }
+        cacheButton.isEnabled = false; cacheButton.setTitle("正在缓存…", for: .normal)
+        let generation = reloadGeneration
+        showError("正在下载完整前端源码…")
+        cacheTask = Task { [weak self, cache] in
+            do {
+                let saved = try await cache.download()
+                guard let self = self, !Task.isCancelled else { return }
+                cache.activate(saved)
+                if generation == self.reloadGeneration {
+                    self.cached = true; self.cacheNotice = true
+                    self.pendingNotice = "已缓存 \(saved.entries.count) 个文件，可关闭开发服务器测试"
+                    let target = self.web.url.flatMap { cache.remoteURL($0) } ?? self.url!
+                    self.liveTarget = target
+                    if let local = cache.localURL(target) ?? cache.localURL(cache.target) {
+                        if self.web.url == local { self.web.reload() } else { self.web.load(URLRequest(url: local)) }
+                    }
+                } else { self.showError("已缓存 \(saved.entries.count) 个文件；当前继续使用联网源码") }
+            } catch {
+                if !Task.isCancelled { self?.showError("缓存失败，原有缓存保留；请确认服务器在线且支持缓存清单") }
+            }
+            self?.cacheButton.isEnabled = true; self?.cacheButton.setTitle("缓存前端源码", for: .normal)
+            self?.cacheTask = nil
+        }
+    }
+    private func recoverCached(_ message: String) {
+        if !cached, let target = liveTarget ?? url, let local = cache?.localURL(target) {
+            cached = true; cacheNotice = true; pendingNotice = "开发服务器不可用，已使用缓存源码"
+            web.load(URLRequest(url: local))
+        } else { showError(message) }
     }
     @objc private func returnToApp() {
+        cacheTask?.cancel()
         let defaults = UserDefaults.standard
         let previous = defaults.string(forKey: "CapacitorStorage.lingua.previous-channel") ?? "stable"
         let channel = ["stable", "own", "preview"].contains(previous) ? previous : "stable"
@@ -278,7 +355,7 @@ class DevelopmentViewController: UIViewController, WKNavigationDelegate, WKUIDel
                  initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
         // A remote page may use window.confirm instead of the bundled sheet implementation.
         // WKWebView silently cancels it when no UI delegate handles the request.
-        let dialog = UIAlertController(title: webView.url?.host, message: message, preferredStyle: .alert)
+        let dialog = UIAlertController(title: webView.url.flatMap { cache?.remoteURL($0) }?.host ?? webView.url?.host, message: message, preferredStyle: .alert)
         dialog.addAction(UIAlertAction(title: "取消", style: .cancel) { _ in completionHandler(false) })
         dialog.addAction(UIAlertAction(title: "确定", style: .default) { _ in completionHandler(true) })
         guard presentedViewController == nil, view.window != nil else { completionHandler(false); return }
@@ -286,7 +363,7 @@ class DevelopmentViewController: UIViewController, WKNavigationDelegate, WKUIDel
     }
     func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
                  initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
-        let dialog = UIAlertController(title: webView.url?.host, message: message, preferredStyle: .alert)
+        let dialog = UIAlertController(title: webView.url.flatMap { cache?.remoteURL($0) }?.host ?? webView.url?.host, message: message, preferredStyle: .alert)
         dialog.addAction(UIAlertAction(title: "确定", style: .default) { _ in completionHandler() })
         guard presentedViewController == nil, view.window != nil else { completionHandler(); return }
         present(dialog, animated: true)
@@ -295,25 +372,36 @@ class DevelopmentViewController: UIViewController, WKNavigationDelegate, WKUIDel
         errorLabel.isHidden = true; setPresentation(dark: dark, immersive: false)
     }
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        if (error as NSError).code != NSURLErrorCancelled { showError("网页加载失败") }
+        if (error as NSError).code != NSURLErrorCancelled { recoverCached("网页加载失败") }
     }
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        if (error as NSError).code != NSURLErrorCancelled { showError("网页加载失败") }
+        if (error as NSError).code != NSURLErrorCancelled { recoverCached("网页加载失败") }
     }
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { updateInsets() }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        updateInsets()
+        if let message = pendingNotice { pendingNotice = nil; showError(message) }
+        else if cached && !cacheNotice { cacheNotice = true; showError("正在使用已缓存源码；刷新可加载最新源码") }
+    }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { showError("网页已停止响应") }
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
                  decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
         if navigationResponse.isForMainFrame, let response = navigationResponse.response as? HTTPURLResponse, response.statusCode >= 400 {
-            showError("网页暂时无法访问")
+            decisionHandler(.cancel); recoverCached("网页暂时无法访问"); return
         }
         decisionHandler(.allow)
     }
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        let allowed = navigationAction.request.url.map { ["http", "https", "about", "blob"].contains($0.scheme ?? "") } ?? false
+        if let target = navigationAction.request.url, navigationAction.targetFrame?.isMainFrame == true {
+            if cached, target.scheme != "lingua-dev", let local = cache?.localURL(target) {
+                decisionHandler(.cancel); web.load(URLRequest(url: local)); return
+            }
+            if let remote = cache?.remoteURL(target) ?? Self.validURL(target.absoluteString) { liveTarget = remote }
+        }
+        let allowed = navigationAction.request.url.map { ["http", "https", "about", "blob", "lingua-dev"].contains($0.scheme ?? "") } ?? false
         decisionHandler(allowed ? .allow : .cancel)
     }
+    deinit { cacheTask?.cancel() }
     private static let presentationScript = """
         (() => {
           const install = () => {

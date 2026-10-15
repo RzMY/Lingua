@@ -24,7 +24,8 @@ export class ApiError extends Error {
 
 /** 规整后端地址: 去掉尾斜杠, 容忍用户把 `/api` 也填进去. */
 export function baseOf(raw) {
-  const value = (raw === undefined ? config.apiBase : raw) || nativeApp()?.target;
+  const value = (raw === undefined ? config.apiBase : raw) || nativeApp()?.target
+    || globalThis.window?.__linguaDevelopmentTarget;
   let base = String(value || '').trim().replace(/\/+$/, '');
   if (!base) return '';
   base = base.replace(/\/api$/i, '');

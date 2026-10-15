@@ -6,6 +6,7 @@
     "test": "node --test tests/test_*.mjs",
     "version": "node mobile/scripts/version.mjs && git add web/js/version.js",
     "mobile:build": "node mobile/scripts/build.mjs",
+    "mobile:dev-cache": "node mobile/scripts/development-cache.mjs",
     "icons": "python mobile/scripts/icons.py",
     "mobile:sync": "npm run mobile:permissions && npm run mobile:build && cap sync",
     "mobile:android": "cap open android",

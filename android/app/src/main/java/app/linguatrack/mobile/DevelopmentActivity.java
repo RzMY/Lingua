@@ -25,7 +25,7 @@ import org.json.JSONObject;
 public class DevelopmentActivity extends ComponentActivity {
     private WebView web;
     private FrameLayout root;
-    private Button bubble, reload, back;
+    private Button bubble, reload, cacheButton, back;
     private LinearLayout menu;
     private TextView errorLabel;
     private String url;
@@ -35,6 +35,12 @@ public class DevelopmentActivity extends ComponentActivity {
     private float downX, downY, startX, startY;
     private androidx.webkit.ScriptHandler presentationScript;
     private String insetValues = "";
+    private DevelopmentCache cache;
+    private volatile boolean cached;
+    private boolean cacheNotice;
+    private String pendingNotice;
+    private int reloadGeneration;
+    private final java.util.concurrent.ExecutorService cacheWorker = java.util.concurrent.Executors.newSingleThreadExecutor();
 
     static boolean validUrl(String raw) {
         Uri uri = Uri.parse(raw);
@@ -55,6 +61,10 @@ public class DevelopmentActivity extends ComponentActivity {
         getWindow().setNavigationBarColor(Color.TRANSPARENT);
         if (Build.VERSION.SDK_INT >= 29) getWindow().setNavigationBarContrastEnforced(false);
         url = getSharedPreferences("CapacitorStorage", MODE_PRIVATE).getString("lingua.development-url", "");
+        if (validUrl(url)) try {
+            cache = new DevelopmentCache(new java.io.File(getFilesDir(), "development-cache"), url);
+            cached = cache.available();
+        } catch (Exception ignored) { }
         root = new FrameLayout(this);
         web = new WebView(this);
         web.getSettings().setJavaScriptEnabled(true);
@@ -95,15 +105,24 @@ public class DevelopmentActivity extends ComponentActivity {
             }
             @Override public void onPageFinished(WebView view, String address) {
                 web.evaluateJavascript(PRESENTATION_SCRIPT, null); injectInsets();
+                if (pendingNotice != null) { showError(pendingNotice); pendingNotice = null; }
+                else if (cached && !cacheNotice) { cacheNotice = true; showError("正在使用已缓存源码；刷新可加载最新源码"); }
+            }
+            @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                if (!cached || cache == null || !"GET".equals(request.getMethod())) return null;
+                DevelopmentCache.Entry entry = cache.entry(request.getUrl().toString());
+                if (entry == null) return null;
+                return new WebResourceResponse(entry.mime, "UTF-8", 200, "OK",
+                    java.util.Collections.singletonMap("Cache-Control", "no-store"), new java.io.ByteArrayInputStream(entry.bytes));
             }
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 return !validUrl(request.getUrl().toString());
             }
             @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                if (request.isForMainFrame()) showError("网页加载失败");
+                if (request.isForMainFrame()) recoverCached(request.getUrl().toString(), "网页加载失败");
             }
             @Override public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
-                if (request.isForMainFrame()) showError("网页暂时无法访问");
+                if (request.isForMainFrame()) recoverCached(request.getUrl().toString(), "网页暂时无法访问");
             }
         });
         applyTheme(); ViewCompat.requestApplyInsets(root); loadPage();
@@ -112,9 +131,15 @@ public class DevelopmentActivity extends ComponentActivity {
         menu = new LinearLayout(this); menu.setOrientation(LinearLayout.VERTICAL); menu.setPadding(dp(12), dp(8), dp(12), dp(8));
         menu.setElevation(dp(12)); menu.setVisibility(View.GONE);
         errorLabel = new TextView(this); errorLabel.setTextSize(14); errorLabel.setPadding(dp(8), dp(8), dp(8), dp(8)); errorLabel.setVisibility(View.GONE);
-        reload = action("刷新网页", () -> { menu.setVisibility(View.GONE); if (web.getUrl() == null) loadPage(); else web.reload(); });
+        reload = action("刷新网页", () -> {
+            reloadGeneration++;
+            cached = false; cacheNotice = false; pendingNotice = null; menu.setVisibility(View.GONE);
+            String current = web.getUrl();
+            if (current != null && validUrl(current)) web.reload(); else loadPage();
+        });
+        cacheButton = action("缓存前端源码", this::cachePage);
         back = action("返回上一个分支", this::returnToApp);
-        menu.addView(errorLabel); menu.addView(reload); menu.addView(back);
+        menu.addView(errorLabel); menu.addView(reload); menu.addView(cacheButton); menu.addView(back);
         root.addView(menu, new FrameLayout.LayoutParams(dp(208), -2));
         bubble = new Button(this); bubble.setText("‹/›"); bubble.setTextSize(18); bubble.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         bubble.setPadding(0, 0, 0, 0); bubble.setMinWidth(0); bubble.setMinHeight(0); bubble.setElevation(dp(8));
@@ -157,7 +182,7 @@ public class DevelopmentActivity extends ComponentActivity {
         int bg = immersive ? Color.BLACK : dark ? 0xff15170f : 0xfff2f2ea;
         root.setBackgroundColor(bg); web.setBackgroundColor(bg);
         menu.setBackground(surface(dark ? 0xff262b1b : 0xfff7f7f1, 20));
-        for (TextView label : new TextView[] { reload, back, errorLabel }) label.setTextColor(dark ? 0xffeef1e3 : 0xff1b1f16);
+        for (TextView label : new TextView[] { reload, cacheButton, back, errorLabel }) label.setTextColor(dark ? 0xffeef1e3 : 0xff1b1f16);
         bubble.setBackground(surface(dark ? 0xff33421f : 0xffd7e6c4, 26)); bubble.setTextColor(dark ? 0xffa8d68a : 0xff4f7a37);
         WindowInsetsControllerCompat bars = WindowCompat.getInsetsController(getWindow(), root);
         bars.setAppearanceLightStatusBars(!dark && !immersive); bars.setAppearanceLightNavigationBars(!dark && !immersive);
@@ -179,6 +204,40 @@ public class DevelopmentActivity extends ComponentActivity {
         errorLabel.setText(message); errorLabel.setVisibility(View.VISIBLE); menu.setVisibility(View.VISIBLE); menu.post(this::placeControls);
     }
     private void loadPage() { if (validUrl(url)) web.loadUrl(url); else showError("开发地址无效"); }
+    private void recoverCached(String address, String message) {
+        if (!cached && cache != null && cache.contains(address)) {
+            cached = true; cacheNotice = true;
+            pendingNotice = "开发服务器不可用，已使用缓存源码";
+            web.loadUrl(address);
+        } else showError(message);
+    }
+    private void cachePage() {
+        if (cache == null) { showError("开发地址无效"); return; }
+        cacheButton.setEnabled(false); cacheButton.setText("正在缓存…");
+        int generation = reloadGeneration;
+        showError("正在下载完整前端源码…");
+        cacheWorker.execute(() -> {
+            try {
+                int count = cache.download();
+                runOnUiThread(() -> {
+                    if (isDestroyed()) return;
+                    if (generation != reloadGeneration) {
+                        showError("已缓存 " + count + " 个文件；当前继续使用联网源码"); return;
+                    }
+                    cached = true; cacheNotice = true;
+                    pendingNotice = "已缓存 " + count + " 个文件，可关闭开发服务器测试";
+                    String current = web.getUrl();
+                    if (current != null && cache.contains(current)) web.reload(); else web.loadUrl(url);
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> { if (!isDestroyed()) showError("缓存失败，原有缓存保留；请确认服务器在线且支持缓存清单"); });
+            } finally {
+                runOnUiThread(() -> {
+                    if (!isDestroyed()) { cacheButton.setEnabled(true); cacheButton.setText("缓存前端源码"); }
+                });
+            }
+        });
+    }
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
         if (request == 100 && files != null) {
@@ -209,6 +268,7 @@ public class DevelopmentActivity extends ComponentActivity {
         });
     }
     @Override protected void onDestroy() {
+        cacheWorker.shutdownNow();
         if (files != null) { files.onReceiveValue(null); files = null; }
         if (web != null) { root.removeView(web); web.destroy(); }
         super.onDestroy();

@@ -19,6 +19,7 @@ test('native caption plugin is included in the iOS target and registered by the 
   assert.ok(phase.files.some((file) => file.comment === 'AudioPlayerPlugin.swift in Sources'));
   assert.ok(phase.files.some((file) => file.comment === 'SpeechAudioPlugin.swift in Sources'));
   assert.ok(phase.files.some((file) => file.comment === 'SpeechPCM.swift in Sources'));
+  assert.ok(phase.files.some((file) => file.comment === 'DevelopmentCache.swift in Sources'));
   assert.match((await read('ios/App/App/AppDelegate.swift')).toString(), /registerPluginInstance\(CaptionPipPlugin\(\)\)/);
   assert.match((await read('ios/App/App/AppDelegate.swift')).toString(), /registerPluginInstance\(AudioPlayerPlugin\(\)\)/);
   assert.match((await read('ios/App/App/AppDelegate.swift')).toString(), /registerPluginInstance\(SpeechAudioPlugin\(\)\)/);
@@ -76,6 +77,11 @@ test('mobile release contains complete application assets and produces identical
   assert.equal(browser['native.js'], undefined);
   assert.equal(browser['assets/pip-black.mp4'], undefined);
   assert.equal(browser['js/caption-video.js'], undefined);
+  const development = JSON.parse(Buffer.from(browser['development-cache.json']));
+  for (const file of development.files) {
+    assert.equal(createHash('sha256').update(browser[file.path]).digest('hex'), file.sha256, file.path);
+    assert.equal(browser[file.path].length, file.size, file.path);
+  }
   assert.doesNotMatch(Buffer.from(browser['index.html']).toString(), /await ready/);
 });
 test('GitHub workflow exposes Android, signed iOS and update artifacts with no credentials required for PR checks', async () => {

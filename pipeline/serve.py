@@ -15,6 +15,8 @@
 from __future__ import annotations
 
 import mimetypes
+import io
+import json
 import os
 import re
 from functools import partial
@@ -22,8 +24,10 @@ from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from ipaddress import ip_address
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from .api import Api
+from .frontend_cache import MANIFEST_NAME, frontend_manifest
 
 _RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")
 
@@ -90,6 +94,19 @@ class RangeHandler(SimpleHTTPRequestHandler):
         self.send_error(HTTPStatus.NOT_FOUND, f"No handler for {method} {self.path}")
 
     def send_head(self):
+        # Compute against the actual served source, including newly added lazy modules.
+        # This is a static-source inventory: no API credentials or user data are included.
+        if self.static and urlsplit(self.path).path.endswith('/' + MANIFEST_NAME):
+            root = Path(self.translate_path(self.path)).parent
+            if not (root / 'index.html').is_file():
+                self.send_error(HTTPStatus.NOT_FOUND, "Frontend not found")
+                return None
+            body = json.dumps(frontend_manifest(root), ensure_ascii=False).encode('utf-8')
+            self.send_response(HTTPStatus.OK)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            return io.BytesIO(body)
         range_header = self.headers.get("Range")
         if not range_header:
             return super().send_head()

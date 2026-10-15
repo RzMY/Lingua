@@ -128,6 +128,11 @@ jobs:
         run: |
           swiftc ios/App/App/SpeechPCM.swift tests/ios/SpeechPCMTests.swift -o "$RUNNER_TEMP/speech-pcm-tests"
           "$RUNNER_TEMP/speech-pcm-tests"
+      - name: Verify native development snapshots
+        # Compile and run the production snapshot store independently of UIKit.
+        run: |
+          swiftc -swift-version 5 ios/App/App/DevelopmentCache.swift tests/ios/DevelopmentCacheTests.swift -o "$RUNNER_TEMP/development-cache-tests"
+          "$RUNNER_TEMP/development-cache-tests"
       - name: Compile iOS application without signing
         run: >-
           xcodebuild -project ios/App/App.xcodeproj -scheme App

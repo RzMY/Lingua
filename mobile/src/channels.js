@@ -4,7 +4,7 @@ export const CHANNELS = [
   { id: 'stable', label: '正式分支', description: '从 GitHub 最新正式 Release 检查更新，本地优先。' },
   { id: 'own', label: '自有分支', description: '从自托管站点的 mobile/manifest.json 检查更新，本地优先。' },
   { id: 'preview', label: '测试分支', description: '从滚动 Pre-release 检查更新，本地优先。' },
-  { id: 'development', label: '开发分支', description: '直接联网打开调试网页，不加载本地前端；离线时可返回设置。' },
+  { id: 'development', label: '开发分支', description: '打开调试网页；悬浮按钮可手动缓存前端供离线测试，刷新联网加载且不更新缓存。' },
 ];
 export const CHANNEL_KEY = 'lingua.channel';
 export const OWN_KEY = 'lingua.own-url';
