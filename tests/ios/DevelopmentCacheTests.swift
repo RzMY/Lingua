@@ -21,8 +21,10 @@ private final class SourceProtocol: URLProtocol {
     }
     override func stopLoading() { }
     static func version(_ value: String) throws {
-        files = ["/lingua/index.html": Data(value.utf8), "/lingua/player.html": Data("player".utf8),
+        files = ["/lingua/index.html": Data("<script src=\"js/lazy.js\"></script><link href=\"css/base.css\">".utf8), "/lingua/player.html": Data("player".utf8),
                  "/lingua/js/lazy.js": Data("export const version = '\(value)'".utf8),
+                 "/lingua/css/base.css": Data("body{background:url(icons/a.svg)}".utf8),
+                 "/lingua/icons/a.svg": Data("<svg/ >".utf8),
                  "/lingua/assets/test.wav": Data([0, 1, 255, 128, 127])]
         let list = files.map { path, data in
             ["path": String(path.dropFirst("/lingua/".count)), "size": data.count, "sha256": DevelopmentCache.hash(data)] as [String: Any]
@@ -47,12 +49,14 @@ private final class SourceProtocol: URLProtocol {
         let local = cache.localURL(url)!
         precondition(local.scheme == "lingua-dev" && local.query == url.query && local.fragment == url.fragment)
         precondition(cache.remoteURL(local) == url)
+        let document = String(data: cache.document(url)!, encoding: .utf8)!
+        precondition(document.contains("lingua-dev://") && document.contains("js/lazy.js"))
         let count = SourceProtocol.requests.count
         try SourceProtocol.version("latest")
-        precondition(cache.entry(local)?.data == Data("first".utf8))
+        precondition(String(data: cache.document(url)!, encoding: .utf8)!.contains("lingua-dev://"))
         precondition(SourceProtocol.requests.count == count)
         let reopened = DevelopmentCache(target: url, directory: folder)
-        precondition(reopened.entry(local)?.data == Data("first".utf8))
+        precondition(String(data: reopened.document(url)!, encoding: .utf8)!.contains("lingua-dev://"))
         let player = URL(string: "player.html?track=123", relativeTo: local)!.absoluteURL
         precondition(reopened.entry(player)?.data == Data("player".utf8))
         let lazy = URL(string: "js/lazy.js?v=2", relativeTo: local)!.absoluteURL
@@ -65,14 +69,14 @@ private final class SourceProtocol: URLProtocol {
         precondition(!other.available && other.remoteURL(local) == nil)
         let latest = try await cache.download(configuration: config)
         cache.activate(latest)
-        precondition(cache.entry(local)?.data == Data("latest".utf8))
+        precondition(String(data: cache.entry(URL(string: "js/lazy.js", relativeTo: local)!.absoluteURL)!.data, encoding: .utf8)!.contains("latest"))
         try SourceProtocol.version("third")
         SourceProtocol.files["/lingua/js/lazy.js"] = Data("changed".utf8)
         do { _ = try await cache.download(configuration: config); fatalError("Expected checksum rejection") } catch { }
         SourceProtocol.unavailable = true
         do { _ = try await cache.download(configuration: config); fatalError("Expected offline rejection") } catch { }
         let retained = DevelopmentCache(target: url, directory: folder)
-        precondition(retained.entry(local)?.data == Data("latest".utf8))
+        precondition(String(data: retained.entry(URL(string: "js/lazy.js", relativeTo: local)!.absoluteURL)!.data, encoding: .utf8)!.contains("latest"))
         for path in ["../.env", "js/../../.env", "data/private.json", "/index.html", "https://evil.example/x"] {
             precondition(!DevelopmentCache.validPath(path))
         }

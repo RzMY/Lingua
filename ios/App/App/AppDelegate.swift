@@ -217,8 +217,8 @@ class DevelopmentViewController: UIViewController, WKNavigationDelegate, WKUIDel
         view.addSubview(bubble)
         setPresentation(dark: false, immersive: false)
         updateInsets()
-        if let url = url, let local = cache?.localURL(url) {
-            cached = true; liveTarget = url; web.load(URLRequest(url: local))
+        if let url = url, cache?.available == true, loadCachedDocument(url) {
+            cached = true; liveTarget = url
         } else { reloadPage() }
     }
     override func viewDidLayoutSubviews() {
@@ -308,8 +308,32 @@ class DevelopmentViewController: UIViewController, WKNavigationDelegate, WKUIDel
         parts.path = ""; parts.query = nil; parts.fragment = nil
         let origin = parts.url!.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard let bytes = try? JSONSerialization.data(withJSONObject: [origin]),
-              let value = String(data: bytes, encoding: .utf8) else { return "" }
-        return "if(location.protocol==='lingua-dev:')window.__linguaDevelopmentTarget=" + value + "[0];"
+              let value = String(data: bytes, encoding: .utf8),
+              let cachedHost = cache.localURL(cache.target)?.host,
+              let hostData = try? JSONSerialization.data(withJSONObject: cachedHost),
+              let host = String(data: hostData, encoding: .utf8) else { return "" }
+        return """
+        (() => {
+          window.__linguaDevelopmentTarget=(value)[0];
+          window.__linguaCachedHost=(host);
+          const map = (raw) => {
+            try {
+              const value = new URL(String(raw), location.href);
+              if (value.origin !== location.origin || !(value.pathname.startsWith('/js/') || value.pathname.startsWith('/css/') || value.pathname.startsWith('/icons/') || value.pathname.startsWith('/assets/'))) return raw;
+              value.protocol = 'lingua-dev:'; value.host = window.__linguaCachedHost;
+              return value.href;
+            } catch (_) { return raw; }
+          };
+          const nativeFetch = window.fetch;
+          window.fetch = (input, init) => {
+            if (typeof input === 'string' || input instanceof URL) return nativeFetch(map(input), init);
+            if (input && input.url) return nativeFetch(new Request(map(input.url), input), init);
+            return nativeFetch(input, init);
+          };
+          const nativeOpen = XMLHttpRequest.prototype.open;
+          XMLHttpRequest.prototype.open = function(method, raw, ...rest) { return nativeOpen.call(this, method, map(raw), ...rest); };
+        })();
+        """
     }
     @objc private func cachePage() {
         guard let cache = cache, cacheTask == nil else { return }
@@ -326,9 +350,7 @@ class DevelopmentViewController: UIViewController, WKNavigationDelegate, WKUIDel
                     self.pendingNotice = "已缓存 \(saved.entries.count) 个文件，可关闭开发服务器测试"
                     let target = self.web.url.flatMap { cache.remoteURL($0) } ?? self.url!
                     self.liveTarget = target
-                    if let local = cache.localURL(target) ?? cache.localURL(cache.target) {
-                        if self.web.url == local { self.web.reload() } else { self.web.load(URLRequest(url: local)) }
-                    }
+                    _ = self.loadCachedDocument(target)
                 } else { self.showError("已缓存 \(saved.entries.count) 个文件；当前继续使用联网源码") }
             } catch {
                 if !Task.isCancelled { self?.showError("缓存失败，原有缓存保留；请确认服务器在线且支持缓存清单") }
@@ -338,10 +360,17 @@ class DevelopmentViewController: UIViewController, WKNavigationDelegate, WKUIDel
         }
     }
     private func recoverCached(_ message: String) {
-        if !cached, let target = liveTarget ?? url, let local = cache?.localURL(target) {
+        if !cached, let target = liveTarget ?? url, loadCachedDocument(target) {
             cached = true; cacheNotice = true; pendingNotice = "开发服务器不可用，已使用缓存源码"
-            web.load(URLRequest(url: local))
         } else { showError(message) }
+    }
+    @discardableResult
+    private func loadCachedDocument(_ target: URL) -> Bool {
+        guard let cache = cache, let data = cache.document(target) else { return false }
+        let request = URLRequest(url: target)
+        let response = URLResponse(url: target, mimeType: "text/html", expectedContentLength: data.count, textEncodingName: "UTF-8")
+        web.loadSimulatedRequest(request, response: response, responseData: data)
+        return true
     }
     @objc private func returnToApp() {
         cacheTask?.cancel()
@@ -393,8 +422,8 @@ class DevelopmentViewController: UIViewController, WKNavigationDelegate, WKUIDel
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         if let target = navigationAction.request.url, navigationAction.targetFrame?.isMainFrame == true {
-            if cached, target.scheme != "lingua-dev", let local = cache?.localURL(target) {
-                decisionHandler(.cancel); web.load(URLRequest(url: local)); return
+            if cached, target.scheme != "lingua-dev", loadCachedDocument(target) {
+                decisionHandler(.cancel); return
             }
             if let remote = cache?.remoteURL(target) ?? Self.validURL(target.absoluteString) { liveTarget = remote }
         }

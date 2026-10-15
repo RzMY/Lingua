@@ -72,6 +72,51 @@ final class DevelopmentCache {
         return snapshot?.entries[Self.key(remote)]
     }
 
+    /// Returns a cached HTML document while keeping its navigation URL on the
+    /// original development origin. Relative document resources are redirected
+    /// to the private scheme handler; the document's localStorage/IndexedDB
+    /// therefore continue to use the development site's existing origin.
+    func document(_ url: URL) -> Data? {
+        guard let entry = entry(url), entry.mime == "text/html",
+              let source = String(data: entry.data, encoding: .utf8) else { return nil }
+        let pattern = #"(?i)(\b(?:src|href|poster)\s*=\s*[\"'])([^\"']+)([\"'])"#
+        guard let expression = try? NSRegularExpression(pattern: pattern) else { return entry.data }
+        let range = NSRange(source.startIndex..<source.endIndex, in: source)
+        var output = source
+        for match in expression.matches(in: source, range: range).reversed() {
+            guard let valueRange = Range(match.range(at: 2), in: source) else { continue }
+            let value = String(source[valueRange])
+            guard !value.hasPrefix("#"), !value.hasPrefix("data:"), !value.hasPrefix("blob:") else { continue }
+            guard let resolved = URL(string: value, relativeTo: url)?.absoluteURL,
+                  sameOrigin(resolved), let local = localURL(resolved),
+                  let fullRange = Range(match.range(at: 2), in: source) else { continue }
+            let start = source.distance(from: source.startIndex, to: fullRange.lowerBound)
+            let end = source.distance(from: source.startIndex, to: fullRange.upperBound)
+            let outputStart = output.index(output.startIndex, offsetBy: start)
+            let outputEnd = output.index(output.startIndex, offsetBy: end)
+            output.replaceSubrange(outputStart..<outputEnd, with: local.absoluteString)
+        }
+        // Inline module imports and dynamic imports do not pass through the
+        // fetch/XHR wrappers. Rewrite their quoted static paths as well.
+        let pathPattern = #"([\"'`])((?:\./)?(?:js|css|icons|assets)/[^\"'`]+)([\"'`])"#
+        if let pathExpression = try? NSRegularExpression(pattern: pathPattern) {
+            let original = output
+            let outputRange = NSRange(original.startIndex..<original.endIndex, in: original)
+            for match in pathExpression.matches(in: original, range: outputRange).reversed() {
+                guard let pathRange = Range(match.range(at: 2), in: original),
+                      let resolved = URL(string: String(original[pathRange]), relativeTo: url)?.absoluteURL,
+                      sameOrigin(resolved), let local = localURL(resolved),
+                      let replacementRange = Range(match.range(at: 2), in: original) else { continue }
+                let start = original.distance(from: original.startIndex, to: replacementRange.lowerBound)
+                let end = original.distance(from: original.startIndex, to: replacementRange.upperBound)
+                let outputStart = output.index(output.startIndex, offsetBy: start)
+                let outputEnd = output.index(output.startIndex, offsetBy: end)
+                output.replaceSubrange(outputStart..<outputEnd, with: local.absoluteString)
+            }
+        }
+        return output.data(using: .utf8)
+    }
+
     func download(configuration: URLSessionConfiguration = .ephemeral) async throws -> Snapshot {
         configuration.urlCache = nil; configuration.httpCookieStorage = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
