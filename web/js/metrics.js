@@ -115,11 +115,12 @@ export class Metrics {
   }
 
   /** 模拟 flex-wrap, 返回句子占的行数. */
-  lineCount(words) {
-    const { avail, colGap } = this;
+  lineCount(words, plain = false) {
+    const { avail } = this;
+    const colGap = plain ? 0 : this.colGap;
     let lines = 1, x = 0;
     for (let i = 0; i < words.length; i++) {
-      const w = this.chipWidth(words[i]);
+      const w = plain ? Math.min(avail, this._measure(words[i].text, this.layers[1])) : this.chipWidth(words[i]);
       if (x === 0) { x = w; continue; }
       if (x + colGap + w > avail + 0.5) { lines++; x = w; }
       else x += colGap + w;
@@ -128,7 +129,7 @@ export class Metrics {
   }
 
   sentenceHeight(sentence, showTr) {
-    const lines = this.lineCount(sentence.words);
+    const lines = this.lineCount(sentence.words, sentence.analyzed === false);
     let h = this.padY + lines * this.chipH + (lines - 1) * this.rowGap;
     if (showTr && sentence.translation) {
       const w = this._measure(sentence.translation, this.trLayer);

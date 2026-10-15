@@ -63,13 +63,17 @@ export function parseSubtitles(text, name = '') {
   return out;
 }
 
-export function plainTrack(record, rows = []) {
-  const spec = sourceSpec(record.lang);
-  // These are display fragments, not analyzed words. Preserve spaces and CJK wrapping.
-  const sentences = rows.map((s, i) => ({ ...s, i, wordTiming: false,
+// These are display fragments, not analyzed words. Preserve spaces and CJK wrapping.
+export function plainSentence(s) {
+  return { ...s, analyzed: false, wordTiming: false,
     words: (s.text.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]|[^\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\s]+\s*|\s+/gu) || [])
       .map((text) => ({ text, pos: 'other' })),
-  }));
+  };
+}
+
+export function plainTrack(record, rows = []) {
+  const spec = sourceSpec(record.lang);
+  const sentences = rows.map((s, i) => plainSentence({ ...s, i }));
   return { schemaVersion: 2, id: record.id, title: record.title,
     generator: 'lingua-subtitles/1', subtitleMode: 'plain',
     lang: { ...spec, features: ['text'], layers: {}, layerOrder: [], spaceDelimited: false },

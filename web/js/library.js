@@ -97,7 +97,7 @@ export async function patchTrack(id, fields) {
 }
 
 /** 分析结果落库, 并把统计回填进元数据. */
-export async function saveAnalysis(id, track, { transcriptName = '', transcriptFile = null } = {}) {
+export async function saveAnalysis(id, track, { transcriptName = '', transcriptFile = null, translations = [] } = {}) {
   const record = await getTrack(id);
   if (!record) throw new Error('媒体不存在，请重新选择');
   const stats = track.stats || {};
@@ -120,6 +120,7 @@ export async function saveAnalysis(id, track, { transcriptName = '', transcriptF
     tracks: [{ key: id, value: next, track: id }],
   };
   if (transcriptFile) batches.transcripts = [{ key: id, value: await transcriptFile.arrayBuffer(), track: id }];
+  if (translations.length) batches.tr = translations;
   await writeBatch(batches);
   return next;
 }

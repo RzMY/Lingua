@@ -43,6 +43,7 @@ export class Reader {
     const s = this.track.sentences[i];
     const art = document.createElement('article');
     art.className = s.wordTiming ? 's' : 's no-wt';
+    art.classList.toggle('s-plain', s.analyzed === false || this.track.raw.subtitleMode === 'plain');
     art.dataset.i = i;
 
     const wrap = document.createElement('div');

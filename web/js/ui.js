@@ -120,7 +120,7 @@ export function createExplain(dom, onPick, onClose) {
 
   function build(sIdx) {
     const s = track.sentences[sIdx];
-    const plain = track.raw?.subtitleMode === 'plain';
+    const plain = s.analyzed === false || track.raw?.subtitleMode === 'plain';
     if (dom.explainTitle) dom.explainTitle.textContent = plain ? '句子' : '逐词拆解';
     dom.explainPanel.setAttribute('aria-label', plain ? '句子' : '逐词拆解');
     favoriteCtl?.abort();

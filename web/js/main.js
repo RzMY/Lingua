@@ -35,7 +35,7 @@ import { config, loadConfig } from './config.js';
 import { nativeApp, nativeReady } from './native.js';
 import { sourceLangs } from './langs.js';
 import { createExplain, openSpeedSheet, openTrackSheet } from './ui.js';
-import { closeSheet, sheetOpen } from './sheet.js';
+import { closeSheet, openSheet, sheetOpen } from './sheet.js';
 import { analyze } from './api.js';
 import { errorMessage } from './errors.js';
 import { audioBlob, flushPositions, getTrack, patchTrack, saveAnalysis, setDuration, setPosition,
@@ -44,7 +44,10 @@ import { plainTrack } from './subtitles.js';
 import { createTranslator } from './translate.js';
 import { closeWordCard, isCardOpen, openWordCard, stopWordPronunciation } from './card.js';
 import { chatOpen, closeChat, openChat } from './chat.js';
-import { button, buttonBar, group, segRow, switchRow } from './rows.js';
+import { actionRow, button, buttonBar, group, segRow, switchRow } from './rows.js';
+import { prepareSubtitleEdit, saveSubtitleEdit, sentenceAnalyzed, subtitleEditDefaults } from './subtitle-edit.js';
+import { openSubtitleEditor } from './subtitle-edit-ui.js';
+import { setupSubtitleGestures } from './subtitle-gestures.js';
 import { createPronunciationLoudness } from './pronunciation-loudness.js';
 import { getFavorite, favoritePosition } from './favorites.js';
 
@@ -87,6 +90,7 @@ let videoReady = false;
 let videoPlayer = null;
 let audioPip = null;
 let setupOnBack = null;
+let editingSubtitle = false;
 
 function syncVideoLayout() {
   const visible = videoReady && dom.setup.hidden;
@@ -544,6 +548,7 @@ function apply(next) {
 
   if (translator) translator.stop();
   translator = createTranslator(next, {
+    lang: trackCfg.lang,
     onApply: applyTranslations,
     onError: (msg) => toast('翻译失败：' + msg),
   });
@@ -584,7 +589,10 @@ function apply(next) {
 function applyTranslations(batch) {
   if (!reader) return;
   const list = [];
-  for (const [i, text] of batch) if (reader.setTranslation(i, text)) list.push(i);
+  for (const [i, text] of batch) if (reader.setTranslation(i, text)) {
+    track.sentences[i].translationLang = translator.lang;
+    list.push(i);
+  }
   if (list.length) { videoPlayer?.refreshPip?.(); audioPip?.refresh(); }   // 小窗里的译文跟着补齐
   if (!dom.setup.hidden || !list.length || !vlist) return;
   if (document.documentElement.dataset.tr === '0') return;   // 没显示译文, 高度不变
@@ -605,7 +613,7 @@ const wantVisible = debounce(() => {
 
 /** 开关/语言变化后重新对齐翻译器状态. */
 function syncTranslate() {
-  if (!translator) return;
+  if (!translator || editingSubtitle) return;
   translator.setEnabled(!!trackCfg.tr, trackCfg.lang);
   if (sweepTimer) { clearTimeout(sweepTimer); sweepTimer = 0; }
   if (!trackCfg.tr) return;
@@ -655,6 +663,71 @@ const followSubtitleX = rafOnce(() => {
 
 // ---------------------------------------------------------------- 阅读区交互
 
+function restartTranslator() {
+  translator?.stop();
+  translator = createTranslator(track, { lang: trackCfg.lang, onApply: applyTranslations,
+    onError: (msg) => toast('翻译失败：' + msg) });
+  syncTranslate();
+}
+
+function showSubtitleActions(i) {
+  if (!track?.sentences[i] || editingSubtitle) return;
+  cancelPress();
+  openSheet('字幕操作', group(actionRow('修改', '修改本句字幕或译文', {
+    onPick: () => editSubtitle(i),
+  })));
+}
+
+async function editSubtitle(i) {
+  if (editingSubtitle) return;
+  editingSubtitle = true;
+  const original = track, lang = trackCfg.lang;
+  translator?.stop();
+  player.overlays.open('subtitle-edit');
+  let closed = false, transferred = false;
+  const finish = () => {
+    editingSubtitle = false;
+    if (track === original) restartTranslator();
+    player.overlays.close('subtitle-edit');
+  };
+  openSheet('修改字幕', el('p', 'field-hint', '正在读取字幕…'), { onClose: () => {
+    if (!transferred) { closed = true; finish(); }
+  } });
+  try {
+    const defaults = await subtitleEditDefaults(original, i, lang);
+    if (closed || track !== original) return;
+    transferred = true;
+    openSubtitleEditor(defaults, { onClose: finish, onSave: async (values, hooks) => {
+      const prepared = await prepareSubtitleEdit(original, i, { ...values, lang }, hooks);
+      hooks.signal.throwIfAborted();
+      hooks.onCommit();
+      record = await saveSubtitleEdit(original, prepared);
+      const live = original.sentences;
+      Object.assign(original, Track.fromData(prepared.data, objUrl));
+      original.sentences.forEach((s, at) => {
+        s.translation = at === i ? prepared.translation : live[at].translation;
+        s.translationLang = at === i ? lang : live[at].translationLang;
+      });
+      const anchor = vlist.indexAt(dom.scroller.scrollTop);
+      document.documentElement.dataset.subtitleMode = original.raw.subtitleMode;
+      initTrackCfg(original.id, original.lang, original.features, onTrackCfg);
+      reader.clearAll();
+      reader.cache.clear();
+      metrics.sync(dom.viewport.clientWidth);
+      vlist.remeasure(anchor, 0);
+      engine.refreshTrack();
+      explain.setTrack(original);
+      dom.btnExplain.disabled = original.raw.subtitleMode === 'plain';
+      videoPlayer?.refreshPip?.();
+      audioPip?.refresh();
+      updateFileState();
+      toast('字幕已保存');
+    } });
+  } catch (error) {
+    if (!closed) { closeSheet(); toast(errorMessage(error, '字幕读取失败，请重试')); }
+  }
+}
+
 let stuck = false;
 const press = { id: -1, x: 0, y: 0, i: -1, timer: 0 };
 let pressFired = false;
@@ -684,7 +757,7 @@ function onReaderClick(e) {
   const j = +chip.dataset.j;
   seekWord(i, j);
   const w = track.sentences[i] && track.sentences[i].words[j];
-  if (trackCfg.card && w && w.pos !== 'punct') {
+  if (trackCfg.card && w && w.pos !== 'punct' && sentenceAnalyzed(track, track.sentences[i])) {
     player.overlays.open('word');
     openWordCard({ track, i, j, lang: trackCfg.lang,
       getAudioBlob: pronunciationBlob ? () => pronunciationBlob : undefined,
@@ -697,6 +770,7 @@ function cancelPress() {
 }
 
 function onPressStart(e) {
+  if (e.button > 0 || e.isPrimary === false) return;
   const art = e.target.closest('.s');
   if (!art) return;
   cancelPress();
@@ -762,12 +836,20 @@ function wireReader() {
   });
   syncPresentation();
 
+  setupSubtitleGestures(dom.viewport, { onSwipe: showSubtitleActions, onMove: cancelPress,
+    rotated: () => document.body.classList.contains('video-rotated') });
   dom.viewport.addEventListener('click', onReaderClick);
   dom.viewport.addEventListener('pointerdown', onPressStart);
   dom.viewport.addEventListener('pointermove', onPressMove);
   dom.viewport.addEventListener('pointerup', cancelPress);
   dom.viewport.addEventListener('pointercancel', cancelPress);
-  dom.viewport.addEventListener('contextmenu', (event) => { if (videoPlayer) event.preventDefault(); });
+  dom.viewport.addEventListener('contextmenu', (event) => {
+    const art = event.target.closest('.s');
+    if (!art) return;
+    event.preventDefault();
+    // Touch long-press keeps its existing explanation action; mouse right-click offers editing.
+    if (!press.timer && !pressFired) showSubtitleActions(+art.dataset.i);
+  });
 }
 
 // ---------------------------------------------------------------- 工具行

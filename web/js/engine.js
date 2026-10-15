@@ -69,6 +69,15 @@ export class Engine {
     this.kick();
   }
 
+  /** The current track's sentence data changed; keep playback, repeat and follow state. */
+  refreshTrack() {
+    this._sHint = this._wHint = -1;
+    this.reader.setActive(-1, -1);
+    this._needV = true;
+    this._target = -1;
+    this.kick();
+  }
+
   // ------------------------------------------------------------ 循环控制
 
   kick() {

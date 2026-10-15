@@ -13,6 +13,8 @@ const { outputFiles } = await build({ stdin: { contents: `
   export { listFavorites, favoriteDraft, saveFavorite } from './web/js/favorites.js';
   export { plainTrack } from './web/js/subtitles.js';
   export { Track } from './web/js/track.js';
+  export { translationKey } from './web/js/translate.js';
+  export { config } from './web/js/config.js';
   export const start = () => import('./web/js/main.js');`,
   resolveDir: fileURLToPath(new URL('../', import.meta.url)) },
   bundle: true, write: false, format: 'iife', globalName: 'PanelTest' });
@@ -274,4 +276,91 @@ test('closing a panel cannot resume a replacement media source', async (t) => {
   h.media.src = 'blob:replacement';
   h.close('word');
   assert.equal(h.media.paused, true);
+});
+
+async function openEditor(h) {
+  const target = h.find('#viewport .s[data-i="0"]');
+  const pointer = (type, x, y = 10) => target.dispatchEvent(Object.assign(
+    new h.w.Event(type, { bubbles: true, cancelable: true }),
+    { pointerId: 1, clientX: x, clientY: y, button: 0, isPrimary: true }));
+  pointer('pointerdown', 180); pointer('pointermove', 90); pointer('pointerup', 90);
+  target.click(); // The synthesized click must not seek or open a word card.
+  assert.equal(h.find('#sheetTitle').textContent, '字幕操作');
+  [...h.doc.querySelectorAll('.sheet button')].find((b) => b.textContent.includes('修改')).click();
+  for (let i = 0; i < 12; i++) await flush();
+  h.frame();
+  assert.equal(h.find('#sheetTitle').textContent, '修改字幕');
+  return {
+    input: (index, text) => {
+      const field = h.doc.querySelectorAll('.subtitle-editor textarea')[index];
+      field.value = text; field.dispatchEvent(new h.w.Event('input', { bubbles: true }));
+    },
+    flag: (label) => h.find(`.subtitle-editor [aria-label="${label}"]`),
+    save: () => [...h.doc.querySelectorAll('.sheet-foot button')].find((b) => b.textContent === '保存').click(),
+  };
+}
+
+for (const kind of ['audio', 'video']) test(`${kind}: left swipe edits and persists one cue without seeking or resetting repeat/speed`, async (t) => {
+  const h = await harness(t, kind);
+  h.w.File = File; h.w.Blob = Blob;
+  h.w.fetch = () => { throw new Error('unexpected network request'); };
+  await h.api.put('tr', h.api.translationKey('lesson', 'zh-CN', 'Hello world.'), '原译文');
+  h.media.currentTime = 6; h.media.playbackRate = 1.5;
+  h.w.LT.engine.setRepeat(1);
+  await h.media.play(); h.frame();
+  const edit = await openEditor(h);
+  assert.equal(h.media.currentTime, 6);
+  assert.equal(h.media.paused, true);
+  assert.equal(edit.flag('重新分析').getAttribute('aria-pressed'), 'true');
+  assert.equal(edit.flag('重新翻译').getAttribute('aria-pressed'), 'true');
+  edit.flag('重新分析').click(); edit.flag('重新翻译').click();
+  edit.input(0, 'A corrected sentence.'); edit.input(1, '人工修正'); edit.save();
+  for (let i = 0; i < 20; i++) await flush(); h.frame();
+  assert.equal(h.doc.documentElement.classList.contains('sheet-open'), false);
+  const data = await h.api.get('data', 'lesson');
+  assert.equal(data.sentences[0].text, 'A corrected sentence.');
+  assert.equal(data.sentences[0].translations['zh-CN'], '人工修正');
+  assert.equal(data.sentences[0].wordTiming, false);
+  assert.equal(data.sentences[1].words[0].start, 10);
+  assert.match(h.find('#viewport .s[data-i="0"] .s-words').textContent, /A corrected sentence/);
+  assert.equal(h.find('#viewport .s[data-i="0"] .s-tr').textContent, '人工修正');
+  assert.equal(h.media.currentTime, 6);
+  assert.equal(h.media.paused, false);
+  assert.equal(h.media.playbackRate, 1.5);
+  assert.equal(h.w.LT.engine.repeat, 1);
+  h.advance(600);
+  const reopened = await openEditor(h);
+  assert.equal(reopened.flag('重新分析').getAttribute('aria-pressed'), 'false');
+  assert.equal(reopened.flag('重新翻译').getAttribute('aria-pressed'), 'true');
+});
+
+test('plain subtitle editor defaults both operations off; validation/failure retain draft and cancel leaves data intact', async (t) => {
+  const h = await harness(t, 'audio', { plain: true });
+  h.w.File = File; h.w.Blob = Blob; h.w.Headers = Headers;
+  h.w.fetch = async () => Response.json({ track: { sentences: [] } });
+  const edit = await openEditor(h);
+  for (const label of ['重新分析', '重新翻译']) assert.equal(edit.flag(label).getAttribute('aria-pressed'), 'false');
+  edit.input(0, ' '); edit.save();
+  assert.match(h.find('.subtitle-editor [role="status"]').textContent, /不能为空/);
+  edit.input(0, 'My draft'); edit.flag('重新分析').click(); edit.save();
+  for (let i = 0; i < 12; i++) await flush();
+  assert.match(h.find('.subtitle-editor [role="status"]').textContent, /分析结果/);
+  assert.equal(h.find('.subtitle-editor textarea').value, 'My draft');
+  h.find('.sheet-head [aria-label="关闭"]').click();
+  assert.equal((await h.api.get('data', 'lesson')).sentences[0].text, 'Plain subtitle.');
+  assert.equal(h.media.paused, true);
+});
+
+test('vertical scroll and cancelled swipe never open subtitle actions or trigger a long press', async (t) => {
+  const h = await harness(t);
+  const target = h.find('#viewport .s');
+  h.pointer(target, 'pointerdown'); h.pointer(target, 'pointermove', 120);
+  h.pointer(target, 'pointerup', 120); h.advance(600);
+  assert.equal(h.doc.documentElement.classList.contains('sheet-open'), false);
+  assert.equal(h.find('#explainPanel').hidden, true);
+  const pointer = (type, x) => target.dispatchEvent(Object.assign(new h.w.Event(type, { bubbles: true }),
+    { pointerId: 1, clientX: x, clientY: 10, button: 0, isPrimary: true }));
+  pointer('pointerdown', 180); pointer('pointermove', 90); pointer('pointercancel', 90);
+  pointer('pointerup', 90); h.advance(600);
+  assert.equal(h.doc.documentElement.classList.contains('sheet-open'), false);
 });

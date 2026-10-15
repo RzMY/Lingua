@@ -51,6 +51,9 @@
 html[data-subtitle-mode="plain"] .s-words { column-gap: 0; }
 html[data-subtitle-mode="plain"] .w { padding-inline: 0; }
 html[data-subtitle-mode="plain"] .w-text { white-space: pre; }
+.s-plain .s-words { column-gap: 0; }
+.s-plain .w { padding-inline: 0; }
+.s-plain .w-text { white-space: pre; }
 
 /* ---------------------------------------------------------------- 句子卡片 */
 
@@ -62,6 +65,7 @@ html[data-subtitle-mode="plain"] .w-text { white-space: pre; }
   padding: var(--s-pad-y) var(--s-pad-x);
   isolation: isolate;
   contain: layout style;
+  touch-action: pan-y;
 }
 
 /* 高亮底板: 独立图层, 只做 opacity 过渡 */

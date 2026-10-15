@@ -18,7 +18,8 @@ import { errorMessage } from './errors.js';
 import { get as cacheGet, getMany, put as cachePut } from './store.js';
 import { hash53 } from './util.js';
 
-const keyOf = (trackId, lang, text) => `${trackId}|${lang}|${hash53(text)}`;
+export const translationKey = (trackId, lang, text) => `${trackId}|${lang}|${hash53(text.trim())}`;
+const keyOf = translationKey;
 
 /** 从模型返回的 JSON 里挑出 1..n 的译文, 容忍数组/嵌套/带引号的键. */
 function pick(data, n) {
@@ -46,6 +47,32 @@ function pick(data, n) {
   return out;
 }
 
+async function requestTranslations(track, texts, batch, lang, signal) {
+  const lo = batch[0], hi = batch[batch.length - 1];
+  const vars = langVars(lang, track.lang);
+  const before = texts.slice(Math.max(0, lo - config.ctxBefore), lo).filter(Boolean);
+  const after = texts.slice(hi + 1, hi + 1 + config.ctxAfter).filter(Boolean);
+  const user = fill(config.prompts.translateUser, {
+    ...vars, n: batch.length,
+    numbered: batch.map((i, k) => `${k + 1}. ${texts[i]}`).join('\n'),
+    before: before.length ? `【上文(仅供参考, 不要翻译)】\n${before.join('\n')}\n\n` : '',
+    after: after.length ? `\n【下文(仅供参考, 不要翻译)】\n${after.join('\n')}\n` : '',
+  });
+  return pick(await chatJSON({ messages: [
+    { role: 'system', content: fill(config.prompts.translate, vars) },
+    { role: 'user', content: user },
+  ], signal }), batch.length);
+}
+
+/** Explicit regeneration bypasses caches and does not publish until the edit commits. */
+export async function translateSentence(track, i, text, lang, { signal } = {}) {
+  const texts = track.sentences.map((s, at) => (at === i ? text : s.text).trim());
+  const result = await requestTranslations(track, texts, [i], lang, signal);
+  const translation = result.get(0);
+  if (!translation) throw new Error('未收到本句译文，请重试');
+  return translation;
+}
+
 /**
  * @param {object} track   Track 实例 (要 id / sentences)
  * @param {object} hooks   { onApply(Map<i,text>), onProgress(done,total), onError(msg) }
@@ -55,7 +82,7 @@ export function createTranslator(track, hooks = {}) {
   const total = sentences.length;
   const texts = sentences.map((s) => (s.text || '').trim());
 
-  let lang = 'zh-CN';
+  let lang = hooks.lang || 'zh-CN';
   let enabled = false;
   let ctl = new AbortController();
   let focus = 0;                  // 焦点句: 出队从这里往后走
@@ -131,32 +158,15 @@ export function createTranslator(track, hooks = {}) {
   }
 
   async function runBatch(batch) {
-    const lo = batch[0];
-    const hi = batch[batch.length - 1];
-    const vars = langVars(lang, track.lang);
-    const before = texts.slice(Math.max(0, lo - config.ctxBefore), lo).filter(Boolean);
-    const after = texts.slice(hi + 1, hi + 1 + config.ctxAfter).filter(Boolean);
-    const user = fill(config.prompts.translateUser, {
-      ...vars,
-      n: batch.length,
-      numbered: batch.map((i, k) => `${k + 1}. ${texts[i]}`).join('\n'),
-      before: before.length ? `【上文(仅供参考, 不要翻译)】\n${before.join('\n')}\n\n` : '',
-      after: after.length ? `\n【下文(仅供参考, 不要翻译)】\n${after.join('\n')}\n` : '',
-    });
-    const data = await chatJSON({
-      messages: [
-        { role: 'system', content: fill(config.prompts.translate, vars) },
-        { role: 'user', content: user },
-      ],
-      signal: ctl.signal,
-    });
-    const got = pick(data, batch.length);
+    const signal = ctl.signal, targetLang = lang;
+    const got = await requestTranslations(track, texts, batch, targetLang, signal);
+    if (signal.aborted) return;
     const missing = [];
     for (let k = 0; k < batch.length; k++) {
       const text = got.get(k);
       if (!text) { missing.push(batch[k]); continue; }
       accept(batch[k], text);
-      cachePut('tr', keyOf(track.id, lang, texts[batch[k]]), text, track.id);
+      cachePut('tr', keyOf(track.id, targetLang, texts[batch[k]]), text, track.id);
     }
     if (missing.length) requeue(missing, false);
   }
@@ -165,10 +175,11 @@ export function createTranslator(track, hooks = {}) {
     while (enabled && running < Math.max(1, config.concurrency)) {
       const batch = takeBatch();
       if (!batch) return;
+      const signal = ctl.signal;
       running++;
       runBatch(batch)
         .catch((err) => {
-          if (err && err.name === 'AbortError') return;
+          if (signal.aborted || err?.name === 'AbortError') return;
           if (batch.length > 1) {                 // 拆小再试, 常见于单句超长
             requeue(batch.slice(0, Math.ceil(batch.length / 2)), true);
             requeue(batch.slice(Math.ceil(batch.length / 2)), false);
@@ -189,10 +200,12 @@ export function createTranslator(track, hooks = {}) {
 
   /** 先查缓存 (一次批量读), 剩下的进队列. */
   async function resolve(list, hotter) {
+    const signal = ctl.signal;
     const need = list.filter((i) => i >= 0 && i < total && texts[i] && !done.has(i) && !queued.has(i));
     if (!need.length) return;
     const keys = need.map((i) => keyOf(track.id, lang, texts[i]));
     const hits = await getMany('tr', [...new Set(keys)]);
+    if (signal.aborted) return;
     const miss = [];
     need.forEach((i, k) => {
       const text = hits.get(keys[k]);
@@ -208,9 +221,19 @@ export function createTranslator(track, hooks = {}) {
     pumpQueue();
   }
 
-  for (let i = 0; i < total; i++) {
-    if (sentences[i] && sentences[i].translation) done.add(i);   // 建库时就译好的
+  function restoreTranslations(clear = false) {
+    for (let i = 0; i < total; i++) {
+      const s = sentences[i];
+      if (Object.hasOwn(s.translations || {}, lang)) {
+        done.add(i); // An explicitly empty edit must not trigger automatic translation.
+        buf.set(i, s.translations[lang]);
+      } else if (s.translation && (!s.translationLang || s.translationLang === lang)) {
+        done.add(i);
+      } else if (clear) buf.set(i, '');
+    }
+    if (buf.size) flushSoon();
   }
+  restoreTranslations();
 
   function resetForLang() {
     ctl.abort();
@@ -220,6 +243,8 @@ export function createTranslator(track, hooks = {}) {
     queued.clear();
     tries.clear();
     done.clear();
+    buf.clear();
+    restoreTranslations(true);
     warned = false;
     reportProgress();
   }
@@ -267,6 +292,7 @@ export function createTranslator(track, hooks = {}) {
         hot.clear();
         cold.clear();
         queued.clear();
+        buf.clear();
       } else {
         ctl = new AbortController();
         warned = false;
@@ -295,6 +321,7 @@ export function createTranslator(track, hooks = {}) {
       hot.clear();
       cold.clear();
       queued.clear();
+      buf.clear();
     },
   };
 }
