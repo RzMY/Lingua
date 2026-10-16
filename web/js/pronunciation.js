@@ -3,6 +3,7 @@ import { normalizePronunciation, speechLanguage } from './pronunciation-config.j
 import { settings } from './settings.js';
 import { isIOS, randomId } from './util.js';
 import { nativeApp } from './native.js';
+import { speechLoudnessTarget } from './pronunciation-loudness.js';
 
 // WebKit cancellation reaches the platform synthesizer asynchronously. Share
 // the recovery window across cards/previews, which all use the same synthesizer.
@@ -106,7 +107,10 @@ export function createPronunciation({ track, sentence, word, audioRange, getAudi
           const id = randomId(), lang = speechLanguage(track.lang);
           const voice = selectSpeechVoice(lang, prefs.voices[lang]);
           const volume = prefs.volumeBalance
-            ? (track.pronunciationLoudness?.volume() ?? 1) * settings.ttsCalibration : 1;
+            ? (track.pronunciationLoudness?.volume?.() ?? 1) * settings.ttsCalibration : 1;
+          const target = prefs.volumeBalance && nativeApp()?.speechLoudness
+            ? (track.pronunciationLoudness?.target?.(settings.ttsCalibration) ?? speechLoudnessTarget(undefined, undefined, settings.ttsCalibration))
+            : null;
           let completed = false;
           const state = ({ detail }) => {
             if (current() && detail?.id === id && detail.state === 'playing') publish('playing', source);
@@ -118,7 +122,8 @@ export function createPronunciation({ track, sentence, word, audioRange, getAudi
             if (!completed) void nativeSpeech.cancel({ id }).catch(() => {});
           };
           try {
-            await nativeSpeech.speak({ id, text: word.text, lang: voice?.lang || lang, voiceURI: voice?.voiceURI || '', volume });
+            await nativeSpeech.speak({ id, text: word.text, lang: voice?.lang || lang, voiceURI: voice?.voiceURI || '', volume,
+              ...(target === null ? {} : { targetLufs: Number.isFinite(target) ? target : -100, muted: target === -Infinity }) });
             completed = true; finish();
           } catch (error) {
             completed = true;

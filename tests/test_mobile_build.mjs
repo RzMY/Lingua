@@ -11,6 +11,11 @@ import xcode from 'xcode';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const read = (path) => readFile(new URL('../' + path, import.meta.url));
 
+test('Android system speech is registered and the installed TTS engine is visible', async () => {
+  assert.match((await read('android/app/src/main/java/app/linguatrack/mobile/MainActivity.java')).toString(), /registerPlugin\(SpeechAudioPlugin.class\)/);
+  assert.match((await read('android/app/src/main/AndroidManifest.xml')).toString(), /<queries>[\s\S]*android.intent.action.TTS_SERVICE[\s\S]*<\/queries>/);
+});
+
 test('native caption plugin is included in the iOS target and registered by the bridge', async () => {
   const project = xcode.project(fileURLToPath(new URL('../ios/App/App.xcodeproj/project.pbxproj', import.meta.url)));
   project.parseSync();

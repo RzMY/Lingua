@@ -655,3 +655,55 @@ test('native calibration and voice previews use system voices and advertise the 
   h.api.closeSheet(); await flush();
   assert.equal(h.cancelled.length, 2);
 });
+
+test('iOS normalized speech sends a measured target, preserves mute and bypasses normalization when disabled', async (t) => {
+  const h = nativeSpeechHarness(t);
+  h.w.LinguaNative.speechLoudness = true;
+  const local = { ...track, pronunciationLoudness: { target: (calibration) => -24 + 20 * Math.log10(calibration / .5) } };
+  const session = h.api.createPronunciation({ track: local, sentence, word });
+  t.after(() => session.dispose());
+  for (const calibration of [.5, 1, .1]) {
+    h.api.setSetting('ttsCalibration', calibration);
+    const play = session.play('standard'), call = h.calls.at(-1);
+    assert.equal(call.targetLufs, local.pronunciationLoudness.target(calibration));
+    assert.equal(call.muted, false);
+    h.pending.get(call.id).resolve(); await play;
+  }
+  local.pronunciationLoudness.target = () => -Infinity;
+  const muted = session.play('standard'), call = h.calls.at(-1);
+  assert.equal(call.muted, true); assert.equal(call.targetLufs, -100);
+  h.pending.get(call.id).resolve(); await muted;
+  const unbalanced = session.play('standard', { volumeBalance: false }), full = h.calls.at(-1);
+  assert.equal(full.volume, 1); assert.equal('targetLufs' in full, false);
+  h.pending.get(full.id).resolve(); await unbalanced;
+});
+
+test('iOS calibration defaults to the measured bundled reference instead of a second 50 percent attenuation', async (t) => {
+  const h = nativeSpeechHarness(t); h.w.LinguaNative.speechLoudness = true;
+  h.api.openPronunciationSheet();
+  [...h.w.document.querySelectorAll('button')].find((b) => b.textContent.includes('音量校准')).click();
+  assert.match(h.w.document.querySelector('.pronunciation-calibration').textContent, /实际响度自动匹配/);
+  h.w.document.querySelector('[aria-label="试听标准发音"]').click();
+  assert.equal(h.calls.at(-1).targetLufs, -18.13189);
+  assert.equal(h.calls.at(-1).muted, false);
+  h.api.closeSheet(); await flush();
+});
+
+test('Android native calibration and repeat playback use the same loudness target and media speech bridge', async (t) => {
+  const h = nativeSpeechHarness(t); h.w.LinguaNative.platform = 'android'; h.w.LinguaNative.speechLoudness = true;
+  h.api.openPronunciationSheet();
+  [...h.w.document.querySelectorAll('button')].find((b) => b.textContent.includes('音量校准')).click();
+  assert.match(h.w.document.querySelector('.pronunciation-calibration').textContent, /实际响度自动匹配/);
+  for (const calibration of [.5, .1, 1]) {
+    h.api.setSetting('ttsCalibration', calibration);
+    h.w.document.querySelector('[aria-label="试听标准发音"]').click();
+    const call = h.calls.at(-1);
+    assert.equal(call.targetLufs, -18.13189 + 20 * Math.log10(calibration / .5));
+    h.pending.get(call.id).resolve(); await flush();
+  }
+  assert.equal(h.utterances.length, 0);
+  h.api.closeSheet(); await flush();
+  delete h.w.LinguaNative.speechAudio; h.w.LinguaNative.speechLoudness = false;
+  [...h.w.document.querySelectorAll('button')].find((b) => b.textContent.includes('音量校准')).click();
+  assert.match(h.w.document.querySelector('.pronunciation-calibration').textContent, /新版 APK/);
+});

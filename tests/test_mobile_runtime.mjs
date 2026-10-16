@@ -90,15 +90,16 @@ test('video audio is enabled only by binaries supporting the extended native API
   }
 });
 
-test('PCM speech is exposed only on supporting iOS binaries and forwards its own events', async (t) => {
+test('PCM speech is exposed only on supporting Android/iOS binaries and forwards its own events', async (t) => {
   for (const platform of ['ios', 'android']) {
     for (const supported of [false, true]) {
       let listener;
       const bridge = { capabilities: async () => ({ pcmVolume: supported, voices: [{ voiceURI: 'system-en', lang: 'en-US' }] }),
         addListener: async (name, callback) => { assert.equal(name, 'stateChanged'); listener = callback; } };
       const h = await harness({}, { platform, speechAudio: bridge }); t.after(h.close);
-      const expected = platform === 'ios' && supported;
+      const expected = supported;
       assert.equal(!!h.window.LinguaNative.speechAudio, expected);
+      assert.equal(h.window.LinguaNative.speechLoudness, false, 'older PCM binaries keep the gain contract');
       assert.equal(h.window.LinguaNative.speechVoices.length, expected ? 1 : 0);
       if (expected) {
         let detail;
@@ -110,6 +111,15 @@ test('PCM speech is exposed only on supporting iOS binaries and forwards its own
   }
   const old = await harness({}, { speechAudio: { capabilities: async () => { throw Error('unavailable'); } } }); t.after(old.close);
   assert.equal(old.window.LinguaNative.speechAudio, null);
+});
+
+test('native loudness normalization is separately detected and gated by PCM speech support', async (t) => {
+  for (const pcmVolume of [false, true]) {
+    const h = await harness({}, { speechAudio: {
+      capabilities: async () => ({ pcmVolume, loudnessNormalization: true }), addListener: async () => {},
+    } }); t.after(h.close);
+    assert.equal(h.window.LinguaNative.speechLoudness, pcmVolume);
+  }
 });
 
 test('caption windows are exposed only by mobile binaries reporting native support', async (t) => {

@@ -2,7 +2,7 @@ import AVFoundation
 import Capacitor
 import UIKit
 
-/// iOS system voices rendered to PCM, then attenuated before independent playback.
+/// iOS system voices rendered to PCM, then matched to measured media loudness.
 @objc(SpeechAudioPlugin)
 final class SpeechAudioPlugin: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate {
     let identifier = "SpeechAudioPlugin"
@@ -19,6 +19,7 @@ final class SpeechAudioPlugin: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegat
     private var samples = [Float]()
     private var rate: Double = 0, channels = 0
     private var gain: Double = 1
+    private var targetLufs: Double?
     private var watchdog: DispatchWorkItem?
     private var observers = [NSObjectProtocol]()
 
@@ -49,7 +50,7 @@ final class SpeechAudioPlugin: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegat
                 ["voiceURI": voice.identifier, "name": voice.name, "lang": voice.language,
                  "localService": true, "default": voice.language == AVSpeechSynthesisVoice.currentLanguageCode()] as [String: Any]
             }
-            call.resolve(["pcmVolume": true, "voices": voices])
+            call.resolve(["pcmVolume": true, "loudnessNormalization": true, "voices": voices])
         }
     }
 
@@ -61,8 +62,14 @@ final class SpeechAudioPlugin: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegat
                   volume.isFinite, volume >= 0, volume <= 1 else {
                 call.reject("发音参数无效", "SPEECH_INVALID"); return
             }
+            let target = call.getDouble("targetLufs")
+            guard target == nil || (target!.isFinite && target! >= -100 && target! <= 0) else {
+                call.reject("目标响度无效", "SPEECH_INVALID"); return
+            }
             self.finish(error: "发音已替换", code: "SPEECH_CANCELLED")
             self.job = id; self.pending = call; self.gain = volume
+            self.targetLufs = target
+            if call.getBool("muted") == true { self.gain = 0; self.targetLufs = nil }
             let utterance = AVSpeechUtterance(string: text)
             let lang = call.getString("lang") ?? "en-US"
             let voiceID = call.getString("voiceURI") ?? ""
@@ -132,7 +139,7 @@ final class SpeechAudioPlugin: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegat
     private func playRendered(id: String) {
         guard job == id, player == nil else { return }
         do {
-            let wav = try SpeechPCM.wav(samples, sampleRate: rate, channels: channels, gain: gain)
+            let wav = try SpeechPCM.wav(samples, sampleRate: rate, channels: channels, gain: gain, targetLufs: targetLufs)
             samples.removeAll(keepingCapacity: false)
             let output = try AVAudioPlayer(data: wav)
             output.delegate = self; output.volume = 1
@@ -170,6 +177,7 @@ final class SpeechAudioPlugin: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegat
         player?.delegate = nil; player?.stop(); player = nil
         synth?.stopSpeaking(at: .immediate)
         samples.removeAll(keepingCapacity: false); rate = 0; channels = 0
+        targetLufs = nil; gain = 1
         if let error = error { call?.reject(error, code) } else { call?.resolve() }
         // Do not deactivate the shared session: the main lesson may immediately resume.
     }

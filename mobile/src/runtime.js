@@ -274,16 +274,17 @@ async function initialize() {
     fetchManifest: (selected, signal) => fetchSourceManifest(selected, (url) => getJson(url, signal)),
     save, state, currentVersion: version });
   let marked = false;
-  let speechAudio = null, speechVoices = [];
-  if (Capacitor.getPlatform() === 'ios' && Capacitor.isPluginAvailable('SpeechAudio')) {
+  let speechAudio = null, speechVoices = [], speechLoudness = false;
+  if (Capacitor.isPluginAvailable('SpeechAudio')) {
     try {
       const capabilities = await SpeechAudio.capabilities();
       if (capabilities.pcmVolume === true) {
         await SpeechAudio.addListener('stateChanged', (detail) => window.dispatchEvent(new CustomEvent('native-speech-state', { detail })));
         speechAudio = SpeechAudio;
         speechVoices = capabilities.voices || [];
+        speechLoudness = capabilities.loudnessNormalization === true;
       }
-    } catch { /* Older binaries retain Web Speech; PCM playback requires a new IPA. */ }
+    } catch { /* Older binaries retain Web Speech; PCM playback requires a new APK/IPA. */ }
   }
   const audioPlayer = Capacitor.isPluginAvailable('AudioPlayer') ? AudioPlayer : null;
   if (audioPlayer) {
@@ -321,7 +322,7 @@ async function initialize() {
     captionPip,
     audioPlayer,
     nativeVideoAudio,
-    speechAudio, speechVoices,
+    speechAudio, speechVoices, speechLoudness,
     refreshCaptionPip,
     async markReady() {
       if (marked) return; marked = true;

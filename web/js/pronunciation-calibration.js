@@ -6,7 +6,7 @@ import { TTS_CALIBRATION_DEFAULT } from './pronunciation-config.js';
 import { createPronunciation, supportsSpeech } from './pronunciation.js';
 import { nativeApp } from './native.js';
 
-// Bundled, fixed reference speech normalized to RMS 0.1, the balancing reference.
+// Bundled reference: RMS 0.1 / gated K-weighted loudness -18.13189 LUFS.
 export const CALIBRATION_TEXT = 'Hello! It is a lovely day.';
 export const CALIBRATION_AUDIO = 'assets/pronunciation-calibration.wav';
 
@@ -49,11 +49,16 @@ export function openPronunciationCalibration({ onBack } = {}) {
     session.stop();
     setSetting('ttsCalibration', value / 100);
   }, { min: 10, max: 100, step: 5, unit: '%' });
-  body.append(group(level), el('p', 'voice-sample', '默认 50%，数值越小，标准发音越轻。自动保存，对所有开启音量均衡的音频生效。试听使用全局英语音色。'));
-  if (nativeApp()?.platform === 'ios') {
+  const normalized = nativeApp()?.speechLoudness === true;
+  body.append(group(level), el('p', 'voice-sample', normalized
+    ? '默认 50% 为参考响度，数值越小，标准发音越轻。自动保存，对所有开启音量均衡的音频生效。试听使用全局英语音色。'
+    : '默认 50%，数值越小，标准发音越轻。自动保存，对所有开启音量均衡的音频生效。试听使用全局英语音色。'));
+  if (['ios', 'android'].includes(nativeApp()?.platform)) {
+    const packageType = nativeApp().platform === 'android' ? 'APK' : 'IPA';
     body.append(el('p', 'voice-sample', nativeApp().speechAudio
-      ? '当前使用原生系统发音，音量直接应用于合成音频。'
-      : '当前安装包尚未包含原生发音修复，需要重新安装新版 IPA。'));
+      ? (normalized ? '当前使用原生系统发音，按所选音色的实际响度自动匹配参考音频。'
+        : `当前使用原生系统发音，安装新版 ${packageType} 后可按实际响度自动匹配参考音频。`)
+      : `当前安装包尚未包含原生发音修复，需要重新安装新版 ${packageType}。`));
   }
   body.append(buttonBar(
     button('停止试听', { onPick: () => session.stop() }),
