@@ -113,12 +113,13 @@ test('PCM speech is exposed only on supporting Android/iOS binaries and forwards
   assert.equal(old.window.LinguaNative.speechAudio, null);
 });
 
-test('native loudness normalization is separately detected and gated by PCM speech support', async (t) => {
+test('native loudness and external PCM are separately detected and gated by speech support', async (t) => {
   for (const pcmVolume of [false, true]) {
     const h = await harness({}, { speechAudio: {
-      capabilities: async () => ({ pcmVolume, loudnessNormalization: true }), addListener: async () => {},
+      capabilities: async () => ({ pcmVolume, loudnessNormalization: true, externalPCM: true }), addListener: async () => {},
     } }); t.after(h.close);
     assert.equal(h.window.LinguaNative.speechLoudness, pcmVolume);
+    assert.equal(h.window.LinguaNative.speechPCM, pcmVolume);
   }
 });
 

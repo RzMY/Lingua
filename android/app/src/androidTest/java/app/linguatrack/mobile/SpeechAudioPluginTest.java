@@ -27,6 +27,34 @@ public class SpeechAudioPluginTest {
         JSObject data = new JSObject(); data.put("id", UUID.randomUUID().toString()); data.put("text", "Hello! It is a lovely day.");
         data.put("lang", "en-US"); data.put("volume", .5); data.put("targetLufs", target); return new Call("speak", data);
     }
+    static Call externalPCM(double target) {
+        int rate = 16000;
+        java.nio.ByteBuffer bytes = java.nio.ByteBuffer.allocate(rate * 4).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        for (int i = 0; i < rate; i++) bytes.putFloat((float) (.1 * Math.sin(2 * Math.PI * 1000 * i / rate)));
+        JSObject data = new JSObject(); data.put("id", UUID.randomUUID().toString()); data.put("sampleRate", rate);
+        data.put("pcm", android.util.Base64.encodeToString(bytes.array(), android.util.Base64.NO_WRAP)); data.put("targetLufs", target);
+        return new Call("playPCM", data);
+    }
+    @Test public void externalPcmUsesMediaPlaybackAndCancelsOnlyItsOwnId() throws Exception {
+        try (ActivityScenario<MainActivity> activity = ActivityScenario.launch(MainActivity.class)) {
+            SpeechAudioPlugin[] plugin = new SpeechAudioPlugin[1];
+            activity.onActivity(a -> plugin[0] = (SpeechAudioPlugin) a.getBridge().getPlugin("SpeechAudio").getInstance());
+            Call capabilities = new Call("capabilities", new JSObject()); plugin[0].capabilities(capabilities); capabilities.await();
+            assertTrue(capabilities.result.getBool("externalPCM"));
+            for (double target : new double[] {-18.13189, -32}) {
+                Call call = externalPCM(target); plugin[0].playPCM(call); call.await(); assertNull(call.error);
+            }
+            Call old = externalPCM(-24); plugin[0].playPCM(old);
+            Call next = externalPCM(-24); plugin[0].playPCM(next); old.await(); assertEquals("SPEECH_CANCELLED", old.code);
+            JSObject id = new JSObject(); id.put("id", old.getString("id"));
+            Call stale = new Call("cancel", id); plugin[0].cancel(stale); stale.await(); next.await(); assertNull(next.error);
+            Call stopped = externalPCM(-24); plugin[0].playPCM(stopped);
+            id = new JSObject(); id.put("id", stopped.getString("id"));
+            Call cancel = new Call("cancel", id); plugin[0].cancel(cancel); cancel.await(); stopped.await(); assertEquals("SPEECH_CANCELLED", stopped.code);
+            Call malformed = externalPCM(-24); malformed.getData().put("pcm", "AA==");
+            plugin[0].playPCM(malformed); malformed.await(); assertEquals("SPEECH_FORMAT", malformed.code);
+        }
+    }
     @Test public void systemTtsRendersRepeatedlyAndCancellationCleansTheSession() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         try (java.io.InputStream input = context.getAssets().open("public/assets/pronunciation-calibration.wav")) {

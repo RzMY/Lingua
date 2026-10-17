@@ -8,6 +8,7 @@
     "mobile:build": "node mobile/scripts/build.mjs",
     "mobile:dev-cache": "node mobile/scripts/development-cache.mjs",
     "icons": "python mobile/scripts/icons.py",
+    "voices:vendor": "node mobile/scripts/voice-runtime.mjs",
     "mobile:sync": "npm run mobile:permissions && npm run mobile:build && cap sync",
     "mobile:android": "cap open android",
     "mobile:ios": "cap open ios",
@@ -39,9 +40,11 @@
   },
   "devDependencies": {
     "@capacitor/cli": "8.5.2",
+    "@diffusionstudio/piper-wasm": "1.0.0",
     "esbuild": "0.28.2",
     "fflate": "0.8.3",
     "jsdom": "30.1.0",
+    "onnxruntime-web": "1.18.0",
     "yaml": "2.9.1"
   },
   "private": true,

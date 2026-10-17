@@ -113,8 +113,36 @@ public class SpeechAudioPlugin extends Plugin {
                 }
             }
         }
-        JSObject result = new JSObject(); result.put("pcmVolume", true); result.put("loudnessNormalization", true);
+        JSObject result = new JSObject(); result.put("pcmVolume", true); result.put("loudnessNormalization", true); result.put("externalPCM", true);
         result.put("voices", voices); call.resolve(result);
+    }
+    /** Downloaded voices bypass TextToSpeech and share its media output/focus lifecycle. */
+    @PluginMethod public void playPCM(PluginCall call) {
+        main.post(() -> {
+            String id = call.getString("id", ""), encoded = call.getString("pcm", "");
+            Integer rate = call.getInt("sampleRate"); Double target = call.getDouble("targetLufs");
+            if (!id.matches("[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}") || rate == null || rate < 8000 || rate > 192000
+                || encoded.isEmpty() || encoded.length() > (long) rate * 30 * 4 * 4 / 3 + 4
+                || (target != null && (!Double.isFinite(target) || target < -100 || target > 0))) {
+                call.reject("合成音频参数无效", "SPEECH_INVALID"); return;
+            }
+            if (destroyed) { call.reject("发音已停止", "SPEECH_CANCELLED"); return; }
+            finish("发音已替换", "SPEECH_CANCELLED");
+            Job current = new Job(id, call, null, call.getBoolean("muted", false) ? 0 : 1,
+                call.getBoolean("muted", false) ? null : target);
+            current.rate = rate; current.channels = 1; current.rendering = true; job = current;
+            main.postDelayed(timeout, 45000);
+            worker.execute(() -> {
+                try {
+                    byte[] raw = android.util.Base64.decode(encoded, android.util.Base64.NO_WRAP);
+                    if (raw.length == 0 || raw.length % 4 != 0 || raw.length > rate * 30 * 4) throw new IllegalArgumentException("合成音频格式无效");
+                    java.nio.FloatBuffer buffer = java.nio.ByteBuffer.wrap(raw).order(java.nio.ByteOrder.LITTLE_ENDIAN).asFloatBuffer();
+                    float[] samples = new float[buffer.remaining()]; buffer.get(samples);
+                    short[] pcm = SpeechPCM.render(samples, rate, 1, current.gain, current.target);
+                    main.post(() -> { if (job == current) play(current, pcm); });
+                } catch (Exception error) { main.post(() -> { if (job == current) finish(error.getMessage(), "SPEECH_FORMAT"); }); }
+            });
+        });
     }
     @PluginMethod public void speak(PluginCall call) {
         main.post(() -> {
@@ -207,7 +235,7 @@ public class SpeechAudioPlugin extends Plugin {
             focusHeld = false; focusRequest = null;
         }
         if (previous != null) {
-            previous.file.delete(); previous.bytes.reset();
+            if (previous.file != null) previous.file.delete(); previous.bytes.reset();
             if (message == null) previous.call.resolve(); else previous.call.reject(message, code);
         }
     }

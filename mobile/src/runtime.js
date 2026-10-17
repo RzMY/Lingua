@@ -274,7 +274,7 @@ async function initialize() {
     fetchManifest: (selected, signal) => fetchSourceManifest(selected, (url) => getJson(url, signal)),
     save, state, currentVersion: version });
   let marked = false;
-  let speechAudio = null, speechVoices = [], speechLoudness = false;
+  let speechAudio = null, speechVoices = [], speechLoudness = false, speechPCM = false;
   if (Capacitor.isPluginAvailable('SpeechAudio')) {
     try {
       const capabilities = await SpeechAudio.capabilities();
@@ -283,6 +283,7 @@ async function initialize() {
         speechAudio = SpeechAudio;
         speechVoices = capabilities.voices || [];
         speechLoudness = capabilities.loudnessNormalization === true;
+        speechPCM = capabilities.externalPCM === true;
       }
     } catch { /* Older binaries retain Web Speech; PCM playback requires a new APK/IPA. */ }
   }
@@ -322,7 +323,7 @@ async function initialize() {
     captionPip,
     audioPlayer,
     nativeVideoAudio,
-    speechAudio, speechVoices, speechLoudness,
+    speechAudio, speechVoices, speechLoudness, speechPCM,
     refreshCaptionPip,
     async markReady() {
       if (marked) return; marked = true;

@@ -54,13 +54,13 @@ test('TTS calibration defaults lower, validates old/corrupt settings and stays g
 });
 
 test('pronunciation inherits legacy defaults, stays isolated and survives unrelated audio edits', () => {
-  setPronunciation({ source: 'standard', autoPlay: true, voices: { en: 'uk' } });
+  setPronunciation({ source: 'standard', autoPlay: true, onlineVoices: true, voices: { en: 'uk' } });
   saved.set('linguatrack.track.legacy', JSON.stringify({ read: 0 }));
   const changes = [];
   initTrackCfg('legacy', 'en', null, (...args) => changes.push(args));
   assert.deepEqual(trackCfg.pronunciation, settings.pronunciation);
   assert.notEqual(trackCfg.pronunciation.voices, settings.pronunciation.voices);
-  setTrackPronunciation({ autoPlay: false, volumeBalance: false, voices: { en: 'us' } });
+  setTrackPronunciation({ autoPlay: false, volumeBalance: false, onlineVoices: false, voices: { en: 'us' } });
   assert.deepEqual(changes.at(-1), ['pronunciation', trackCfg.pronunciation, false]);
   setTrackCfg('pos', 0);
   setTrackFontSize('textSize', 32);
@@ -79,7 +79,7 @@ test('corrupt pronunciation archives normalize safely and storage failure still 
     source: 'bad', autoPlay: 'false', volumeBalance: null, voices: [], speechRate: 2,
   } }));
   initTrackCfg('corrupt', 'en');
-  assert.deepEqual(trackCfg.pronunciation, { source: 'audio', autoPlay: false, volumeBalance: true, voices: {} });
+  assert.deepEqual(trackCfg.pronunciation, { source: 'audio', autoPlay: false, volumeBalance: true, onlineVoices: false, voices: {} });
   const write = localStorage.setItem;
   localStorage.setItem = () => { throw Error('storage unavailable'); };
   try {

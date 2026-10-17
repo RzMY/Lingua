@@ -59,6 +59,8 @@ test('mobile release contains complete application assets and produces identical
   for (const name of ['index.html', 'player.html', 'js/home.js', 'js/main.js', 'native.js', 'native-bundle.json', 'js/native-caption-pip.js', 'js/native-audio.js']) {
     assert.ok(entries[name], name);
   }
+  for (const name of ['js/voice-pack-worker.js', 'js/supertonic-worker.js', 'js/supertonic-text.js', 'js/vendor/supertonic/MODEL-LICENSE', 'js/vendor/piper/ort.wasm.min.js', 'js/vendor/piper/piper_phonemize.js']) assert.ok(entries[name], name);
+  assert.ok(!Object.keys(entries).some((name) => /\.onnx$|piper_phonemize\.(wasm|data)$|ort-wasm\.wasm$/.test(name)), 'voice models and binary runtimes are user downloads');
   for (const dir of ['css', 'js', 'js/vendor']) {
     for (const file of await readdir(new URL('../web/' + dir, import.meta.url), { withFileTypes: true })) {
       if (file.isFile()) assert.ok(entries[dir + '/' + file.name], `missing ${dir}/${file.name}`);

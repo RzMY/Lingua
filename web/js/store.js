@@ -21,7 +21,7 @@
  */
 
 const DB_NAME = 'linguatrack';
-const DB_VER = 5;
+const DB_VER = 6;
 const STALL_MS = 15000;            // 事务这么久没有进展就放弃 (只在页面可见时计时)
 const READ_FAIL = '本地数据读取失败，请重试';
 const WRITE_FAIL = '本地数据保存失败，请重试';
@@ -31,7 +31,8 @@ export const CACHE_STORES = ['tr', 'word', 'chat', 'kv'];
 /** 音频库 (键 = trackId): 元数据 / 音频 / 分析结果 / 字幕原件. */
 export const LIB_STORES = ['tracks', 'audio', 'audioChunks', 'data', 'transcripts'];
 /** 收藏是独立的用户资产, 删除源媒体或清缓存时保留。 */
-export const STORES = [...CACHE_STORES, ...LIB_STORES, 'favorites'];
+// Downloadable voices are device assets, independent of lessons, caches and JSON backups.
+export const STORES = [...CACHE_STORES, ...LIB_STORES, 'favorites', 'voicePacks', 'voicePackMeta'];
 
 const mem = new Map(STORES.map((s) => [s, new Map()]));
 let degraded = false;
@@ -351,6 +352,38 @@ export async function del(store, key) {
     }, { fallback: WRITE_FAIL });
     if (out === MEMORY) mem.get(store).delete(key);
   } catch { /* 尽力删除; 用户资产的删除走 wipeTrackAll */ }
+}
+
+/** Explicit asset deletion must report transaction failures. */
+export async function deleteRecords(batches) {
+  const names = Object.keys(batches);
+  const out = await transact(names, 'readwrite', (t, ctx) => {
+    for (const name of names) for (const key of batches[name]) ctx.request(t.objectStore(name).delete(key));
+    return () => undefined;
+  }, { fallback: '本地数据删除失败，请重试' });
+  if (out === MEMORY) for (const name of names) for (const key of batches[name]) mem.get(name).delete(key);
+}
+
+/** Remove a voice and its shared model only after the last style, in one transaction.
+ * Inspect small completion markers, never load model buffers just to delete them.
+ */
+export async function deleteVoiceAssets(id, sharedKey) {
+  const out = await transact(['voicePacks', 'voicePackMeta'], 'readwrite', (t, ctx) => {
+    const meta = t.objectStore('voicePackMeta'), assets = t.objectStore('voicePacks');
+    let sharedRemoved = false;
+    ctx.request(meta.getAll(), (rows) => {
+      const other = rows.some((row) => row.v?.id !== id && row.v?.group === sharedKey);
+      ctx.request(assets.delete(id)); ctx.request(meta.delete(id));
+      if (!other) { ctx.request(assets.delete(sharedKey)); ctx.request(meta.delete(sharedKey)); sharedRemoved = true; }
+    });
+    return () => sharedRemoved;
+  }, { fallback: '语音包删除失败，请重试' });
+  if (out !== MEMORY) return out;
+  const meta = mem.get('voicePackMeta'), assets = mem.get('voicePacks');
+  const other = [...meta.values()].some((row) => row.id !== id && row.group === sharedKey);
+  meta.delete(id); assets.delete(id);
+  if (!other) { meta.delete(sharedKey); assets.delete(sharedKey); }
+  return !other;
 }
 /** Backup reads must fail explicitly and share one consistent transaction. */
 export async function snapshot(names) {

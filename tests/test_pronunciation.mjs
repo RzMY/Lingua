@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { build } from 'esbuild';
 import { JSDOM } from 'jsdom';
 import { fileURLToPath } from 'node:url';
+import { webcrypto } from 'node:crypto';
 import { normalizePronunciation } from '../web/js/pronunciation-config.js';
 import { wordAudioRange, clipAudioRange, selectSpeechVoice } from '../web/js/pronunciation.js';
 
@@ -12,6 +13,9 @@ const { outputFiles } = await build({ stdin: { contents: `
   export * from './web/js/trackcfg.js';
   export * from './web/js/card.js';
   export * from './web/js/pronunciation-settings.js';
+  export * from './web/js/voice-packs.js';
+  export * from './web/js/voice-pack-catalog.js';
+  export { writeBatch } from './web/js/store.js';
   export { closeSheet } from './web/js/sheet.js';`,
   resolveDir: fileURLToPath(new URL('../', import.meta.url)) },
   bundle: true, write: false, format: 'iife', globalName: 'PronunciationTest' });
@@ -71,6 +75,183 @@ function harness(t, speech = true) {
   return { w, api, media, utterances, revoked, timers, voices, events, session, fire, get cancels() { return cancels; } };
 }
 
+async function packageHarness(t, native = false) {
+  const h = harness(t), contexts = [], workers = [];
+  h.w.TextDecoder = TextDecoder;
+  h.w.structuredClone = structuredClone;
+  h.w.fetch = async () => ({ ok: true, text: async () => '' });
+  Object.defineProperty(h.w.crypto, 'subtle', { value: webcrypto.subtle });
+  h.w.Worker = class {
+    constructor(url) { this.url = url; workers.push(this); }
+    postMessage(data) { this.data = data; }
+    terminate() { this.terminated = true; }
+  };
+  h.w.AudioContext = class {
+    constructor() { this.state = 'suspended'; contexts.push(this); }
+    resume() { this.resumed = true; this.state = 'running'; return Promise.resolve(); }
+    close() { this.closed = true; return Promise.resolve(); }
+    createBuffer(_channels, length, rate) {
+      return { length, rate, copyToChannel: (samples) => { this.samples = samples; } };
+    }
+    createBufferSource() {
+      const node = { connect() {}, disconnect() {}, start() { node.started = true; }, stop() { node.stopped = true; } };
+      this.node = node; return node;
+    }
+  };
+  const id = h.api.VOICE_PACKS[0].id;
+  await h.api.writeBatch({ voicePacks: [
+    { key: id, value: { model: new ArrayBuffer(2), config: new TextEncoder().encode('{}').buffer, revision: h.api.VOICE_REVISION } },
+    { key: h.api.VOICE_RUNTIME_KEY, value: { onnx: new ArrayBuffer(2), data: new ArrayBuffer(2), phonemizer: new ArrayBuffer(2) } },
+  ], voicePackMeta: [{ key: id, value: { id, revision: h.api.VOICE_REVISION } }] });
+  await h.api.refreshVoicePacks();
+  const prefs = { onlineVoices: true, voices: { en: h.api.packKey(id) } };
+  if (native) {
+    const calls = [], cancelled = [], pending = new Map();
+    h.w.LinguaNative = { platform: 'ios', speechPCM: true, speechAudio: {
+      playPCM: (call) => { calls.push(call); return new Promise((resolve, reject) => pending.set(call.id, { resolve, reject })); },
+      cancel: async ({ id }) => { cancelled.push(id); pending.get(id)?.reject(Object.assign(Error('cancelled'), { code: 'SPEECH_CANCELLED' })); },
+    }, speechVoices: [] };
+    Object.assign(h, { calls, cancelled, pending });
+  }
+  return { ...h, contexts, workers, prefs,
+    render(worker = workers.at(-1)) {
+      worker.onmessage({ data: { sampleRate: 16000, samples: h.w.Float32Array.from({ length: 1600 }, (_, i) => .1 * Math.sin(i * 2 * Math.PI * 1000 / 16000)) } });
+    } };
+}
+
+test('package speech resumes Web Audio in the click, uses actual PCM target and never calls system TTS', async (t) => {
+  const h = await packageHarness(t);
+  const playing = h.session.play('standard', h.prefs);
+  assert.equal(h.contexts[0].resumed, true, 'resume must precede model IO');
+  await flush(); h.render(); await playing;
+  assert.equal(h.contexts[0].node.started, true); assert.equal(h.events.at(-1).state, 'playing');
+  assert.equal(h.workers[0].terminated, true); assert.equal(h.utterances.length, 0);
+  assert.equal(h.cancels, 0); assert.equal(h.media.length, 0);
+  h.contexts[0].node.onended();
+  assert.equal(h.contexts[0].closed, true); assert.equal(h.session.active, '');
+  h.api.setSetting('ttsCalibration', .1);
+  await h.session.play('standard', h.prefs);
+  assert.equal(h.workers.length, 1, 'completed PCM is reused, synthesis is not repeated');
+  assert.ok(h.contexts[1].samples.every((n, i) => Math.abs(n - h.contexts[0].samples[i] * .2) < .000001), 'cached raw PCM uses live calibration');
+});
+
+test('package cancellation kills inference, ignores late PCM and switching to system speech keeps that request alive', async (t) => {
+  const h = await packageHarness(t);
+  const playing = h.session.play('standard', h.prefs); await flush();
+  h.session.stop(); await playing;
+  assert.equal(h.workers[0].terminated, true); assert.equal(h.contexts[0].closed, true);
+  h.render(h.workers[0]); assert.equal(h.contexts[0].node, undefined);
+  const old = h.session.play('standard', h.prefs); await flush();
+  await h.session.play('standard', { voices: { en: 'us' } }); await old;
+  h.render(h.workers[1]);
+  assert.equal(h.utterances.length, 1); assert.equal(h.contexts[1].node, undefined);
+  assert.equal(h.session.active, 'standard');
+});
+
+test('native package PCM uses its own capability and cancel id, without Web Audio or system synthesis', async (t) => {
+  const h = await packageHarness(t, true);
+  const playing = h.session.play('standard', h.prefs); await flush(); h.render(); await flush();
+  const call = h.calls[0];
+  assert.equal(call.sampleRate, 16000); assert.ok(call.pcm.length > 0);
+  assert.equal(call.targetLufs, -18.13189);
+  assert.equal(h.contexts.length, 0); assert.equal(h.utterances.length, 0);
+  h.w.dispatchEvent(new h.w.CustomEvent('native-speech-state', { detail: { id: call.id, state: 'playing' } }));
+  assert.equal(h.events.at(-1).state, 'playing');
+  h.fire(h.w, 'pagehide'); await playing;
+  assert.deepEqual(h.cancelled, [call.id]); assert.equal(h.session.active, '');
+});
+
+test('downloaded and missing pack choices survive settings refresh without switching automatic voices', async (t) => {
+  const h = await packageHarness(t);
+  h.api.setPronunciation(h.prefs); h.api.openPronunciationSheet();
+  h.w.document.querySelector('[data-voice-language="en"]').click(); await flush();
+  const selected = h.w.document.querySelector('[role=radio][aria-checked=true]');
+  assert.match(selected.textContent, /Lessac/);
+  assert.equal(h.api.settings.pronunciation.voices.en, h.prefs.voices.en);
+  await h.api.removeVoicePack(h.api.VOICE_PACKS[0].id);
+  assert.equal(h.api.settings.pronunciation.voices.en, h.prefs.voices.en);
+  assert.match(h.w.document.querySelector('.sheet-body').textContent, /已删除/);
+});
+
+test('online voices default off and hide installed packs, download controls and calibration explanations', async (t) => {
+  const h = await packageHarness(t);
+  const body = () => h.w.document.querySelector('.sheet-body');
+  const toggle = () => h.w.document.querySelector('[aria-label="在线音色"]');
+  h.api.setPronunciation({ voices: h.prefs.voices }); h.api.openPronunciationSheet();
+  assert.equal(toggle().getAttribute('aria-pressed'), 'false');
+  assert.doesNotMatch(body().textContent, /Lessac|语音包|未下载/);
+  h.w.document.querySelector('[data-voice-language=en]').click(); await flush();
+  assert.equal(body().querySelector('.voice-pack-downloads'), null);
+  assert.doesNotMatch(body().textContent, /语音包|下载|模型|Hugging Face|镜像|Lessac/);
+  assert.equal(body().querySelectorAll('[role=radio]').length, 3, 'local system choices remain');
+  assert.match(body().querySelector('[aria-checked=true]').textContent, /自动选择/);
+  assert.equal(h.api.settings.pronunciation.voices.en, h.prefs.voices.en);
+  await h.session.play('standard', h.api.settings.pronunciation);
+  assert.equal(h.utterances.at(-1).voice.voiceURI, 'us');
+  assert.equal(h.contexts.length, 0); assert.equal(h.workers.length, 0);
+  h.api.closeSheet();
+  [...body().querySelectorAll('button')].find((b) => b.textContent.includes('音量校准')).click();
+  assert.doesNotMatch(body().textContent, /语音包|模型|媒体音频通道/);
+  h.api.closeSheet(); toggle().click(); h.api.initSettings();
+  assert.equal(h.api.settings.pronunciation.onlineVoices, true);
+  assert.match(body().querySelector('[data-voice-language=en]').textContent, /Lessac/);
+  h.w.document.querySelector('[data-voice-language=en]').click(); await flush();
+  assert.ok(body().querySelector('.voice-pack-downloads'));
+  assert.match(body().textContent, /Hugging Face|镜像/);
+  assert.match(body().querySelector('[aria-checked=true]').textContent, /Lessac/);
+  h.api.closeSheet(); toggle().click();
+  h.w.document.querySelector('[data-voice-language=ja]').click(); await flush();
+  assert.doesNotMatch(body().textContent, /Supertonic|OpenRAIL|语音包|模型|下载/);
+  assert.equal(h.api.installedVoicePack(h.api.VOICE_PACKS[0].id), true);
+  assert.equal(h.api.settings.pronunciation.voices.en, h.prefs.voices.en);
+});
+
+test('online voice switch stays with its audio and restore defaults turns it off', (t) => {
+  const h = harness(t);
+  h.api.openPronunciationSheet({ track });
+  const toggle = () => h.w.document.querySelector('[aria-label="在线音色"]');
+  toggle().click(); h.api.initTrackCfg(track.id, track.lang);
+  assert.equal(h.api.trackCfg.pronunciation.onlineVoices, true);
+  assert.equal(h.api.settings.pronunciation.onlineVoices, false);
+  h.api.initTrackCfg('other', 'en');
+  assert.equal(h.api.trackCfg.pronunciation.onlineVoices, false);
+  h.api.initTrackCfg(track.id, track.lang);
+  h.w.document.querySelector('[data-voice-language=en]').click();
+  assert.ok(h.w.document.querySelector('.voice-pack-downloads'));
+  h.api.closeSheet();
+  [...h.w.document.querySelectorAll('button')].find((b) => b.textContent === '恢复默认').click();
+  assert.equal(toggle().getAttribute('aria-pressed'), 'false');
+  h.api.initTrackCfg(track.id, track.lang);
+  assert.equal(h.api.trackCfg.pronunciation.onlineVoices, false);
+  h.w.document.querySelector('[data-voice-language=en]').click();
+  assert.equal(h.w.document.querySelector('.voice-pack-downloads'), null);
+});
+
+test('hidden system network selections remain saved, use local speech and return after enabling', async (t) => {
+  const h = harness(t), online = { name: 'Online Voice', lang: 'en-US', voiceURI: 'us', localService: false };
+  h.voices.unshift(online);
+  const key = h.api.speechVoiceKey(online);
+  h.api.setPronunciation({ voices: { en: key } });
+  h.api.openPronunciationSheet();
+  assert.doesNotMatch(h.w.document.querySelector('[data-voice-language=en]').textContent, /Online Voice/);
+  h.w.document.querySelector('[data-voice-language=en]').click();
+  assert.equal(h.w.document.querySelectorAll('[role=radio]').length, 3);
+  assert.match(h.w.document.querySelector('[aria-checked=true]').textContent, /自动选择/);
+  assert.equal(h.api.settings.pronunciation.voices.en, key);
+  await h.session.play('standard', h.api.settings.pronunciation);
+  assert.notEqual(h.utterances.at(-1).voice, online);
+  h.api.closeSheet(); h.w.document.querySelector('[aria-label="在线音色"]').click();
+  h.w.document.querySelector('[data-voice-language=en]').click();
+  assert.match(h.w.document.querySelector('[aria-checked=true]').textContent, /Online Voice/);
+  await h.session.play('standard', h.api.settings.pronunciation);
+  assert.equal(h.utterances.at(-1).voice, online);
+  h.api.closeSheet(); h.w.document.querySelector('[aria-label="在线音色"]').click();
+  h.voices.splice(1);
+  await h.session.play('standard', h.api.settings.pronunciation);
+  assert.match(h.events.at(-1).message, /暂无可用本机音色/);
+  assert.equal(h.utterances.length, 2, 'system default must not silently use a known network voice');
+});
+
 test('clip range requires word timing and clamps padding to media boundaries', () => {
   assert.equal(wordAudioRange({ wordTiming: false }, word, 10), null);
   for (const invalid of [{}, { start: 1, end: 1 }, { start: -1, end: 2 }, { start: 12, end: 13 }, { start: 1, end: NaN }]) {
@@ -84,6 +265,9 @@ test('preferences bound corrupt input and match saved voices only within the sou
   const prefs = normalizePronunciation({ source: 'bad', autoPlay: 'false', before: 9999, volume: 2,
     pitch: null, speechRate: '0.71', audioRate: {}, voices: { EN_us: 'us', '__proto__': 'bad', ja: [] } });
   assert.equal(prefs.source, 'audio'); assert.equal(prefs.autoPlay, false);
+  assert.equal(prefs.onlineVoices, false, 'older settings do not opt into online voices');
+  for (const value of [true, 1]) assert.equal(normalizePronunciation({ onlineVoices: value }).onlineVoices, true);
+  for (const value of [false, 0, null, 'true', 'false', {}, []]) assert.equal(normalizePronunciation({ onlineVoices: value }).onlineVoices, false);
   assert.equal(prefs.volumeBalance, true, 'older and corrupt settings default to enabled');
   for (const value of [false, 0]) assert.equal(normalizePronunciation({ volumeBalance: value }).volumeBalance, false);
   for (const value of [true, 1, null, 'false', {}]) assert.equal(normalizePronunciation({ volumeBalance: value }).volumeBalance, true);
@@ -260,7 +444,7 @@ test('duplicate URIs and identical voice entries remain strictly single selected
     { name: 'Same', lang: 'en-US', voiceURI: 'shared', localService: true },
     { name: 'Same', lang: 'en-US', voiceURI: 'shared', localService: false },
     { name: 'Same', lang: 'en-US', voiceURI: 'shared', localService: true });
-  h.api.setPronunciation({ voices: { en: 'shared' } });
+  h.api.setPronunciation({ onlineVoices: true, voices: { en: 'shared' } });
   h.api.openPronunciationSheet(); h.w.document.querySelector('[data-voice-language="en"]').click();
   const radios = () => [...h.w.document.querySelectorAll('[role="radio"]')];
   assert.equal(radios().length, 3, 'one automatic choice plus two distinct voices');

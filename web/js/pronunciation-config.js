@@ -1,6 +1,6 @@
 /** 发音偏好与存档校验; 不依赖浏览器的音频或语音实现。 */
 export const PRONUNCIATION_DEFAULTS = Object.freeze({
-  source: 'audio', autoPlay: false, volumeBalance: true,
+  source: 'audio', autoPlay: false, volumeBalance: true, onlineVoices: false,
 });
 
 // Device-wide calibration, deliberately separate from per-track preferences.
@@ -19,6 +19,7 @@ export function normalizePronunciation(value) {
   if (['audio', 'standard'].includes(src.source)) out.source = src.source;
   out.autoPlay = src.autoPlay === true || src.autoPlay === 1;
   out.volumeBalance = src.volumeBalance !== false && src.volumeBalance !== 0;
+  out.onlineVoices = src.onlineVoices === true || src.onlineVoices === 1;
   if (src.voices && typeof src.voices === 'object' && !Array.isArray(src.voices)) {
     for (const [code, uri] of Object.entries(src.voices)) {
       const lang = speechLanguage(code);

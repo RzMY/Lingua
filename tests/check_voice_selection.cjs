@@ -17,6 +17,7 @@ const { chromium } = require(process.argv[2] || 'playwright');
         { name: 'Samantha', lang: 'en-US', voiceURI: 'same', localService: true },
         { name: 'Samantha', lang: 'en-GB', voiceURI: 'same', localService: true },
         { name: 'Karen', lang: 'en-AU', voiceURI: 'karen', localService: true },
+        { name: 'Network Voice', lang: 'en-US', voiceURI: 'online', localService: false },
       ];
       window.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
       speechSynthesis.speak = (utterance) => { previews.push(utterance); utterance.onstart?.(); };
@@ -24,7 +25,10 @@ const { chromium } = require(process.argv[2] || 'playwright');
       (await import('/js/settings.js')).setPronunciation({ voices: { en: 'same' } });
       (await import('/js/pronunciation-settings.js')).openPronunciationSheet();
     });
+    assert.equal(await page.getByRole('button', { name: '在线音色', exact: true }).getAttribute('aria-pressed'), 'false');
     await page.locator('[data-voice-language="en"]').click();
+    assert.equal(await page.locator('.voice-pack-downloads').count(), 0);
+    assert.equal(await page.getByRole('radio', { name: /Network Voice/ }).count(), 0);
     assert.equal(await page.getByRole('radio').count(), 4);
     assert.equal(await page.locator('[role=radio][aria-checked=true]').count(), 1);
     await page.getByRole('radio', { name: 'Samantha 美国英语' }).click();
@@ -45,6 +49,31 @@ const { chromium } = require(process.argv[2] || 'playwright');
     }
     await page.locator('.sheet-head [aria-label=关闭]').click();
     assert.equal(await page.evaluate(() => cancelled), 3);
+    await page.getByRole('button', { name: '在线音色', exact: true }).click();
+    await page.locator('[data-voice-language=en]').click();
+    assert.equal(await page.getByRole('radio').count(), 5);
+    assert.equal(await page.locator('.voice-pack-downloads').count(), 1);
+    assert.ok((await page.locator('.voice-pack-downloads').textContent()).includes('Hugging Face'));
+    await page.getByRole('radio', { name: /Network Voice/ }).click();
+    const saved = await page.evaluate(async () => (await import('/js/settings.js')).settings.pronunciation.voices.en);
+    await page.locator('.sheet-head [aria-label=关闭]').click();
+    await page.getByRole('button', { name: '在线音色', exact: true }).click();
+    assert.ok(!(await page.locator('[data-voice-language=en]').textContent()).includes('Network Voice'));
+    await page.locator('[data-voice-language=en]').click();
+    assert.equal(await page.locator('.voice-pack-downloads').count(), 0);
+    assert.equal(await page.getByRole('radio', { name: /Network Voice/ }).count(), 0);
+    assert.equal(await page.getByRole('radio', { name: '自动选择', exact: true }).getAttribute('aria-checked'), 'true');
+    assert.equal(await page.evaluate(async () => (await import('/js/settings.js')).settings.pronunciation.voices.en), saved);
+    await page.locator('.sheet-head [aria-label=关闭]').click();
+    for (const language of ['ja', 'ko']) {
+      await page.locator(`[data-voice-language=${language}]`).click();
+      assert.ok(!/语音包|Supertonic|OpenRAIL|下载|模型/.test(await page.locator('.sheet-body').textContent()));
+      await page.locator('.sheet-head [aria-label=关闭]').click();
+    }
+    await page.reload();
+    await page.evaluate(async () => (await import('/js/pronunciation-settings.js')).openPronunciationSheet());
+    assert.equal(await page.getByRole('button', { name: '在线音色', exact: true }).getAttribute('aria-pressed'), 'false');
+    await page.screenshot({ path: path.join(shots, 'online-voices-off.png'), animations: 'disabled' });
     assert.deepEqual(errors, []);
     console.log('Voice selection and preview checks passed');
   } finally { await browser.close(); }

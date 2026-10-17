@@ -135,7 +135,7 @@ test('language fonts and audio font/pronunciation settings survive backups and a
   const backup = fixture();
   const language = { fonts: { ja: { textSize: 32 }, en: { readSize: 18.5 } }, ttsCalibration: .35 };
   const audio = { read: 0, lang: 'zh-CN', fonts: { textSize: 40, trSize: 24 },
-    pronunciation: { source: 'standard', autoPlay: true, volumeBalance: false, voices: { en: 'uk' } } };
+    pronunciation: { source: 'standard', autoPlay: true, volumeBalance: false, onlineVoices: true, voices: { en: 'uk' } } };
   backup.localStorage[GLOBAL_KEYS[1]] = JSON.stringify(language);
   backup.localStorage['linguatrack.track.lesson'] = JSON.stringify(audio);
   await seed(backup);

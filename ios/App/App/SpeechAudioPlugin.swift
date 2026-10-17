@@ -10,6 +10,7 @@ final class SpeechAudioPlugin: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegat
     let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "capabilities", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "speak", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "playPCM", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cancel", returnType: CAPPluginReturnPromise)
     ]
     private var job = ""
@@ -50,7 +51,43 @@ final class SpeechAudioPlugin: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegat
                 ["voiceURI": voice.identifier, "name": voice.name, "lang": voice.language,
                  "localService": true, "default": voice.language == AVSpeechSynthesisVoice.currentLanguageCode()] as [String: Any]
             }
-            call.resolve(["pcmVolume": true, "loudnessNormalization": true, "voices": voices])
+            call.resolve(["pcmVolume": true, "loudnessNormalization": true, "externalPCM": true, "voices": voices])
+        }
+    }
+
+    /// External Piper Float32 PCM uses the same AVAudioPlayer/session and target as system voices.
+    @objc func playPCM(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let id = call.getString("id"), UUID(uuidString: id) != nil,
+                  let rate = call.getInt("sampleRate"), rate >= 8000, rate <= 192000,
+                  let encoded = call.getString("pcm"), !encoded.isEmpty,
+                  encoded.utf8.count <= rate * 30 * 4 * 4 / 3 + 4,
+                  let bytes = Data(base64Encoded: encoded), !bytes.isEmpty,
+                  bytes.count % 4 == 0, bytes.count <= rate * 30 * 4 else {
+                call.reject("合成音频参数无效", "SPEECH_INVALID"); return
+            }
+            let target = call.getDouble("targetLufs")
+            guard target == nil || (target!.isFinite && target! >= -100 && target! <= 0) else {
+                call.reject("目标响度无效", "SPEECH_INVALID"); return
+            }
+            var samples = [Float](); samples.reserveCapacity(bytes.count / 4)
+            for at in stride(from: 0, to: bytes.count, by: 4) {
+                let bits = UInt32(bytes[at]) | UInt32(bytes[at + 1]) << 8 | UInt32(bytes[at + 2]) << 16 | UInt32(bytes[at + 3]) << 24
+                let value = Float(bitPattern: bits)
+                guard value.isFinite else { call.reject("合成音频采样无效", "SPEECH_FORMAT"); return }
+                samples.append(value)
+            }
+            self.finish(error: "发音已替换", code: "SPEECH_CANCELLED")
+            self.job = id; self.pending = call; self.rate = Double(rate); self.channels = 1; self.samples = samples
+            let muted = call.getBool("muted") == true
+            self.gain = muted ? 0 : 1; self.targetLufs = muted ? nil : target
+            let watchdog = DispatchWorkItem { [weak self] in
+                guard let self = self, self.job == id else { return }
+                self.finish(error: "原生发音超时，请重试", code: "SPEECH_TIMEOUT")
+            }
+            self.watchdog = watchdog
+            DispatchQueue.main.asyncAfter(deadline: .now() + 45, execute: watchdog)
+            self.playRendered(id: id)
         }
     }
 

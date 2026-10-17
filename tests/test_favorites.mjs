@@ -27,7 +27,7 @@ const draft = (id, extra = {}) => fav.favoriteDraft({ track: track(id), i: 0, j:
 test('v4 upgrades add favorites without changing existing media records', async () => {
   assert.equal(fake.data.has('favorites'), false);
   assert.deepEqual(await fav.listFavorites(), []);
-  assert.equal(fake.version, 5);
+  assert.equal(fake.version, 6);
   assert.equal((await store.get('tracks', 'legacy')).title, '旧媒体');
   await store.del('tracks', 'legacy');
 });

@@ -3,8 +3,10 @@ import { button, buttonBar, group, stepRow } from './rows.js';
 import { openSheet } from './sheet.js';
 import { settings, setSetting } from './settings.js';
 import { TTS_CALIBRATION_DEFAULT } from './pronunciation-config.js';
-import { createPronunciation, supportsSpeech } from './pronunciation.js';
+import { createPronunciation, supportsSystemSpeech } from './pronunciation.js';
+import { supportsVoicePacks } from './voice-packs.js';
 import { nativeApp } from './native.js';
+import { packId } from './voice-pack-catalog.js';
 
 // Bundled reference: RMS 0.1 / gated K-weighted loudness -18.13189 LUFS.
 export const CALIBRATION_TEXT = 'Hello! It is a lovely day.';
@@ -42,18 +44,20 @@ export function openPronunciationCalibration({ onBack } = {}) {
   speech.setAttribute('aria-label', '试听标准发音');
   choices.set('audio', reference); choices.set('standard', speech);
   for (const node of choices.values()) node.setAttribute('aria-pressed', 'false');
-  speech.disabled = !supportsSpeech();
+  speech.disabled = !(supportsSystemSpeech() || (settings.pronunciation.onlineVoices && supportsVoicePacks()));
   if (speech.disabled) { status.textContent = '当前浏览器不支持标准发音'; status.hidden = false; }
   body.append(buttonBar(reference, speech), status);
   const level = stepRow('TTS 音量', '', () => Math.round(settings.ttsCalibration * 100), (value) => {
     session.stop();
     setSetting('ttsCalibration', value / 100);
   }, { min: 10, max: 100, step: 5, unit: '%' });
-  const normalized = nativeApp()?.speechLoudness === true;
+  const voicePack = settings.pronunciation.onlineVoices && !!packId(settings.pronunciation.voices.en);
+  const normalized = voicePack || nativeApp()?.speechLoudness === true;
   body.append(group(level), el('p', 'voice-sample', normalized
     ? '默认 50% 为参考响度，数值越小，标准发音越轻。自动保存，对所有开启音量均衡的音频生效。试听使用全局英语音色。'
     : '默认 50%，数值越小，标准发音越轻。自动保存，对所有开启音量均衡的音频生效。试听使用全局英语音色。'));
-  if (['ios', 'android'].includes(nativeApp()?.platform)) {
+  if (voicePack) body.append(el('p', 'voice-sample', '当前选择语音包，本地合成后通过媒体音频通道播放，并按实际响度匹配参考音频。'));
+  else if (['ios', 'android'].includes(nativeApp()?.platform)) {
     const packageType = nativeApp().platform === 'android' ? 'APK' : 'IPA';
     body.append(el('p', 'voice-sample', nativeApp().speechAudio
       ? (normalized ? '当前使用原生系统发音，按所选音色的实际响度自动匹配参考音频。'
