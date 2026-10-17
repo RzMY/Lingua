@@ -5,6 +5,7 @@ import { NATIVE_REVISION, validateManifest } from '../mobile/src/update.js';
 
 const version = 'a'.repeat(64);
 const manifest = { schema: 1, appId: 'app.linguatrack.mobile', nativeRevision: NATIVE_REVISION,
+  minimumNativeBuilds: { android: 10, ios: 13 },
   version, checksum: 'b'.repeat(64), bundle: `bundle-${version}.zip`, size: 50 };
 function release(preview = false) {
   const tag = preview ? 'pre-release' : 'v1.2.0';

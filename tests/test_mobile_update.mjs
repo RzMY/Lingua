@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { CHECK_TIMEOUT_MS, NATIVE_REVISION, NativeUpdateRequiredError, UpdateManager, validateManifest } from '../mobile/src/update.js';
+import { CHECK_TIMEOUT_MS, NATIVE_REVISION, NativeUpdateRequiredError, UpdateManager, validateManifest, validateNativeBuild } from '../mobile/src/update.js';
 import { normalizeTarget } from '../mobile/src/channels.js';
 import { apiUrl } from '../web/js/api.js';
 import { config } from '../web/js/config.js';
 
 const version = 'a'.repeat(64), checksum = 'b'.repeat(64);
 const manifest = { schema: 1, appId: 'app.linguatrack.mobile', nativeRevision: NATIVE_REVISION, version,
+  minimumNativeBuilds: { android: 10, ios: 13 },
   bundle: `bundle-${version}.zip`, checksum, size: 100 };
 function fixture(overrides = {}) {
   const calls = [], saved = [];
@@ -18,17 +19,17 @@ function fixture(overrides = {}) {
   };
   const manager = new UpdateManager({ updater, fetchManifest: async () => ({ data: manifest, manifestUrl: 'https://example.org/lingua/mobile/manifest.json' }),
     save: async (state) => { saved.push(structuredClone(state)); }, state: { source: { channel: 'own', ownUrl: 'https://example.org/lingua/' }, pending: null },
-    currentVersion: 'c'.repeat(64) });
+    currentVersion: 'c'.repeat(64), getNativeInfo: async () => ({ platform: 'ios', build: '13' }) });
   return { manager, calls, saved, updater };
 }
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
-for (const step of ['manifest', 'bundle list']) {
+for (const step of ['manifest', 'native info', 'bundle list']) {
   test(`a stalled ${step} check times out, releases the lock and can be retried`, async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const { manager, updater, saved } = fixture();
-    const owner = step === 'manifest' ? manager : updater;
-    const key = step === 'manifest' ? 'fetchManifest' : 'list';
+    const owner = step === 'bundle list' ? updater : manager;
+    const key = step === 'manifest' ? 'fetchManifest' : step === 'native info' ? 'getNativeInfo' : 'list';
     const original = owner[key];
     let finish;
     owner[key] = () => new Promise((resolve) => { finish = resolve; });
@@ -154,6 +155,57 @@ test('checks are coalesced and never download until explicitly requested', async
   assert.equal(calls[0].checksum, checksum);
   assert.equal(saved[0].pending.id, 'local-id');
 });
+
+test('native builds are checked per platform; newer shells can use older compatible bundles', () => {
+  for (const platform of ['android', 'ios']) {
+    const required = manifest.minimumNativeBuilds[platform];
+    for (const installed of [required, required + 1]) {
+      assert.doesNotThrow(() => validateNativeBuild(manifest, { platform, build: String(installed) }));
+    }
+    assert.throws(() => validateNativeBuild(manifest, { platform, build: String(required - 1) }), NativeUpdateRequiredError);
+    for (const build of [undefined, 13, '', '1.0', '13x', '0', '9007199254740992']) {
+      assert.throws(() => validateNativeBuild(manifest, { platform, build }), /无法读取应用版本/);
+    }
+  }
+  assert.throws(() => validateNativeBuild(manifest, { platform: 'web', build: '13' }), /无法读取应用版本/);
+  for (const minimumNativeBuilds of [undefined, null, {}, { ios: 13 }, { ios: 0, android: 10 }, { ios: '13', android: 10 }]) {
+    assert.throws(() => validateManifest({ ...manifest, minimumNativeBuilds }, 'https://example.org/mobile/manifest.json'), /更新清单无效/);
+  }
+});
+
+test('same frontend hash on an old binary still requires reinstall and preserves pending state', async () => {
+  const { manager, calls, saved } = fixture();
+  manager.currentVersion = version;
+  const pending = { id: 'pending', version: 'd'.repeat(64), checksum };
+  manager.state.pending = pending;
+  manager.getNativeInfo = async () => ({ platform: 'ios', build: '12' });
+  await assert.rejects(manager.check(), NativeUpdateRequiredError);
+  assert.equal(manager.available, null);
+  assert.equal(manager.state.pending, pending);
+  assert.equal(calls.length, 0); assert.equal(saved.length, 0);
+});
+
+test('unreadable binary information fails the check without offering a download', async () => {
+  const { manager, calls, saved } = fixture();
+  manager.getNativeInfo = async () => { throw Error('native bridge failed'); };
+  await assert.rejects(manager.check(), /native bridge failed/);
+  assert.equal(manager.available, null); assert.equal(manager.busy, null);
+  assert.equal(calls.length, 0); assert.equal(saved.length, 0);
+});
+
+test('activation rechecks native requirements and rejects saved legacy updates without losing them', async () => {
+  const { manager, calls, updater, saved } = fixture();
+  const pending = await manager.download(await manager.check());
+  updater.list = async () => ({ bundles: [{ ...pending, status: 'pending' }] });
+  manager.getNativeInfo = async () => ({ platform: 'ios', build: '12' });
+  await assert.rejects(manager.apply(), NativeUpdateRequiredError);
+  assert.equal(calls.length, 1); assert.equal(saved.length, 1);
+  assert.equal(manager.state.pending, pending);
+  manager.getNativeInfo = async () => ({ platform: 'ios', build: '13' });
+  delete pending.minimumNativeBuilds;
+  await assert.rejects(manager.apply(), /请重新检查更新/);
+  assert.equal(calls.length, 1); assert.equal(saved.length, 1);
+});
 test('network and checksum failures never replace a working version or saved state', async () => {
   const { manager, calls, saved, updater } = fixture();
   manager.fetchManifest = async () => { throw Error('offline'); };
@@ -186,6 +238,7 @@ test('pending update survives restart and only explicit apply switches native bu
   const pending = await manager.download(await manager.check());
   updater.list = async () => ({ bundles: [{ ...pending, status: 'pending' }] });
   const reloaded = new UpdateManager({ updater, fetchManifest: manager.fetchManifest,
+    getNativeInfo: manager.getNativeInfo,
     save: manager.save, state: saved[0], currentVersion: 'old' });
   assert.deepEqual(await reloaded.download(await reloaded.check()), pending); assert.equal(calls.length, 1);
   await reloaded.apply(); assert.deepEqual(calls[1], ['activate', 'local-id']);

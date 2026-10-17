@@ -18,6 +18,16 @@
 !mobile/release-config.json
 !mobile/scripts/
 !mobile/scripts/build.mjs
+!mobile/scripts/version.mjs
+!mobile/scripts/development-cache.mjs
+!mobile/scripts/native-builds.mjs
+!android/
+!android/app/
+!android/app/build.gradle
+!ios/
+!ios/App/
+!ios/App/App.xcodeproj/
+!ios/App/App.xcodeproj/project.pbxproj
 **/__pycache__/
 **/*.py[cod]
 web/data/

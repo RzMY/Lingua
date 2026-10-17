@@ -165,6 +165,7 @@ function offerUpdate(manifest, view = updateDialog('发现新版本')) {
       note.textContent = '正在重新打开…';
       await manager.apply();
     } catch (error) {
+      if (error instanceof NativeUpdateRequiredError) { offerAppDownload(error, view); return; }
       heading.textContent = '更新未完成'; note.textContent = errorMessage(error, '更新失败，请检查网络后重试');
       install.textContent = '重试';
     } finally { updating = false; later.disabled = false; box.removeAttribute('aria-busy'); }
@@ -272,6 +273,7 @@ async function initialize() {
   }
   manager = new UpdateManager({ updater: CapacitorUpdater,
     fetchManifest: (selected, signal) => fetchSourceManifest(selected, (url) => getJson(url, signal)),
+    getNativeInfo: async () => ({ platform: Capacitor.getPlatform(), build: (await App.getInfo()).build }),
     save, state, currentVersion: version });
   let marked = false;
   let speechAudio = null, speechVoices = [], speechLoudness = false, speechPCM = false;

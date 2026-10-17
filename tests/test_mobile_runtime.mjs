@@ -46,7 +46,8 @@ async function harness(saved = {}, options = {}) {
     CapacitorUpdater: { current: async () => ({ bundle: { id: 'builtin' } }), list: async () => ({ bundles: [] }),
       ...options.updater,
       notifyAppReady: async () => { calls.push('ready'); }, reset: async () => { calls.push('reset'); } },
-    App: { addListener: async (name, handler) => { events[name] = handler; }, minimizeApp: () => { calls.push('minimize'); } },
+    App: { getInfo: options.getInfo || (async () => ({ build: options.nativeBuild || '100' })),
+      addListener: async (name, handler) => { events[name] = handler; }, minimizeApp: () => { calls.push('minimize'); } },
     SplashScreen: { hide: async () => { calls.push('splash'); } },
     Filesystem: {
       readdir: async () => ({ files: [...exports].map(([path, value]) => ({ name: path.slice(8), ...value })) }),
@@ -64,6 +65,7 @@ const ownSource = { channel: 'own', ownUrl: 'https://site.example/', development
 const ownSaved = { 'lingua.channel': 'own', 'lingua.own-url': ownSource.ownUrl,
   'lingua.native.state': JSON.stringify({ source: ownSource, pending: null }) };
 const updateManifest = { schema: 1, appId: 'app.linguatrack.mobile', nativeRevision: NATIVE_REVISION,
+  minimumNativeBuilds: { android: 10, ios: 13 },
   version: 'b'.repeat(64), checksum: 'c'.repeat(64), bundle: `bundle-${'b'.repeat(64)}.zip`, size: 100 };
 const updateResponse = async () => ({ status: 200, data: updateManifest });
 const clickText = (h, text) => [...h.window.document.querySelectorAll('button')].find((b) => b.textContent === text).click();
@@ -267,6 +269,33 @@ for (const platform of ['ios', 'android']) {
   });
 }
 
+test('installed build read failures are silent at startup and actionable during manual checks', async (t) => {
+  const h = await harness(ownSaved, { response: updateResponse, getInfo: async () => { throw Error('应用版本读取失败'); } });
+  t.after(h.close);
+  await h.window.LinguaNative.markReady(); await flush();
+  assert.equal(h.window.document.querySelector('#native-update'), null);
+  await h.window.LinguaNative.checkUpdates();
+  assert.equal(h.window.document.querySelector('#native-update h2').textContent, '无法检查更新');
+  assert.match(h.window.document.querySelector('#native-update p').textContent, /应用版本读取失败/);
+});
+
+test('a saved update requiring a newer binary opens the reinstall action before activation', async (t) => {
+  const pending = { id: 'pending', version: 'd'.repeat(64), checksum: 'e'.repeat(64),
+    nativeRevision: NATIVE_REVISION, minimumNativeBuilds: updateManifest.minimumNativeBuilds };
+  const saved = { ...ownSaved, 'lingua.native.state': JSON.stringify({ source: ownSource, pending }) };
+  const h = await harness(saved, { nativeBuild: '12', updater: {
+    list: async () => ({ bundles: [{ ...pending, status: 'pending' }] }),
+    set: () => assert.fail('an incompatible saved update must never activate'),
+  } });
+  t.after(h.close);
+  h.window.LinguaNative.settings();
+  clickText(h, '安装已下载的更新');
+  clickText(h, '立即更新'); await flush();
+  assert.equal(h.window.document.querySelector('#native-update h2').textContent, '需要更新应用');
+  assert.ok(h.window.document.querySelector('#native-update a'));
+  assert.equal(h.values.get('lingua.native.state'), saved['lingua.native.state']);
+});
+
 test('a cancelled manual check suppresses an overlapping startup incompatibility reminder', async (t) => {
   let finish;
   const h = await harness(ownSaved, { response: () => new Promise((resolve) => { finish = resolve; }) });
@@ -278,6 +307,24 @@ test('a cancelled manual check suppresses an overlapping startup incompatibility
   await manual; await flush();
   assert.equal(h.window.document.querySelector('#native-update'), null);
 });
+
+for (const platform of ['ios', 'android']) {
+  test(`${platform} installed build determines reinstall prompts even on a hot-updated frontend`, async (t) => {
+    const required = updateManifest.minimumNativeBuilds[platform];
+    for (const build of [required - 1, required, required + 1]) {
+      const h = await harness(ownSaved, { platform, nativeBuild: String(build), response: updateResponse,
+        updater: { download: () => assert.fail('no download without approval'), set: () => assert.fail('no activation') } });
+      t.after(h.close);
+      await h.window.LinguaNative.markReady(); await flush();
+      assert.equal(h.window.document.querySelector('#native-update h2').textContent,
+        build < required ? '需要更新应用' : '发现新版本');
+      clickText(h, '稍后'); await flush();
+      await h.window.LinguaNative.checkUpdates();
+      assert.equal(h.window.document.querySelector('#native-update h2').textContent,
+        build < required ? '需要更新应用' : '发现新版本');
+    }
+  });
+}
 
 for (const channel of ['stable', 'preview', 'own', 'development']) {
   test(`switching to ${channel} cancels a stalled startup check and ignores its late result`, async (t) => {

@@ -4,6 +4,8 @@ COPY package.json package-lock.json .npmrc ./
 RUN npm ci
 COPY web/ ./web/
 COPY mobile/ ./mobile/
+COPY android/app/build.gradle ./android/app/build.gradle
+COPY ios/App/App.xcodeproj/project.pbxproj ./ios/App/App.xcodeproj/project.pbxproj
 RUN npm run mobile:release
 
 FROM python:3.11-slim-bookworm AS dependencies

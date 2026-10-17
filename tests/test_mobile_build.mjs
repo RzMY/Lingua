@@ -7,9 +7,22 @@ import { fileURLToPath } from 'node:url';
 import { unzipSync } from 'fflate';
 import { parse } from 'yaml';
 import xcode from 'xcode';
+import { nativeBuildsFromSources, readNativeBuilds } from '../mobile/scripts/native-builds.mjs';
+import { NATIVE_REVISION } from '../mobile/src/update.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const read = (path) => readFile(new URL('../' + path, import.meta.url));
+
+test('native build extraction tracks platform versions and rejects inconsistent release configurations', () => {
+  assert.deepEqual(nativeBuildsFromSources('versionCode 10\r\n', 'CURRENT_PROJECT_VERSION = 13;\r\nCURRENT_PROJECT_VERSION = 13;\r\n'),
+    { android: 10, ios: 13 });
+  assert.deepEqual(nativeBuildsFromSources('versionCode 11\n', 'CURRENT_PROJECT_VERSION = 14;\n'), { android: 11, ios: 14 });
+  for (const [android, ios] of [['', 'CURRENT_PROJECT_VERSION = 13;'], ['versionCode 10', ''],
+    ['versionCode 10', 'CURRENT_PROJECT_VERSION = 13;\nCURRENT_PROJECT_VERSION = 14;'],
+    ['versionCode 0', 'CURRENT_PROJECT_VERSION = 13;']]) {
+    assert.throws(() => nativeBuildsFromSources(android, ios), /Native build versions/);
+  }
+});
 
 test('Android system speech is registered and the installed TTS engine is visible', async () => {
   assert.match((await read('android/app/src/main/java/app/linguatrack/mobile/MainActivity.java')).toString(), /registerPlugin\(SpeechAudioPlugin.class\)/);
@@ -52,6 +65,9 @@ test('mobile release contains complete application assets and produces identical
   const meta = JSON.parse(await read('web/mobile/manifest.json'));
   const pkg = JSON.parse(await read('package.json'));
   assert.equal(meta.frontendVersion, pkg.version);
+  assert.equal(meta.nativeRevision, NATIVE_REVISION);
+  assert.notEqual(meta.nativeRevision, 3, 'legacy protocol-3 updaters must request a new APK/IPA');
+  assert.deepEqual(meta.minimumNativeBuilds, await readNativeBuilds());
   const zip = await read('web/mobile/' + meta.bundle);
   assert.equal(createHash('sha256').update(zip).digest('hex'), meta.checksum);
   assert.equal(zip.length, meta.size);
@@ -69,6 +85,7 @@ test('mobile release contains complete application assets and produces identical
   const bundledMeta = JSON.parse(Buffer.from(entries['native-bundle.json']));
   assert.equal(bundledMeta.version, meta.version);
   assert.equal(bundledMeta.frontendVersion, pkg.version);
+  assert.deepEqual(bundledMeta.minimumNativeBuilds, meta.minimumNativeBuilds);
   const versionModule = await read('web/js/version.js');
   const { FRONTEND_VERSION } = await import(`data:text/javascript;base64,${versionModule.toString('base64')}`);
   assert.equal(FRONTEND_VERSION, pkg.version);
