@@ -155,6 +155,8 @@ class DevelopmentViewController: UIViewController, WKNavigationDelegate, WKUIDel
     private var liveTarget: URL?
     private var pendingNotice: String?
     private var reloadGeneration = 0
+    private static let cachedDocumentHeader = "X-Lingua-Cached-Document"
+    private var cachedDocumentToken: String?
     override var preferredStatusBarStyle: UIStatusBarStyle { dark || immersive ? .lightContent : .darkContent }
     override var prefersStatusBarHidden: Bool { immersive }
     override var prefersHomeIndicatorAutoHidden: Bool { immersive }
@@ -218,11 +220,12 @@ class DevelopmentViewController: UIViewController, WKNavigationDelegate, WKUIDel
         setPresentation(dark: false, immersive: false)
         updateInsets()
         if let url = url, cache?.available == true, loadCachedDocument(url) {
-            cached = true; liveTarget = url
+            liveTarget = url
         } else { reloadPage() }
     }
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        guard let web = web else { return }
         web.scrollView.contentInset = .zero
         web.scrollView.verticalScrollIndicatorInsets = .zero
         web.scrollView.horizontalScrollIndicatorInsets = .zero
@@ -252,17 +255,19 @@ class DevelopmentViewController: UIViewController, WKNavigationDelegate, WKUIDel
                 blue: CGFloat(hex & 255) / 255, alpha: 1)
     }
     private func updateInsets() {
+        guard let web = web else { return }
         let safe = view.safeAreaInsets
         let values = "[\(safe.top),\(safe.right),\(safe.bottom),\(safe.left)]"
+        let scriptKey = values + (cached ? ":cached" : ":live")
         // Refresh the document-start script too, so subsequent pages get insets before first paint.
-        if values != insetKey {
-            insetKey = values
+        if scriptKey != insetKey {
+            insetKey = scriptKey
             web.configuration.userContentController.removeAllUserScripts()
             web.configuration.userContentController.addUserScript(WKUserScript(
-                source: "window.__linguaInsets=" + values + ";" + cacheTargetScript + Self.presentationScript,
+                source: "window.__linguaInsets=" + values + ";" + (cache?.resourceScript(enabled: cached) ?? "") + Self.presentationScript,
                 injectionTime: .atDocumentStart, forMainFrameOnly: true))
         }
-        web.evaluateJavaScript("window.__linguaInsets=" + values + ";window.__linguaApplyInsets?.();", completionHandler: nil)
+        web.evaluateJavaScript("window.__linguaUseCache=\(cached ? "true" : "false");window.__linguaInsets=" + values + ";window.__linguaApplyInsets?.();", completionHandler: nil)
     }
     private func clamp(_ value: CGFloat, _ minValue: CGFloat, _ maxValue: CGFloat) -> CGFloat {
         max(minValue, min(value, max(minValue, maxValue)))
@@ -298,42 +303,10 @@ class DevelopmentViewController: UIViewController, WKNavigationDelegate, WKUIDel
         menu.isHidden = true; errorLabel.isHidden = true
         guard let target = web.url.flatMap({ cache?.remoteURL($0) ?? Self.validURL($0.absoluteString) }) ?? liveTarget ?? url else { showError("开发地址无效"); return }
         cached = false; cacheNotice = false; pendingNotice = nil; liveTarget = target
+        cachedDocumentToken = nil
+        updateInsets()
         if web.url == target { web.reloadFromOrigin() }
         else { web.load(URLRequest(url: target, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)) }
-    }
-    private var cacheTargetScript: String {
-        guard let cache = cache else { return "" }
-        // The analysis service remains the remote site's root; snapshots contain frontend files only.
-        var parts = URLComponents(url: cache.base, resolvingAgainstBaseURL: true)!
-        parts.path = ""; parts.query = nil; parts.fragment = nil
-        let origin = parts.url!.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard let bytes = try? JSONSerialization.data(withJSONObject: [origin]),
-              let value = String(data: bytes, encoding: .utf8),
-              let cachedHost = cache.localURL(cache.target)?.host,
-              let hostData = try? JSONSerialization.data(withJSONObject: cachedHost),
-              let host = String(data: hostData, encoding: .utf8) else { return "" }
-        return """
-        (() => {
-          window.__linguaDevelopmentTarget=(value)[0];
-          window.__linguaCachedHost=(host);
-          const map = (raw) => {
-            try {
-              const value = new URL(String(raw), location.href);
-              if (value.origin !== location.origin || !(value.pathname.startsWith('/js/') || value.pathname.startsWith('/css/') || value.pathname.startsWith('/icons/') || value.pathname.startsWith('/assets/'))) return raw;
-              value.protocol = 'lingua-dev:'; value.host = window.__linguaCachedHost;
-              return value.href;
-            } catch (_) { return raw; }
-          };
-          const nativeFetch = window.fetch;
-          window.fetch = (input, init) => {
-            if (typeof input === 'string' || input instanceof URL) return nativeFetch(map(input), init);
-            if (input && input.url) return nativeFetch(new Request(map(input.url), input), init);
-            return nativeFetch(input, init);
-          };
-          const nativeOpen = XMLHttpRequest.prototype.open;
-          XMLHttpRequest.prototype.open = function(method, raw, ...rest) { return nativeOpen.call(this, method, map(raw), ...rest); };
-        })();
-        """
     }
     @objc private func cachePage() {
         guard let cache = cache, cacheTask == nil else { return }
@@ -346,7 +319,7 @@ class DevelopmentViewController: UIViewController, WKNavigationDelegate, WKUIDel
                 guard let self = self, !Task.isCancelled else { return }
                 cache.activate(saved)
                 if generation == self.reloadGeneration {
-                    self.cached = true; self.cacheNotice = true
+                    self.cacheNotice = true
                     self.pendingNotice = "已缓存 \(saved.entries.count) 个文件，可关闭开发服务器测试"
                     let target = self.web.url.flatMap { cache.remoteURL($0) } ?? self.url!
                     self.liveTarget = target
@@ -361,16 +334,27 @@ class DevelopmentViewController: UIViewController, WKNavigationDelegate, WKUIDel
     }
     private func recoverCached(_ message: String) {
         if !cached, let target = liveTarget ?? url, loadCachedDocument(target) {
-            cached = true; cacheNotice = true; pendingNotice = "开发服务器不可用，已使用缓存源码"
+            cacheNotice = true; pendingNotice = "开发服务器不可用，已使用缓存源码"
         } else { showError(message) }
     }
     @discardableResult
     private func loadCachedDocument(_ target: URL) -> Bool {
         guard let cache = cache, let data = cache.document(target) else { return false }
-        let request = URLRequest(url: target)
+        loadCachedDocument(target, data: data)
+        return true
+    }
+    private func loadCachedDocument(_ target: URL, data: Data) {
+        cached = true; liveTarget = target
+        insetKey = ""
+        updateInsets()
+        // The simulated request also passes through decidePolicyFor. Identify that
+        // one request so the snapshot is allowed instead of recursively reloaded.
+        let token = UUID().uuidString
+        cachedDocumentToken = token
+        var request = URLRequest(url: target)
+        request.setValue(token, forHTTPHeaderField: Self.cachedDocumentHeader)
         let response = URLResponse(url: target, mimeType: "text/html", expectedContentLength: data.count, textEncodingName: "UTF-8")
         web.loadSimulatedRequest(request, response: response, responseData: data)
-        return true
     }
     @objc private func returnToApp() {
         cacheTask?.cancel()
@@ -422,8 +406,15 @@ class DevelopmentViewController: UIViewController, WKNavigationDelegate, WKUIDel
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         if let target = navigationAction.request.url, navigationAction.targetFrame?.isMainFrame == true {
-            if cached, target.scheme != "lingua-dev", loadCachedDocument(target) {
-                decisionHandler(.cancel); return
+            if let token = cachedDocumentToken,
+               navigationAction.request.value(forHTTPHeaderField: Self.cachedDocumentHeader) == token {
+                cachedDocumentToken = nil
+                decisionHandler(.allow); return
+            }
+            if cached, target.scheme != "lingua-dev", let data = cache?.document(target) {
+                decisionHandler(.cancel)
+                loadCachedDocument(target, data: data)
+                return
             }
             if let remote = cache?.remoteURL(target) ?? Self.validURL(target.absoluteString) { liveTarget = remote }
         }

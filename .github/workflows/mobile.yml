@@ -41,7 +41,7 @@ jobs:
   android:
     needs: frontend
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -76,6 +76,19 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: bash gradlew assembleDebug assembleRelease testDebugUnitTest
+      - name: Enable KVM for development WebView regression
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Verify cached development entry and renderer recovery in Android Emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: cd android && bash gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=app.linguatrack.mobile.DevelopmentActivityTest
       - name: Stage packages with stable names
         working-directory: android
         run: |
@@ -138,6 +151,14 @@ jobs:
           xcodebuild -project ios/App/App.xcodeproj -scheme App
           -configuration Release -destination 'generic/platform=iOS'
           -derivedDataPath ios/App/build CODE_SIGNING_ALLOWED=NO build
+      - name: Verify cached development entry and recovery in iOS Simulator
+        run: |
+          set -euo pipefail
+          SIMULATOR_ID="$(python3 -c 'import json, subprocess; devices=json.loads(subprocess.check_output(["xcrun", "simctl", "list", "devices", "available", "-j"]))["devices"]; print(next(d["udid"] for group in devices.values() for d in group if d["name"].startswith("iPhone")))')"
+          xcodebuild -project ios/App/App.xcodeproj -scheme DevelopmentViewTests \
+            -configuration Debug -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            -derivedDataPath ios/App/build-simulator -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=NO test
       - name: Export signed IPA when credentials are configured
         if: github.event_name != 'pull_request'
         run: |

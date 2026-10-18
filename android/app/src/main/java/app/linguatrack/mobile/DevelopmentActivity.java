@@ -23,6 +23,7 @@ import org.json.JSONObject;
 
 /** Remote browsing has no Capacitor bridge; its only message is a presentation hint. */
 public class DevelopmentActivity extends ComponentActivity {
+    private static final String FAILED_URL_KEY = "lingua.development-failed-url";
     private WebView web;
     private FrameLayout root;
     private Button bubble, reload, cacheButton, back;
@@ -43,6 +44,7 @@ public class DevelopmentActivity extends ComponentActivity {
     private final java.util.concurrent.ExecutorService cacheWorker = java.util.concurrent.Executors.newSingleThreadExecutor();
 
     static boolean validUrl(String raw) {
+        if (raw == null) return false;
         Uri uri = Uri.parse(raw);
         return ("https".equals(uri.getScheme()) || "http".equals(uri.getScheme()))
             && uri.getHost() != null && uri.getUserInfo() == null;
@@ -66,13 +68,6 @@ public class DevelopmentActivity extends ComponentActivity {
             cached = cache.available();
         } catch (Exception ignored) { }
         root = new FrameLayout(this);
-        web = new WebView(this);
-        web.getSettings().setJavaScriptEnabled(true);
-        web.getSettings().setDomStorageEnabled(true);
-        web.getSettings().setCacheMode(WebSettings.LOAD_NO_CACHE);
-        web.getSettings().setAllowFileAccess(false);
-        web.getSettings().setAllowContentAccess(false);
-        root.addView(web, new FrameLayout.LayoutParams(-1, -1));
         createControls(); setContentView(root);
         ViewCompat.setOnApplyWindowInsetsListener(root, (view, insets) -> {
             // The canvas fills the window; only controls consume physical safe areas.
@@ -80,9 +75,33 @@ public class DevelopmentActivity extends ComponentActivity {
             injectInsets(); placeControls(); return insets;
         });
         root.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> placeControls());
+        applyTheme(); ViewCompat.requestApplyInsets(root);
+        if (url.equals(getSharedPreferences("CapacitorStorage", MODE_PRIVATE).getString(FAILED_URL_KEY, null))) {
+            showError("上次开发网页异常退出；可刷新重试或返回上一个分支");
+        } else if (createWebView()) loadPage();
+    }
+    private boolean createWebView() {
+        if (web != null) return true;
+        try {
+            initializeWebView();
+            return true;
+        } catch (RuntimeException error) {
+            disposeWebView();
+            showError("无法初始化系统 WebView；可更新 Android System WebView 后刷新，或返回上一个分支");
+            return false;
+        }
+    }
+    private void initializeWebView() {
+        web = new WebView(this);
+        web.getSettings().setJavaScriptEnabled(true);
+        web.getSettings().setDomStorageEnabled(true);
+        web.getSettings().setCacheMode(WebSettings.LOAD_NO_CACHE);
+        web.getSettings().setAllowFileAccess(false);
+        web.getSettings().setAllowContentAccess(false);
+        root.addView(web, 0, new FrameLayout.LayoutParams(-1, -1));
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
             WebViewCompat.addWebMessageListener(web, "LinguaPresentation", java.util.Collections.singleton("*"), (view, message, origin, mainFrame, reply) -> {
-                if (!mainFrame) return;
+                if (!mainFrame || view != web || isFinishing() || isDestroyed()) return;
                 try {
                     JSONObject state = new JSONObject(message.getData());
                     dark = state.optBoolean("dark"); immersive = state.optBoolean("immersive"); applyTheme();
@@ -101,9 +120,11 @@ public class DevelopmentActivity extends ComponentActivity {
         });
         web.setWebViewClient(new WebViewClient() {
             @Override public void onPageStarted(WebView view, String address, android.graphics.Bitmap icon) {
+                if (view != web) return;
                 immersive = false; applyTheme(); errorLabel.setVisibility(View.GONE); injectInsets();
             }
             @Override public void onPageFinished(WebView view, String address) {
+                if (view != web) return;
                 web.evaluateJavascript(PRESENTATION_SCRIPT, null); injectInsets();
                 if (pendingNotice != null) { showError(pendingNotice); pendingNotice = null; }
                 else if (cached && !cacheNotice) { cacheNotice = true; showError("正在使用已缓存源码；刷新可加载最新源码"); }
@@ -119,13 +140,24 @@ public class DevelopmentActivity extends ComponentActivity {
                 return !validUrl(request.getUrl().toString());
             }
             @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                if (request.isForMainFrame()) recoverCached(request.getUrl().toString(), "网页加载失败");
+                if (view == web && request.isForMainFrame()) recoverCached(request.getUrl().toString(), "网页加载失败");
             }
             @Override public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
-                if (request.isForMainFrame()) recoverCached(request.getUrl().toString(), "网页暂时无法访问");
+                if (view == web && request.isForMainFrame()) recoverCached(request.getUrl().toString(), "网页暂时无法访问");
+            }
+            @Override public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                // Returning false lets Android kill this app along with the renderer.
+                // Keep native controls alive and never reuse the dead WebView.
+                if (view == web) {
+                    getSharedPreferences("CapacitorStorage", MODE_PRIVATE).edit().putString(FAILED_URL_KEY, url).apply();
+                    disposeWebView();
+                    immersive = false; applyTheme();
+                    showError("开发网页渲染进程已退出；可刷新重试或返回上一个分支");
+                }
+                return true;
             }
         });
-        applyTheme(); ViewCompat.requestApplyInsets(root); loadPage();
+        applyTheme();
     }
     private void createControls() {
         menu = new LinearLayout(this); menu.setOrientation(LinearLayout.VERTICAL); menu.setPadding(dp(12), dp(8), dp(12), dp(8));
@@ -134,6 +166,8 @@ public class DevelopmentActivity extends ComponentActivity {
         reload = action("刷新网页", () -> {
             reloadGeneration++;
             cached = false; cacheNotice = false; pendingNotice = null; menu.setVisibility(View.GONE);
+            if (!createWebView()) return;
+            getSharedPreferences("CapacitorStorage", MODE_PRIVATE).edit().remove(FAILED_URL_KEY).apply();
             String current = web.getUrl();
             if (current != null && validUrl(current)) web.reload(); else loadPage();
         });
@@ -180,7 +214,7 @@ public class DevelopmentActivity extends ComponentActivity {
     }
     private void applyTheme() {
         int bg = immersive ? Color.BLACK : dark ? 0xff15170f : 0xfff2f2ea;
-        root.setBackgroundColor(bg); web.setBackgroundColor(bg);
+        root.setBackgroundColor(bg); if (web != null) web.setBackgroundColor(bg);
         menu.setBackground(surface(dark ? 0xff262b1b : 0xfff7f7f1, 20));
         for (TextView label : new TextView[] { reload, cacheButton, back, errorLabel }) label.setTextColor(dark ? 0xffeef1e3 : 0xff1b1f16);
         bubble.setBackground(surface(dark ? 0xff33421f : 0xffd7e6c4, 26)); bubble.setTextColor(dark ? 0xffa8d68a : 0xff4f7a37);
@@ -190,6 +224,7 @@ public class DevelopmentActivity extends ComponentActivity {
         if (immersive) bars.hide(WindowInsetsCompat.Type.systemBars()); else bars.show(WindowInsetsCompat.Type.systemBars());
     }
     private void injectInsets() {
+        if (web == null) return;
         float density = getResources().getDisplayMetrics().density;
         String values = "[" + safe.top / density + "," + safe.right / density + "," + safe.bottom / density + "," + safe.left / density + "]";
         if (!values.equals(insetValues) && WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
@@ -205,6 +240,7 @@ public class DevelopmentActivity extends ComponentActivity {
     }
     private void loadPage() { if (validUrl(url)) web.loadUrl(url); else showError("开发地址无效"); }
     private void recoverCached(String address, String message) {
+        if (web == null || isFinishing() || isDestroyed()) return;
         if (!cached && cache != null && cache.contains(address)) {
             cached = true; cacheNotice = true;
             pendingNotice = "开发服务器不可用，已使用缓存源码";
@@ -220,7 +256,8 @@ public class DevelopmentActivity extends ComponentActivity {
             try {
                 int count = cache.download();
                 runOnUiThread(() -> {
-                    if (isDestroyed()) return;
+                    if (isFinishing() || isDestroyed()) return;
+                    if (web == null) { showError("已缓存 " + count + " 个文件；网页已退出，可刷新重试或返回"); return; }
                     if (generation != reloadGeneration) {
                         showError("已缓存 " + count + " 个文件；当前继续使用联网源码"); return;
                     }
@@ -261,16 +298,23 @@ public class DevelopmentActivity extends ComponentActivity {
         startActivity(new Intent(this, MainActivity.class).setAction(Intent.ACTION_APPLICATION_PREFERENCES)); finish();
     }
     private void navigateBack() {
-        if (menu.getVisibility() == View.VISIBLE) menu.setVisibility(View.GONE);
+        if (web == null) returnToApp();
+        else if (menu.getVisibility() == View.VISIBLE) menu.setVisibility(View.GONE);
         else web.evaluateJavascript("window.dispatchEvent(new CustomEvent('native-back',{cancelable:true}))", (unhandled) -> {
+            if (web == null || isFinishing() || isDestroyed()) return;
             if ("false".equals(unhandled)) return;
             if (web.canGoBack()) web.goBack(); else returnToApp();
         });
     }
+    private void disposeWebView() {
+        if (files != null) { files.onReceiveValue(null); files = null; }
+        presentationScript = null; insetValues = "";
+        WebView previous = web; web = null;
+        if (previous != null) { root.removeView(previous); previous.destroy(); }
+    }
     @Override protected void onDestroy() {
         cacheWorker.shutdownNow();
-        if (files != null) { files.onReceiveValue(null); files = null; }
-        if (web != null) { root.removeView(web); web.destroy(); }
+        disposeWebView();
         super.onDestroy();
     }
     private static final String PRESENTATION_SCRIPT = """

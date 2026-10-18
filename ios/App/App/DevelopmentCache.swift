@@ -72,6 +72,58 @@ final class DevelopmentCache {
         return snapshot?.entries[Self.key(remote)]
     }
 
+    /// Installed only for snapshot documents. Encode a typed payload: Foundation's
+    /// JSONSerialization raises an Objective-C exception for a top-level String,
+    /// which Swift's try? cannot catch during controller creation.
+    func resourceScript(enabled: Bool) -> String {
+        guard enabled, let snapshot = snapshot,
+              var origin = URLComponents(url: base, resolvingAgainstBaseURL: true) else { return "" }
+        origin.path = ""; origin.query = nil; origin.fragment = nil
+        struct Settings: Encodable {
+            let origin: String
+            let host: String
+            let paths: [String]
+        }
+        let paths = snapshot.entries.keys.compactMap { raw -> String? in
+            guard let url = URL(string: raw), sameOrigin(url),
+                  url.path.hasPrefix(base.path) else { return nil }
+            let relative = String(url.path.dropFirst(base.path.count))
+            return ["js/", "css/", "icons/", "assets/"].contains(where: { relative.hasPrefix($0) }) ? url.path : nil
+        }.sorted()
+        guard let originURL = origin.url,
+              let bytes = try? JSONEncoder().encode(Settings(origin: originURL.absoluteString, host: cacheHost, paths: paths)),
+              let stateJSON = String(data: bytes, encoding: .utf8) else { return "" }
+        return """
+        (() => {
+          const settings = \(stateJSON);
+          const paths = new Set(settings.paths);
+          window.__linguaDevelopmentTarget = settings.origin;
+          window.__linguaCachedHost = settings.host;
+          window.__linguaUseCache = true;
+          const map = (raw) => {
+            if (!window.__linguaUseCache) return raw;
+            try {
+              const value = new URL(String(raw), location.href);
+              if (value.origin !== settings.origin || !paths.has(value.pathname)) return raw;
+              // URL.protocol cannot change HTTP(S) to a non-special custom scheme.
+              return 'lingua-dev://' + settings.host + value.pathname + value.search + value.hash;
+            } catch (_) { return raw; }
+          };
+          const nativeFetch = window.fetch;
+          window.fetch = (input, init) => {
+            if (typeof input === 'string' || input instanceof URL) return nativeFetch(map(input), init);
+            if (input && input.url) {
+              const mapped = map(input.url);
+              return nativeFetch(mapped === input.url ? input : new Request(mapped, input), init);
+            }
+            return nativeFetch(input, init);
+          };
+          const nativeOpen = XMLHttpRequest.prototype.open;
+          XMLHttpRequest.prototype.open = function(method, raw, ...rest) { return nativeOpen.call(this, method, map(raw), ...rest); };
+        })();
+        """
+    }
+
     /// Returns a cached HTML document while keeping its navigation URL on the
     /// original development origin. Relative document resources are redirected
     /// to the private scheme handler; the document's localStorage/IndexedDB
@@ -88,7 +140,7 @@ final class DevelopmentCache {
             let value = String(source[valueRange])
             guard !value.hasPrefix("#"), !value.hasPrefix("data:"), !value.hasPrefix("blob:") else { continue }
             guard let resolved = URL(string: value, relativeTo: url)?.absoluteURL,
-                  sameOrigin(resolved), let local = localURL(resolved),
+                  sameOrigin(resolved), entry(resolved)?.mime != "text/html", let local = localURL(resolved),
                   let fullRange = Range(match.range(at: 2), in: source) else { continue }
             let start = source.distance(from: source.startIndex, to: fullRange.lowerBound)
             let end = source.distance(from: source.startIndex, to: fullRange.upperBound)

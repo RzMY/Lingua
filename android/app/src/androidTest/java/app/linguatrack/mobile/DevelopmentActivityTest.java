@@ -144,4 +144,95 @@ public class DevelopmentActivityTest {
             else preferences.edit().putString("lingua.development-url", previous).commit();
         }
     }
+
+    @Test public void rendererCrashKeepsNativeControlsAndRestartWaitsForExplicitRetry() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = context.getSharedPreferences("CapacitorStorage", Context.MODE_PRIVATE);
+        String previous = preferences.getString("lingua.development-url", null);
+        String previousFailed = preferences.getString("lingua.development-failed-url", null);
+        try (Source source = new Source()) {
+            String target = "http://127.0.0.1:" + source.socket.getLocalPort() + "/index.html?crash=1";
+            preferences.edit().putString("lingua.development-url", target).remove("lingua.development-failed-url").commit();
+            try {
+                // Use a real persisted snapshot, then actually crash Chromium's
+                // renderer. Returning false from onRenderProcessGone kills the app.
+                DevelopmentCache cache = new DevelopmentCache(new File(context.getFilesDir(), "development-cache"), target);
+                cache.download();
+                try (ActivityScenario<DevelopmentActivity> scenario = ActivityScenario.launch(DevelopmentActivity.class)) {
+                    awaitVersion(scenario, "version", "first");
+                    scenario.onActivity(activity -> {
+                        WebView web = (WebView) find(activity.getWindow().getDecorView(), view -> view instanceof WebView);
+                        web.loadUrl("chrome://crash");
+                    });
+                    boolean recovered = false;
+                    for (int i = 0; i < 75; i++) {
+                        AtomicReference<Boolean> ready = new AtomicReference<>(false);
+                        scenario.onActivity(activity -> ready.set(find(activity.getWindow().getDecorView(), view -> view instanceof WebView) == null
+                            && find(activity.getWindow().getDecorView(), view -> view instanceof TextView
+                                && ((TextView) view).getText().toString().startsWith("开发网页渲染进程已退出")) != null));
+                        if (ready.get()) { recovered = true; break; }
+                        Thread.sleep(200);
+                    }
+                    assertTrue("Native recovery controls survive a real renderer crash", recovered);
+                    assertEquals(target, preferences.getString("lingua.development-failed-url", null));
+                }
+                try (ActivityScenario<DevelopmentActivity> restarted = ActivityScenario.launch(DevelopmentActivity.class)) {
+                    restarted.onActivity(activity -> {
+                        assertNull(find(activity.getWindow().getDecorView(), view -> view instanceof WebView));
+                        assertNotNull(find(activity.getWindow().getDecorView(), view -> view instanceof TextView
+                            && ((TextView) view).getText().toString().startsWith("上次开发网页异常退出")));
+                    });
+                    source.version("fixed");
+                    click(restarted, "刷新网页");
+                    awaitVersion(restarted, "version", "fixed");
+                    assertNull(preferences.getString("lingua.development-failed-url", null));
+                    assertTrue(new DevelopmentCache(new File(context.getFilesDir(), "development-cache"), target).available());
+                }
+            } finally {
+                new File(new File(context.getFilesDir(), "development-cache"), DevelopmentCache.hash(target.getBytes(StandardCharsets.UTF_8)) + ".json").delete();
+            }
+        } finally {
+            SharedPreferences.Editor edit = preferences.edit();
+            if (previous == null) edit.remove("lingua.development-url"); else edit.putString("lingua.development-url", previous);
+            if (previousFailed == null) edit.remove("lingua.development-failed-url"); else edit.putString("lingua.development-failed-url", previousFailed);
+            edit.commit();
+        }
+    }
+
+    @Test public void recoveryCanRestoreEveryPreviousChannelWithoutClearingLocalState() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = context.getSharedPreferences("CapacitorStorage", Context.MODE_PRIVATE);
+        String[] keys = { "lingua.channel", "lingua.previous-channel", "lingua.development-url", "lingua.development-failed-url",
+            "lingua.own-url", "lingua.native.state" };
+        Map<String, Object> saved = new HashMap<>();
+        for (String key : keys) saved.put(key, preferences.getAll().get(key));
+        try {
+            for (String channel : Arrays.asList("stable", "own", "preview", "invalid")) {
+                String target = "http://127.0.0.1:5173/index.html";
+                preferences.edit().putString("lingua.channel", "development").putString("lingua.previous-channel", channel)
+                    .putString("lingua.development-url", target).putString("lingua.development-failed-url", target)
+                    .putString("lingua.own-url", "https://site.example/").putString("lingua.native.state", "retained-state").commit();
+                try (ActivityScenario<DevelopmentActivity> scenario = ActivityScenario.launch(DevelopmentActivity.class)) {
+                    scenario.onActivity(activity -> {
+                        assertNull(find(activity.getWindow().getDecorView(), view -> view instanceof WebView));
+                        assertNotNull(find(activity.getWindow().getDecorView(), view -> view instanceof Button
+                            && "返回上一个分支".contentEquals(((Button) view).getText())));
+                        // Verify the same restoration used by the return button without
+                        // loading a second privileged WebView in this crash test process.
+                        DevelopmentActivity.restorePreviousChannel(activity);
+                        assertEquals(channel.equals("invalid") ? "stable" : channel, preferences.getString("lingua.channel", null));
+                        assertEquals("retained-state", preferences.getString("lingua.native.state", null));
+                        assertEquals("https://site.example/", preferences.getString("lingua.own-url", null));
+                    });
+                }
+            }
+        } finally {
+            SharedPreferences.Editor edit = preferences.edit();
+            for (String key : keys) {
+                Object value = saved.get(key);
+                if (value == null) edit.remove(key); else edit.putString(key, (String) value);
+            }
+            edit.commit();
+        }
+    }
 }

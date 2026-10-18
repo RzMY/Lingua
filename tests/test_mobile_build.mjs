@@ -59,6 +59,23 @@ test('iOS playback uses a valid shared audio category and retains the caption co
   assert.match(captions, /pictureInPictureControllerDidStopPictureInPicture[\s\S]*?finish\(reuse: true\)/);
   assert.match(captions, /if !reuse \|\| retiring \{/);
 });
+
+test('persisted iOS development snapshots are covered by native controller tests in the simulator workflow', async () => {
+  const project = xcode.project(fileURLToPath(new URL('../ios/App/App.xcodeproj/project.pbxproj', import.meta.url)));
+  project.parseSync();
+  const phase = project.pbxSourcesBuildPhaseObj('A20000000000000000000001');
+  assert.ok(phase.files.some((file) => file.comment === 'DevelopmentViewTests.swift in Sources'));
+  const target = project.pbxNativeTargetSection().A20000000000000000000001;
+  const dependency = project.hash.project.objects.PBXTargetDependency[target.dependencies[0].value];
+  assert.equal(dependency.target, '504EC3031FED79650016851F');
+  const scheme = (await read('ios/App/App.xcodeproj/xcshareddata/xcschemes/DevelopmentViewTests.xcscheme')).toString();
+  assert.match(scheme, /BlueprintIdentifier="A20000000000000000000001"/);
+  const workflow = parse((await read('.github/workflows/mobile.yml')).toString());
+  const step = workflow.jobs.ios.steps.find((s) => s.name === 'Verify cached development entry and recovery in iOS Simulator');
+  assert.match(step.run, /-scheme DevelopmentViewTests/);
+  assert.match(step.run, /platform=iOS Simulator/);
+  assert.match(step.run, /CODE_SIGNING_ALLOWED=NO test/);
+});
 test('mobile release contains complete application assets and produces identical ZIP bytes twice', async () => {
   const build = () => execFileSync(process.execPath, ['mobile/scripts/build.mjs', '--release'], { cwd: root });
   build();
@@ -129,6 +146,10 @@ test('GitHub workflow exposes Android, signed iOS and update artifacts with no c
   const androidBuild = workflow.jobs.android.steps.find((s) => s.name === 'Build APKs');
   assert.match(androidBuild.run, /assembleDebug assembleRelease/);
   assert.doesNotMatch(androidBuild.run, /bundleRelease/);
+  const developmentTest = workflow.jobs.android.steps.find((s) => s.name === 'Verify cached development entry and renderer recovery in Android Emulator');
+  assert.match(developmentTest.uses, /^reactivecircus\/android-emulator-runner@/);
+  assert.match(developmentTest.with.script, /:app:connectedDebugAndroidTest/);
+  assert.match(developmentTest.with.script, /app\.linguatrack\.mobile\.DevelopmentActivityTest/);
   const ios = workflow.jobs.ios.steps.find((s) => s.name === 'Export signed IPA when credentials are configured');
   assert.match(ios.run, /IOS_CERTIFICATE_BASE64/);
   assert.match(ios.run, /mobile\/scripts\/ios-release\.py/);

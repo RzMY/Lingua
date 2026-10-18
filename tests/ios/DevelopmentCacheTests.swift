@@ -21,7 +21,7 @@ private final class SourceProtocol: URLProtocol {
     }
     override func stopLoading() { }
     static func version(_ value: String) throws {
-        files = ["/lingua/index.html": Data("<script src=\"js/lazy.js\"></script><link href=\"css/base.css\">".utf8), "/lingua/player.html": Data("player".utf8),
+        files = ["/lingua/index.html": Data("<script src=\"js/lazy.js\"></script><link href=\"css/base.css\"><a href=\"player.html?track=123\">Play</a>".utf8), "/lingua/player.html": Data("player".utf8),
                  "/lingua/js/lazy.js": Data("export const version = '\(value)'".utf8),
                  "/lingua/css/base.css": Data("body{background:url(icons/a.svg)}".utf8),
                  "/lingua/icons/a.svg": Data("<svg/ >".utf8),
@@ -43,6 +43,7 @@ private final class SourceProtocol: URLProtocol {
         try SourceProtocol.version("first")
         let cache = DevelopmentCache(target: url, directory: folder)
         precondition(!cache.available && SourceProtocol.requests.isEmpty)
+        precondition(cache.resourceScript(enabled: true).isEmpty)
         let saved = try await cache.download(configuration: config)
         cache.activate(saved)
         precondition(SourceProtocol.requests.contains { $0.query == "debug=1" })
@@ -51,12 +52,21 @@ private final class SourceProtocol: URLProtocol {
         precondition(cache.remoteURL(local) == url)
         let document = String(data: cache.document(url)!, encoding: .utf8)!
         precondition(document.contains("lingua-dev://") && document.contains("js/lazy.js"))
+        precondition(document.contains("href=\"player.html?track=123\""))
+        precondition(cache.resourceScript(enabled: false).isEmpty)
+        let script = cache.resourceScript(enabled: true)
+        let stateJSON = script.components(separatedBy: "const settings = ")[1].components(separatedBy: ";")[0]
+        let settings = try JSONSerialization.jsonObject(with: Data(stateJSON.utf8)) as! [String: Any]
+        precondition(settings["origin"] as? String == "http://dev.example:5173")
+        precondition(settings["host"] as? String == local.host)
+        precondition(Set(settings["paths"] as! [String]) == Set(["/lingua/js/lazy.js", "/lingua/css/base.css", "/lingua/icons/a.svg", "/lingua/assets/test.wav"]))
         let count = SourceProtocol.requests.count
         try SourceProtocol.version("latest")
         precondition(String(data: cache.document(url)!, encoding: .utf8)!.contains("lingua-dev://"))
         precondition(SourceProtocol.requests.count == count)
         let reopened = DevelopmentCache(target: url, directory: folder)
         precondition(String(data: reopened.document(url)!, encoding: .utf8)!.contains("lingua-dev://"))
+        precondition(reopened.resourceScript(enabled: true) == script)
         let player = URL(string: "player.html?track=123", relativeTo: local)!.absoluteURL
         precondition(reopened.entry(player)?.data == Data("player".utf8))
         let lazy = URL(string: "js/lazy.js?v=2", relativeTo: local)!.absoluteURL
