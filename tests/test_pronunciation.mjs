@@ -555,7 +555,7 @@ test('global calibration compares exclusive sample/TTS playback, saves and clean
   assert.equal(h.utterances.at(-1).text, 'Hello! It is a lovely day.');
   assert.equal(h.utterances.at(-1).voice.voiceURI, 'uk');
   assert.equal(h.utterances.at(-1).volume, .5, 'calibration previews work while balance defaults off');
-  find('减小TTS 音量').click();
+  find('减小标准发音音量').click();
   assert.equal(h.api.settings.ttsCalibration, .45);
   assert.equal(h.cancels, 1, 'editing stops old speech so replay uses the new gain');
   h.api.initSettings();
@@ -821,7 +821,7 @@ test('native PCM errors never fall back to the broken Web Speech volume path', a
   assert.equal(h.events.at(-1).state, 'error'); assert.equal(h.cancelled.length, 1);
 });
 
-test('native calibration and voice previews use system voices and advertise the installed fix', async (t) => {
+test('native calibration and voice previews use system voices and retain the upgrade notice', async (t) => {
   const h = nativeSpeechHarness(t);
   h.api.openPronunciationSheet();
   h.w.document.querySelector('[data-voice-language="en"]').click();
@@ -831,7 +831,7 @@ test('native calibration and voice previews use system voices and advertise the 
   assert.equal(h.calls.at(-1).voiceURI, 'uk');
   h.api.closeSheet(); await flush();
   [...h.w.document.querySelectorAll('button')].find((b) => b.textContent.includes('音量校准')).click();
-  assert.match(h.w.document.querySelector('.pronunciation-calibration').textContent, /原生系统发音/);
+  assert.match(h.w.document.querySelector('.calibration-notice').textContent, /新版 IPA/);
   h.api.setSetting('ttsCalibration', .1);
   h.w.document.querySelector('[aria-label="试听标准发音"]').click();
   assert.equal(h.calls.at(-1).volume, .1);
@@ -866,7 +866,7 @@ test('iOS calibration defaults to the measured bundled reference instead of a se
   const h = nativeSpeechHarness(t); h.w.LinguaNative.speechLoudness = true;
   h.api.openPronunciationSheet();
   [...h.w.document.querySelectorAll('button')].find((b) => b.textContent.includes('音量校准')).click();
-  assert.match(h.w.document.querySelector('.pronunciation-calibration').textContent, /实际响度自动匹配/);
+  assert.equal(h.w.document.querySelector('.calibration-notice'), null);
   h.w.document.querySelector('[aria-label="试听标准发音"]').click();
   assert.equal(h.calls.at(-1).targetLufs, -18.13189);
   assert.equal(h.calls.at(-1).muted, false);
@@ -877,7 +877,7 @@ test('Android native calibration and repeat playback use the same loudness targe
   const h = nativeSpeechHarness(t); h.w.LinguaNative.platform = 'android'; h.w.LinguaNative.speechLoudness = true;
   h.api.openPronunciationSheet();
   [...h.w.document.querySelectorAll('button')].find((b) => b.textContent.includes('音量校准')).click();
-  assert.match(h.w.document.querySelector('.pronunciation-calibration').textContent, /实际响度自动匹配/);
+  assert.equal(h.w.document.querySelector('.calibration-notice'), null);
   for (const calibration of [.5, .1, 1]) {
     h.api.setSetting('ttsCalibration', calibration);
     h.w.document.querySelector('[aria-label="试听标准发音"]').click();

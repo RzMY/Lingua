@@ -547,6 +547,49 @@ button {
 .voice-pack-row { display: flex; align-items: center; gap: 12px; padding: 14px 10px; border-bottom: 1px solid var(--line); }
 .voice-pack-row > button { flex: none; }
 .voice-pack-license, .voice-pack-progress { font-size: 12px; color: var(--ink-3); }
+
+/* 音量校准: 与首页相同的浅绿托底、奶白内面板。 */
+.pronunciation-calibration { display: grid; gap: 14px; padding: 4px 0 10px; }
+.calibration-preview { padding: 8px; border-radius: var(--radius-card); background: var(--card); }
+.calibration-preview-in {
+  padding: 18px 16px 16px;
+  border-radius: calc(var(--radius-card) - 8px);
+  background: radial-gradient(ellipse at 100% 0%, var(--accent-soft), transparent 75%), var(--sheet);
+}
+.calibration-heading { display: flex; align-items: center; gap: 10px; color: var(--accent); }
+.calibration-heading h3 { margin: 0; font-size: 15px; font-weight: 700; }
+.calibration-mark {
+  flex: none; display: grid; place-items: center; width: 38px; height: 38px;
+  border-radius: 50%; background: var(--accent-soft);
+}
+.calibration-sample {
+  margin: 20px 0 10px; max-width: 22ch; font: 700 clamp(23px, 6vw, 28px)/1.35 var(--font-text);
+  letter-spacing: -.025em; color: var(--ink); text-wrap: balance;
+}
+.calibration-guide { margin: 0; font-size: 14px; line-height: 1.6; color: var(--ink-2); }
+.calibration-audition.field-acts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 18px 0 0; }
+.calibration-audition .btn {
+  min-width: 0; min-height: 48px; padding: 10px 8px; justify-content: center;
+  gap: 7px; border-radius: 14px; background: var(--sheet); font-size: 14px;
+}
+.calibration-audition .btn .ic { color: var(--accent); }
+.calibration-audition .btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-2); }
+.calibration-level { padding: 16px; border-radius: 22px; background: var(--card); }
+.calibration-level .row { flex-direction: column; align-items: stretch; gap: 14px; padding: 0; border: 0; }
+.calibration-level .row-label b { font-size: 15px; }
+.calibration-level .stepper { justify-content: center; gap: 4px; padding: 6px; border-radius: 16px; background: var(--sheet); }
+.calibration-level .step-b { width: 44px; height: 44px; border-radius: 12px; background: var(--bg-soft); color: var(--accent); }
+.calibration-level .step-b:first-child { margin-right: auto; }
+.calibration-level .step-b:last-child { margin-left: auto; }
+.calibration-level .step-b:active { background: var(--accent-soft); }
+.calibration-level .step-b[disabled] { color: var(--ink-4); }
+.calibration-level .step-v { width: 76px; height: 48px; padding: 0; font: 700 32px/1 var(--font-roman); color: var(--accent-2); }
+.calibration-level .step-unit { font-size: 17px; padding-right: 12px; color: var(--accent); }
+.calibration-actions.field-acts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0; }
+.calibration-actions .btn { min-width: 0; min-height: 44px; justify-content: center; border-radius: 14px; font-size: 14px; }
+.calibration-actions .btn:last-child { background: transparent; border-color: transparent; color: var(--ink-3); }
+.calibration-status, .calibration-notice { margin: 0 4px; font-size: 14px; line-height: 1.6; color: var(--ink-2); overflow-wrap: anywhere; }
+
 /* 数字键盘上不需要再画一对加减箭头, 参数值直接输入 */
 .row-input::-webkit-inner-spin-button,
 .row-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }

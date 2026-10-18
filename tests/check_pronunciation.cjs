@@ -188,7 +188,7 @@ const base = process.argv[3] || 'http://127.0.0.1:5185';
     assert.equal(await page.getByRole('button', { name: '打开词卡自动发音', exact: true }).getAttribute('aria-pressed'), 'false');
     assert.equal(await page.getByRole('button', { name: '音量均衡', exact: true }).getAttribute('aria-pressed'), 'true');
     await page.getByRole('button', { name: /音量校准/ }).click();
-    assert.equal(await page.getByRole('spinbutton', { name: 'TTS 音量 (%)', exact: true }).inputValue(), '50');
+    assert.equal(await page.getByRole('spinbutton', { name: '标准发音音量 (%)', exact: true }).inputValue(), '50');
     await page.getByRole('button', { name: '播放参考音频', exact: true }).click();
     await page.waitForFunction(() => document.querySelector('audio')?.currentTime > .1);
     assert.equal(await page.locator('audio').evaluate((node) => node.volume), 1);
@@ -201,8 +201,8 @@ const base = process.argv[3] || 'http://127.0.0.1:5185';
       assert.equal(await page.locator('audio').count(), 0, 'TTS stops the reference');
       assert.deepEqual(await page.evaluate(() => calibrationSpeech.at(-1)), { text: 'Hello! It is a lovely day.', volume: .5 });
     }
-    await page.getByRole('button', { name: '减小TTS 音量', exact: true }).click();
-    assert.equal(await page.getByRole('spinbutton', { name: 'TTS 音量 (%)', exact: true }).inputValue(), '45');
+    await page.getByRole('button', { name: '减小标准发音音量', exact: true }).click();
+    assert.equal(await page.getByRole('spinbutton', { name: '标准发音音量 (%)', exact: true }).inputValue(), '45');
     if (await page.getByRole('button', { name: '试听标准发音', exact: true }).isEnabled()) {
       await page.getByRole('button', { name: '试听标准发音', exact: true }).click();
       assert.ok(Math.abs(await page.evaluate(() => calibrationSpeech.at(-1).volume) - .45) < 1e-6);

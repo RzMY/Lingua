@@ -42,11 +42,11 @@ export function openPronunciationSheet({ track, onBack } = {}) {
     (value) => set({ source: value }), [['audio', '音频'], ['standard', '标准']]);
   const auto = switchRow('打开词卡自动发音', '', () => get().autoPlay,
     (value) => set({ autoPlay: value }));
-  const balance = switchRow('音量均衡', '根据当前音频的平均响度调整标准发音音量', () => get().volumeBalance,
+  const balance = switchRow('音量均衡', '', () => get().volumeBalance,
     (value) => set({ volumeBalance: value }));
   const online = switchRow('在线音色', '', () => get().onlineVoices,
     (value) => { set({ onlineVoices: value }); refresh(); });
-  const calibration = !track ? navRow('音量校准', '对照试听参考音频与标准发音', {
+  const calibration = !track ? navRow('音量校准', '', {
     value: Math.round(settings.ttsCalibration * 100) + '%',
     onPick: () => openPronunciationCalibration({ onBack: back }),
   }) : null;
