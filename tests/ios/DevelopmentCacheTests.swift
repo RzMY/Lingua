@@ -87,6 +87,24 @@ private final class SourceProtocol: URLProtocol {
         do { _ = try await cache.download(configuration: config); fatalError("Expected offline rejection") } catch { }
         let retained = DevelopmentCache(target: url, directory: folder)
         precondition(String(data: retained.entry(URL(string: "js/lazy.js", relativeTo: local)!.absoluteURL)!.data, encoding: .utf8)!.contains("latest"))
+        // Foundation's URL.path can drop a directory's trailing slash. Cover root
+        // and subdirectory targets, and reject similarly named sibling paths.
+        for raw in ["http://dev.example:5173/", "http://dev.example:5173/index.html",
+                    "http://dev.example:5173/lingua/", "http://dev.example:5173/lingua/index.html"] {
+            let target = URL(string: raw)!
+            let scoped = DevelopmentCache(target: target, directory: folder)
+            let asset = URL(string: "js/lazy.js", relativeTo: scoped.base)!.absoluteURL
+            let sibling = URL(string: "http://dev.example:5173/linguax/js/lazy.js")!
+            scoped.activate(DevelopmentCache.Snapshot(target: raw, entries: [
+                asset.absoluteString: DevelopmentCache.Entry(data: Data(), mime: "text/javascript"),
+                sibling.absoluteString: DevelopmentCache.Entry(data: Data(), mime: "text/javascript")
+            ]))
+            let generated = scoped.resourceScript(enabled: true)
+            let payload = generated.components(separatedBy: "const settings = ")[1].components(separatedBy: ";")[0]
+            let decoded = try JSONSerialization.jsonObject(with: Data(payload.utf8)) as! [String: Any]
+            precondition(decoded["paths"] as? [String] == [asset.path])
+            precondition(scoped.resourceScript(enabled: true) == generated)
+        }
         for path in ["../.env", "js/../../.env", "data/private.json", "/index.html", "https://evil.example/x"] {
             precondition(!DevelopmentCache.validPath(path))
         }

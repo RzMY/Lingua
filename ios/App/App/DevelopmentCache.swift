@@ -84,14 +84,20 @@ final class DevelopmentCache {
             let host: String
             let paths: [String]
         }
+        // URL.path may omit a directory's trailing slash. Match the complete
+        // directory prefix so both root and subdirectory snapshots map resources.
+        let basePath = URLComponents(url: base, resolvingAgainstBaseURL: true)?.path ?? "/"
+        let prefix = basePath.hasSuffix("/") ? basePath : basePath + "/"
         let paths = snapshot.entries.keys.compactMap { raw -> String? in
             guard let url = URL(string: raw), sameOrigin(url),
-                  url.path.hasPrefix(base.path) else { return nil }
-            let relative = String(url.path.dropFirst(base.path.count))
+                  url.path.hasPrefix(prefix) else { return nil }
+            let relative = String(url.path.dropFirst(prefix.count))
             return ["js/", "css/", "icons/", "assets/"].contains(where: { relative.hasPrefix($0) }) ? url.path : nil
         }.sorted()
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
         guard let originURL = origin.url,
-              let bytes = try? JSONEncoder().encode(Settings(origin: originURL.absoluteString, host: cacheHost, paths: paths)),
+              let bytes = try? encoder.encode(Settings(origin: originURL.absoluteString, host: cacheHost, paths: paths)),
               let stateJSON = String(data: bytes, encoding: .utf8) else { return "" }
         return """
         (() => {
@@ -140,7 +146,7 @@ final class DevelopmentCache {
             let value = String(source[valueRange])
             guard !value.hasPrefix("#"), !value.hasPrefix("data:"), !value.hasPrefix("blob:") else { continue }
             guard let resolved = URL(string: value, relativeTo: url)?.absoluteURL,
-                  sameOrigin(resolved), entry(resolved)?.mime != "text/html", let local = localURL(resolved),
+                  sameOrigin(resolved), self.entry(resolved)?.mime != "text/html", let local = localURL(resolved),
                   let fullRange = Range(match.range(at: 2), in: source) else { continue }
             let start = source.distance(from: source.startIndex, to: fullRange.lowerBound)
             let end = source.distance(from: source.startIndex, to: fullRange.upperBound)
