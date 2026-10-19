@@ -15,9 +15,11 @@ export function createFavoritesPage(root) {
   let items = [], filtered = [], limit = 40, serial = 0, selfTest = false, removed = null;
   const filters = { query: '', kind: '', lang: '', status: '', sort: 'new' };
   const wrap = el('div', 'favorites');
+  const controls = el('div', 'fav-controls');
   const toolbar = el('div', 'fav-toolbar');
   const review = button('自测', { onPick: () => {
-    selfTest = !selfTest; review.setAttribute('aria-pressed', String(selfTest)); render();
+    selfTest = !selfTest; review.setAttribute('aria-pressed', String(selfTest));
+    for (const card of list.children) card.setSelfTest?.(selfTest);
   } });
   review.setAttribute('aria-pressed', 'false');
   review.classList.add('fav-review');
@@ -25,22 +27,17 @@ export function createFavoritesPage(root) {
 
   const finder = el('div', 'finder');
   const input = el('input');
-  input.type = 'search'; input.placeholder = '搜索原文、释义、笔记或出处';
+  input.type = 'search'; input.placeholder = '搜索收藏';
   input.setAttribute('aria-label', '搜索收藏');
-  const clear = button('清空', { onPick: () => { input.value = ''; filters.query = ''; limit = 40; render(); input.focus(); } });
+  const clear = button('', { glyph: 'i-x', onPick: () => { input.value = ''; filters.query = ''; limit = 40; render(); input.focus(); } });
+  clear.classList.add('fav-search-clear');
+  clear.setAttribute('aria-label', '清空'); clear.title = '清空搜索';
   clear.hidden = true;
   input.addEventListener('input', debounce(() => {
     filters.query = input.value; limit = 40; render();
   }, 120));
   finder.append(icon('i-search', 'ic ic-sm'), input, clear);
 
-  const kinds = el('div', 'fav-kinds');
-  kinds.setAttribute('role', 'group'); kinds.setAttribute('aria-label', '收藏类型');
-  const kindButtons = new Map();
-  for (const [key, label] of [['', '全部'], ['word', '单词'], ['sentence', '句子']]) {
-    const b = button(label, { onPick: () => { filters.kind = key; limit = 40; render(); } });
-    kindButtons.set(key, { b, label }); kinds.append(b);
-  }
   const options = el('div', 'fav-filters');
   const filterRows = [];
   function filterGroup(label, key, entries) {
@@ -61,6 +58,7 @@ export function createFavoritesPage(root) {
     control.setEntries(entries);
     filterRows.push(control); options.append(field); return control;
   }
+  filterGroup('收藏类型', 'kind', [['', '全部'], ['word', '单词'], ['sentence', '句子']]);
   const languages = filterGroup('语言', 'lang', [['', '全部']]);
   filterGroup('学习状态', 'status', [['', '全部状态'], ['pending', '待复习'], ['mastered', '已掌握']]);
   filterGroup('排序', 'sort', [['new', '最近收藏'], ['old', '最早收藏'], ['text', '原文顺序']]);
@@ -80,8 +78,8 @@ export function createFavoritesPage(root) {
   filterButton.setAttribute('aria-label', '筛选收藏');
   filterButton.setAttribute('aria-haspopup', 'dialog');
   filterButton.setAttribute('aria-expanded', 'false');
-  filterButton.title = '语言、学习状态与排序';
-  toolbar.append(kinds, review, filterButton);
+  filterButton.title = '类型、语言、学习状态与排序';
+  toolbar.append(finder, review, filterButton);
   const warning = el('p', 'warn'); warning.hidden = true;
   const undoBar = el('div', 'fav-undo'); undoBar.hidden = true;
   undoBar.setAttribute('role', 'status');
@@ -94,10 +92,13 @@ export function createFavoritesPage(root) {
     finally { undo.disabled = false; }
   } });
   undoBar.append(undoText, undo);
-  const result = el('p', 'fav-result'); result.setAttribute('role', 'status');
+  const activeFilters = el('div', 'fav-active-filters');
+  activeFilters.setAttribute('role', 'group'); activeFilters.setAttribute('aria-label', '已应用的筛选');
   const list = el('div', 'fav-list');
   const more = button('加载更多', { onPick: () => { limit += 40; render(); } });
-  wrap.append(warning, finder, toolbar, undoBar, result, list, more);
+  more.classList.add('fav-more');
+  controls.append(toolbar, activeFilters);
+  wrap.append(warning, controls, undoBar, list, more);
   root.replaceChildren(wrap);
 
   async function source(f) {
@@ -115,32 +116,55 @@ export function createFavoritesPage(root) {
 
   function card(f) {
     const box = el('article', 'fav-card');
+    box.classList.toggle('fav-card-sentence', f.kind === 'sentence');
     box.addEventListener('click', (event) => {
       if (!event.target.closest('button, a, input, textarea, select, .fav-actions')) detail(f);
     });
     const meta = el('div', 'fav-meta');
-    meta.append(el('span', 'fav-badge', kindLabel(f)), el('span', null, sourceName(f.lang)), el('time', null, dateLabel(f)));
+    const date = el('time', null, dateLabel(f)); date.dateTime = new Date(f.createdAt).toISOString();
+    meta.append(el('span', 'fav-badge', kindLabel(f)), el('span', null, sourceName(f.lang)), date);
     const title = el('button', 'fav-title', f.text); title.type = 'button'; title.lang = f.lang;
     title.setAttribute('aria-label', `查看收藏详情：${f.text}`);
     title.addEventListener('click', () => detail(f));
     box.append(meta, title);
-    if (f.reading || f.roman) box.append(el('p', 'fav-reading', [f.reading, f.roman].filter(Boolean).join(' · ')));
+    if (f.reading || f.roman) box.append(el('p', 'fav-reading', [...new Set([f.reading, f.roman].filter(Boolean))].join(' · ')));
     const answer = el('div', 'fav-answer');
     if (f.gloss) answer.append(el('p', 'fav-gloss', f.gloss));
     if (f.kind === 'word') { const context = el('p', 'fav-context', f.context); context.lang = f.lang; answer.append(context); }
     if (f.translation) answer.append(el('p', 'fav-translation', f.translation));
     if (f.note) answer.append(el('p', 'fav-note', '笔记 · ' + f.note));
     if (!f.gloss && !f.translation && !f.note) answer.append(el('p', 'fav-meta', '点击卡片添加学习笔记'));
-    const reveal = button('查看释义', { glyph: 'i-eye', onPick: () => { answer.hidden = false; reveal.hidden = true; } });
-    answer.hidden = selfTest; reveal.hidden = !selfTest;
-    box.append(reveal, answer);
-    const status = button(f.mastered ? '已掌握' : '标为掌握', { glyph: 'i-check', onPick: async () => {
-      status.disabled = true;
-      try { await editFavorite(f.id, { mastered: !f.mastered }); await refresh(); }
-      catch (error) { toast(errorMessage(error, '学习状态保存失败')); status.disabled = false; }
+    const content = el('div', 'fav-content');
+    const reveal = button('查看释义', { glyph: 'i-eye', onPick: () => {
+      box.setSelfTest(false); title.focus({ preventScroll: true });
     } });
-    status.setAttribute('aria-pressed', String(f.mastered));
-    status.title = f.mastered ? '移回待复习' : '标为已掌握';
+    reveal.classList.add('fav-reveal');
+    box.setSelfTest = (concealed) => {
+      content.classList.toggle('is-concealed', concealed);
+      answer.inert = concealed; answer.setAttribute('aria-hidden', String(concealed));
+      reveal.inert = !concealed; reveal.setAttribute('aria-hidden', String(!concealed));
+    };
+    box.setSelfTest(selfTest);
+    content.append(answer, reveal); box.append(content);
+    const status = button('掌握', { onPick: async () => {
+      status.disabled = true;
+      status.setAttribute('aria-busy', 'true');
+      try {
+        Object.assign(f, await editFavorite(f.id, { mastered: !f.mastered }));
+        paintMastery();
+        if (filters.status) await refresh();
+      } catch (error) { toast(errorMessage(error, '学习状态保存失败')); }
+      finally { status.disabled = false; status.setAttribute('aria-busy', 'false'); }
+    } });
+    status.classList.add('fav-mastery');
+    const mark = el('span', 'fav-mastery-mark'); mark.setAttribute('aria-hidden', 'true');
+    mark.append(icon('i-check', 'ic ic-sm')); status.prepend(mark);
+    function paintMastery() {
+      status.setAttribute('aria-pressed', String(f.mastered));
+      status.setAttribute('aria-label', f.mastered ? '已掌握' : '标为掌握');
+      status.title = f.mastered ? '移回待复习' : '标为已掌握';
+    }
+    paintMastery();
     const remove = button('', { glyph: 'i-trash', onPick: async () => {
       remove.disabled = true;
       try {
@@ -149,7 +173,9 @@ export function createFavoritesPage(root) {
     } });
     remove.setAttribute('aria-label', `移除收藏：${f.text}`); remove.title = '移除收藏';
     remove.classList.add('fav-remove');
-    const actions = buttonBar(button('回到原文', { glyph: 'i-play', onPick: () => source(f) }), status, remove);
+    const back = button('回到原文', { glyph: 'i-play', onPick: () => source(f) });
+    back.classList.add('fav-back');
+    const actions = buttonBar(back, status, remove);
     actions.classList.add('fav-actions');
     box.append(actions);
     return box;
@@ -159,17 +185,21 @@ export function createFavoritesPage(root) {
     filtered = filterFavorites(items, filters);
     filterRows.forEach((row) => row.refresh());
     clear.hidden = !input.value;
-    for (const [key, { b, label }] of kindButtons) {
-      const count = key ? items.filter((f) => f.kind === key).length : items.length;
-      b.lastChild.textContent = `${label} ${count > 99 ? '99+' : count}`;
-      b.setAttribute('aria-label', `${label} ${count}`);
-      b.title = `${label} ${count}`;
-      b.setAttribute('aria-pressed', String(filters.kind === key));
-    }
-    const hasFilters = Boolean(filters.lang || filters.status || filters.sort !== 'new');
+    const hasFilters = Boolean(filters.kind || filters.lang || filters.status || filters.sort !== 'new');
     filterButton.classList.toggle('is-active', hasFilters);
     filterButton.setAttribute('aria-label', hasFilters ? '筛选收藏（已应用）' : '筛选收藏');
-    result.textContent = items.length ? `${filtered.length} 条` : '';
+    const chips = [];
+    for (const [key, label] of [['kind', filters.kind === 'word' ? '单词' : '句子'], ['lang', sourceName(filters.lang)], ['status', filters.status === 'mastered' ? '已掌握' : '待复习'],
+      ['sort', filters.sort === 'old' ? '最早收藏' : '原文顺序']]) {
+      if (!filters[key] || (key === 'sort' && filters.sort === 'new')) continue;
+      const chip = button(label, { glyph: 'i-x', onPick: () => {
+        filters[key] = key === 'sort' ? 'new' : ''; limit = 40; render(); filterButton.focus();
+      } });
+      chip.classList.add('fav-filter-chip');
+      chip.setAttribute('aria-label', `取消筛选：${label}`);
+      chips.push(chip);
+    }
+    activeFilters.replaceChildren(...chips); activeFilters.hidden = !chips.length;
     review.disabled = !items.length;
     list.replaceChildren(...filtered.slice(0, limit).map(card));
     more.hidden = filtered.length <= limit;
