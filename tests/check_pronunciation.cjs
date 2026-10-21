@@ -188,18 +188,34 @@ const base = process.argv[3] || 'http://127.0.0.1:5185';
     assert.equal(await page.getByRole('button', { name: '打开词卡自动发音', exact: true }).getAttribute('aria-pressed'), 'false');
     assert.equal(await page.getByRole('button', { name: '音量均衡', exact: true }).getAttribute('aria-pressed'), 'true');
     await page.getByRole('button', { name: /音量校准/ }).click();
+    // Both browser engines exercise actual reference media between standard
+    // submissions. Inspect the real AudioSession API where it is available;
+    // mocked TTS verifies requested gain, not the device's audible volume.
+    const audioSessionAvailable = await page.evaluate(() => !!navigator.audioSession);
     assert.equal(await page.getByRole('spinbutton', { name: '标准发音音量 (%)', exact: true }).inputValue(), '50');
     await page.getByRole('button', { name: '播放参考音频', exact: true }).click();
     await page.waitForFunction(() => document.querySelector('audio')?.currentTime > .1);
     assert.equal(await page.locator('audio').evaluate((node) => node.volume), 1);
+    if (audioSessionAvailable) assert.equal(await page.evaluate(() => navigator.audioSession.type), 'playback');
     if (await page.getByRole('button', { name: '试听标准发音', exact: true }).isEnabled()) {
       await page.evaluate(() => {
         window.calibrationSpeech = [];
-        speechSynthesis.speak = (u) => { calibrationSpeech.push({ text: u.text, volume: u.volume }); u.onstart?.(); };
+        speechSynthesis.speak = (u) => {
+          calibrationSpeech.push({ text: u.text, volume: u.volume });
+          window.calibrationUtterance = u; u.onstart?.();
+        };
       });
       await page.getByRole('button', { name: '试听标准发音', exact: true }).click();
       assert.equal(await page.locator('audio').count(), 0, 'TTS stops the reference');
       assert.deepEqual(await page.evaluate(() => calibrationSpeech.at(-1)), { text: 'Hello! It is a lovely day.', volume: .5 });
+      await page.evaluate(() => calibrationUtterance.onend?.());
+      await page.getByRole('button', { name: '播放参考音频', exact: true }).click();
+      await page.waitForFunction(() => document.querySelector('audio')?.currentTime > .1);
+      await page.waitForFunction(() => !document.querySelector('audio'));
+      if (audioSessionAvailable) assert.equal(await page.evaluate(() => navigator.audioSession.type), 'playback');
+      await page.getByRole('button', { name: '试听标准发音', exact: true }).click();
+      assert.deepEqual(await page.evaluate(() => calibrationSpeech.at(-1)), { text: 'Hello! It is a lovely day.', volume: .5 });
+      await page.evaluate(() => calibrationUtterance.onend?.());
     }
     await page.getByRole('button', { name: '减小标准发音音量', exact: true }).click();
     assert.equal(await page.getByRole('spinbutton', { name: '标准发音音量 (%)', exact: true }).inputValue(), '45');

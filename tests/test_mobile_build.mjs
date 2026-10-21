@@ -54,6 +54,10 @@ test('iOS playback uses a valid shared audio category and retains the caption co
   for (const source of [shell, audio, captions]) assert.doesNotMatch(source, /options:\s*\[\.allowAirPlay\]/);
   assert.match(audio, /try PlaybackSession.activate\(\)/);
   assert.match(captions, /try PlaybackSession.activate\(\)/);
+  assert.match(shell, /!audio.categoryOptions.isEmpty/);
+  const speech = (await read('ios/App/App/SpeechAudioPlugin.swift')).toString();
+  assert.match(speech, /usesApplicationAudioSession = true/);
+  assert.doesNotMatch(speech, /usesApplicationAudioSession = false/);
   assert.match(audio, /audiovisualBackgroundPlaybackPolicy = \.continuesIfPossible/);
   assert.match(audio, /mediaType == \.video \{ track.isEnabled = false/);
   assert.match(captions, /pictureInPictureControllerDidStopPictureInPicture[\s\S]*?finish\(reuse: true\)/);
@@ -65,6 +69,7 @@ test('persisted iOS development snapshots are covered by native controller tests
   project.parseSync();
   const phase = project.pbxSourcesBuildPhaseObj('A20000000000000000000001');
   assert.ok(phase.files.some((file) => file.comment === 'DevelopmentViewTests.swift in Sources'));
+  assert.ok(phase.files.some((file) => file.comment === 'PlaybackSessionTests.swift in Sources'));
   const target = project.pbxNativeTargetSection().A20000000000000000000001;
   const dependency = project.hash.project.objects.PBXTargetDependency[target.dependencies[0].value];
   assert.equal(dependency.target, '504EC3031FED79650016851F');

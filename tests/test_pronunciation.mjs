@@ -774,6 +774,156 @@ function nativeSpeechHarness(t) {
     nativeEvent(id) { h.w.dispatchEvent(new h.w.CustomEvent('native-speech-state', { detail: { id, state: 'playing' } })); } };
 }
 
+function playbackSessionHarness(h) {
+  let type = 'auto';
+  const changes = [], submissions = [];
+  Object.defineProperty(h.w.navigator, 'audioSession', { configurable: true, value: {
+    get type() { return type; },
+    set type(value) { type = value; changes.push(value); },
+  } });
+  const play = h.w.HTMLMediaElement.prototype.play;
+  h.w.HTMLMediaElement.prototype.play = function () {
+    submissions.push({ source: 'audio', type, volume: this.volume });
+    return play.call(this);
+  };
+  const speak = h.w.speechSynthesis.speak;
+  h.w.speechSynthesis.speak = (utterance) => {
+    submissions.push({ source: 'standard', type, volume: utterance.volume });
+    speak(utterance);
+  };
+  return { changes, submissions, get type() { return type; } };
+}
+
+test('WebClip calibration keeps one playback category and gain across standard/reference alternation', async (t) => {
+  const h = iosHarness(t), route = playbackSessionHarness(h);
+  h.api.openPronunciationSheet();
+  [...h.w.document.querySelectorAll('button')].find((b) => b.textContent.includes('音量校准')).click();
+  const tap = (label) => h.w.document.querySelector(`[aria-label="${label}"]`).click();
+  for (const calibration of [.5, .1, .8]) {
+    h.api.setSetting('ttsCalibration', calibration);
+    for (const label of ['试听标准发音', '播放参考音频', '试听标准发音']) {
+      tap(label);
+      if (label === '试听标准发音') {
+        assert.equal(h.utterances.at(-1).volume, calibration);
+        h.utterances.at(-1).onend();
+      } else {
+        const audio = h.media.at(-1);
+        h.fire(audio, 'loadedmetadata'); h.fire(audio, 'seeked'); h.fire(audio, 'ended');
+        assert.equal(audio.isConnected, false);
+      }
+      assert.equal(route.type, 'playback', 'natural end must not reset the category to auto');
+    }
+  }
+  assert.deepEqual(route.changes, ['playback']);
+  assert.ok(route.submissions.every((call) => call.type === 'playback'));
+  assert.equal(h.cancels, 0); assert.equal(h.timers.size, 0);
+  h.api.closeSheet(); assert.equal(route.type, 'playback');
+});
+
+test('WebClip word clips do not change the next standard gain or the main media state', async (t) => {
+  const h = iosHarness(t), route = playbackSessionHarness(h);
+  const main = { volume: .6, muted: false, currentTime: 4, paused: true, playbackRate: 1.5 };
+  const before = { ...main };
+  const local = { ...track, pronunciationLoudness: { volume: () => .4 * main.volume } };
+  const session = h.api.createPronunciation({ track: local, sentence, word });
+  t.after(() => session.dispose());
+  h.api.setSetting('ttsCalibration', .25);
+  for (let i = 0; i < 3; i++) {
+    await session.play('standard');
+    assert.equal(h.utterances.at(-1).volume, .06); h.utterances.at(-1).onend();
+    await session.play('audio');
+    const audio = h.media.at(-1);
+    h.fire(audio, 'loadedmetadata'); h.fire(audio, 'seeked'); h.fire(audio, 'ended');
+    await session.play('standard');
+    assert.equal(h.utterances.at(-1).volume, .06); h.utterances.at(-1).onend();
+  }
+  assert.deepEqual(main, before);
+  assert.deepEqual(route.changes, ['playback']);
+  assert.ok(route.submissions.every((call) => call.type === 'playback'));
+});
+
+test('iOS source switches set playback before cancel recovery and obsolete taps cannot submit', async (t) => {
+  const h = iosHarness(t), route = playbackSessionHarness(h);
+  await h.session.play('standard');
+  await h.session.play('audio');
+  await h.session.play('standard');
+  assert.equal(h.utterances.length, 1, 'the interrupted Web Speech engine still needs its recovery window');
+  assert.equal(h.media.at(-1).isConnected, false);
+  assert.equal(route.type, 'playback');
+  // Another output may change the category while cancellation is settling.
+  // The delayed submission must prepare it again, not rely on the earlier tap.
+  h.w.navigator.audioSession.type = 'ambient';
+  h.api.setSetting('ttsCalibration', .2); h.settleCancel();
+  assert.equal(h.utterances.length, 2); assert.equal(h.utterances.at(-1).volume, .2);
+  assert.equal(route.type, 'playback');
+  h.w.dispatchEvent(new h.w.Event('pagehide'));
+  h.settleCancel();
+  assert.equal(h.session.active, ''); assert.equal(h.timers.size, 0);
+  assert.deepEqual(route.changes, ['playback', 'ambient', 'playback']);
+});
+
+test('absent, restricted or throwing AudioSession APIs do not block reference or speech playback', async (t) => {
+  for (const kind of ['absent', 'getter', 'setter', 'ignored']) {
+    const h = iosHarness(t);
+    if (kind === 'getter') Object.defineProperty(h.w.navigator, 'audioSession', { get() { throw Error('restricted'); } });
+    if (kind === 'setter' || kind === 'ignored') Object.defineProperty(h.w.navigator, 'audioSession', { value: {
+      get type() { return 'auto'; }, set type(_) { if (kind === 'setter') throw Error('unsupported'); },
+    } });
+    await h.session.play('audio');
+    const audio = h.media.at(-1); h.fire(audio, 'loadedmetadata'); h.fire(audio, 'seeked'); h.fire(audio, 'ended');
+    await h.session.play('standard');
+    assert.equal(h.utterances.length, 1); h.utterances[0].onend();
+    assert.equal(h.session.active, ''); assert.equal(h.events.some((event) => event.state === 'error'), false);
+  }
+});
+
+test('native iOS calibration preserves its PCM target before and after WebView reference playback', async (t) => {
+  const h = nativeSpeechHarness(t), route = playbackSessionHarness(h);
+  h.w.LinguaNative.speechLoudness = true;
+  h.api.openPronunciationSheet();
+  [...h.w.document.querySelectorAll('button')].find((b) => b.textContent.includes('音量校准')).click();
+  const tap = (label) => h.w.document.querySelector(`[aria-label="${label}"]`).click();
+  for (const calibration of [.5, .1, .8]) {
+    h.api.setSetting('ttsCalibration', calibration);
+    tap('试听标准发音');
+    const first = h.calls.at(-1); h.pending.get(first.id).resolve(); await flush();
+    tap('播放参考音频');
+    const audio = h.media.at(-1); h.fire(audio, 'loadedmetadata'); h.fire(audio, 'seeked'); h.fire(audio, 'ended');
+    tap('试听标准发音');
+    const second = h.calls.at(-1);
+    assert.equal(second.targetLufs, first.targetLufs);
+    assert.equal(second.volume, first.volume);
+    assert.equal(second.targetLufs, -18.13189 + 20 * Math.log10(calibration / .5));
+    h.pending.get(second.id).resolve(); await flush();
+  }
+  assert.equal(h.utterances.length, 0); assert.equal(h.cancelled.length, 0);
+  assert.deepEqual(route.changes, ['playback']);
+  h.api.closeSheet(); assert.equal(h.timers.size, 0);
+});
+
+test('native iOS word-card standard/clip/standard keeps the lesson target and live calibration', async (t) => {
+  const h = nativeSpeechHarness(t), route = playbackSessionHarness(h);
+  h.w.LinguaNative.speechLoudness = true;
+  const local = { ...track, pronunciationLoudness: {
+    volume: () => .4, target: (calibration) => -24 + 20 * Math.log10(calibration / .5),
+  } };
+  const session = h.api.createPronunciation({ track: local, sentence, word });
+  t.after(() => session.dispose());
+  for (const calibration of [.5, .1, .8]) {
+    h.api.setSetting('ttsCalibration', calibration);
+    const firstPlay = session.play('standard'), first = h.calls.at(-1);
+    h.pending.get(first.id).resolve(); await firstPlay;
+    await session.play('audio');
+    const audio = h.media.at(-1); h.fire(audio, 'loadedmetadata'); h.fire(audio, 'seeked'); h.fire(audio, 'ended');
+    const secondPlay = session.play('standard'), second = h.calls.at(-1);
+    assert.equal(second.targetLufs, first.targetLufs); assert.equal(second.volume, first.volume);
+    assert.equal(second.targetLufs, local.pronunciationLoudness.target(calibration));
+    h.pending.get(second.id).resolve(); await secondPlay;
+  }
+  assert.equal(h.utterances.length, 0); assert.equal(h.cancelled.length, 0);
+  assert.deepEqual(route.changes, ['playback']);
+});
+
 test('installed iOS repeats native PCM speech with live calibration and preserves the saved system voice', async (t) => {
   const h = nativeSpeechHarness(t);
   const oldVoice = h.api.speechVoiceKey({ voiceURI: 'uk', lang: 'en-GB', name: 'Old WebKit name', localService: true });

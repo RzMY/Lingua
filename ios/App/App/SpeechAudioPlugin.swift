@@ -45,6 +45,15 @@ final class SpeechAudioPlugin: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegat
         for observer in observers { NotificationCenter.default.removeObserver(observer) }
     }
 
+    /// Speech rendering must not create its own mixing/ducking session. Activate
+    /// the same clean playback category before synthesis and again before PCM.
+    static func makeSynthesizer() throws -> AVSpeechSynthesizer {
+        try PlaybackSession.activate()
+        let synth = AVSpeechSynthesizer()
+        synth.usesApplicationAudioSession = true
+        return synth
+    }
+
     @objc func capabilities(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
             let voices = AVSpeechSynthesisVoice.speechVoices().map { voice in
@@ -118,8 +127,11 @@ final class SpeechAudioPlugin: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegat
             utterance.rate = AVSpeechUtteranceDefaultSpeechRate
             utterance.pitchMultiplier = 1
             utterance.volume = 1 // Always synthesize full scale; apply gain to the resulting PCM.
-            let synth = AVSpeechSynthesizer()
-            synth.usesApplicationAudioSession = false
+            let synth: AVSpeechSynthesizer
+            do { synth = try Self.makeSynthesizer() }
+            catch {
+                self.finish(error: "无法建立发音播放会话，请重试", code: "SPEECH_PLAYBACK"); return
+            }
             self.synthesizer = synth
             let watchdog = DispatchWorkItem { [weak self] in
                 guard let self = self, self.job == id else { return }

@@ -7,6 +7,7 @@ import { speechLoudnessTarget } from './pronunciation-loudness.js';
 import { downloadedVoices, supportsVoicePacks, synthesizeVoicePack } from './voice-packs.js';
 import { packId } from './voice-pack-catalog.js';
 import { normalizedSpeechPCM, speechPCMBase64 } from './speech-pcm.js';
+import { preparePronunciationPlayback } from './playback-session.js';
 
 // WebKit cancellation reaches the platform synthesizer asynchronously. Share
 // the recovery window across cards/previews, which all use the same synthesizer.
@@ -118,6 +119,7 @@ export function createPronunciation({ track, sentence, word, audioRange, getAudi
     active = source;
     publish('loading', source);
     try {
+      preparePronunciationPlayback();
       if (source === 'standard') {
         const lang = speechLanguage(track.lang);
         const selectedKey = prefs.voices[lang];
@@ -168,6 +170,7 @@ export function createPronunciation({ track, sentence, word, audioRange, getAudi
             return;
           }
           const samples = normalizedSpeechPCM(rendered.samples, rendered.sampleRate, target);
+          preparePronunciationPlayback();
           const buffer = context.createBuffer(1, samples.length, rendered.sampleRate);
           buffer.copyToChannel(samples, 0);
           node = context.createBufferSource(); node.buffer = buffer; node.connect(context.destination);
@@ -245,6 +248,7 @@ export function createPronunciation({ track, sentence, word, audioRange, getAudi
           try {
             // Re-read the current calibration/measurement at actual submission,
             // including retries delayed until the preceding native cancel settles.
+            preparePronunciationPlayback();
             utterance.volume = prefs.volumeBalance
               ? (track.pronunciationLoudness?.volume() ?? 1) * settings.ttsCalibration : 1;
             timeout = setTimeout(() => finish('语音合成未响应，请重试或更换声音'), 20000);
@@ -332,6 +336,7 @@ export function createPronunciation({ track, sentence, word, audioRange, getAudi
       loading();
       media.load();
       // 在用户点击的调用栈内 play, 不等 loadedmetadata/seeked 才请求播放权限。
+      preparePronunciationPlayback();
       Promise.resolve(media.play()).catch((error) => finish(error?.name === 'NotAllowedError'
         ? '浏览器阻止了发音，请再次点击「音频」' : '音频片段播放失败，请重试'));
     } catch (error) {
