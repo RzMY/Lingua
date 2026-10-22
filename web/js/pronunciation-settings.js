@@ -72,12 +72,13 @@ export function openPronunciationSheet({ track, onBack } = {}) {
       row.disabled = !supported;
     }
   };
-  body.append(group(...rows.map(({ row }) => row)), buttonBar(button('恢复默认', { onPick: () => {
+  body.append(group(...rows.map(({ row }) => row)), buttonBar(button(track ? '恢复全局设置' : '恢复默认', { onPick: () => {
     if (!track) {
       setSetting('ttsCalibration', TTS_CALIBRATION_DEFAULT);
       calibration.setValue(Math.round(settings.ttsCalibration * 100) + '%');
     }
-    set(normalizePronunciation()); source.refresh(); auto.refresh(); balance.refresh(); online.refresh(); refresh();
+    set(normalizePronunciation(track ? settings.pronunciation : undefined));
+    source.refresh(); auto.refresh(); balance.refresh(); online.refresh(); refresh();
   } })));
   openSheet(track ? '发音设置 · 当前音频' : '发音设置', body, { onBack,
     onClose: () => {

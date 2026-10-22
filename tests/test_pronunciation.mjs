@@ -206,7 +206,7 @@ test('online voices default off and hide installed packs, download controls and 
   assert.equal(h.api.settings.pronunciation.voices.en, h.prefs.voices.en);
 });
 
-test('online voice switch stays with its audio and restore defaults turns it off', (t) => {
+test('online voice switch stays with its audio and reset restores the global switch', (t) => {
   const h = harness(t);
   h.api.openPronunciationSheet({ track });
   const toggle = () => h.w.document.querySelector('[aria-label="在线音色"]');
@@ -219,7 +219,7 @@ test('online voice switch stays with its audio and restore defaults turns it off
   h.w.document.querySelector('[data-voice-language=en]').click();
   assert.ok(h.w.document.querySelector('.voice-pack-downloads'));
   h.api.closeSheet();
-  [...h.w.document.querySelectorAll('button')].find((b) => b.textContent === '恢复默认').click();
+  [...h.w.document.querySelectorAll('button')].find((b) => b.textContent === '恢复全局设置').click();
   assert.equal(toggle().getAttribute('aria-pressed'), 'false');
   h.api.initTrackCfg(track.id, track.lang);
   assert.equal(h.api.trackCfg.pronunciation.onlineVoices, false);
@@ -511,7 +511,7 @@ test('balanced speech reads the current cached level synchronously and bypasses 
   assert.equal(h.utterances.at(-1).volume, 1);
 });
 
-test('volume balance persists, resets to enabled and applies to voice previews', (t) => {
+test('volume balance persists, resets to the global value and applies to voice previews', (t) => {
   const h = harness(t);
   const currentTrack = { ...track, pronunciationLoudness: { volume: () => .3 } };
   h.api.openPronunciationSheet({ track: currentTrack });
@@ -524,7 +524,7 @@ test('volume balance persists, resets to enabled and applies to voice previews',
   h.w.document.querySelector('.voice-listen').click();
   assert.equal(h.utterances.at(-1).volume, 1);
   h.api.closeSheet();
-  [...h.w.document.querySelectorAll('button')].find((b) => b.textContent === '恢复默认').click();
+  [...h.w.document.querySelectorAll('button')].find((b) => b.textContent === '恢复全局设置').click();
   assert.equal(toggle().getAttribute('aria-pressed'), 'true');
   h.api.initTrackCfg(track.id, track.lang);
   assert.equal(h.api.trackCfg.pronunciation.volumeBalance, true);
@@ -581,7 +581,7 @@ test('global calibration affects existing audio immediately and local resets pre
   await session.play('standard', h.api.trackCfg.pronunciation);
   assert.equal(h.utterances.at(-1).volume, .2);
   h.api.openPronunciationSheet({ track: currentTrack });
-  [...h.w.document.querySelectorAll('button')].find((b) => b.textContent === '恢复默认').click();
+  [...h.w.document.querySelectorAll('button')].find((b) => b.textContent === '恢复全局设置').click();
   assert.equal(h.api.settings.ttsCalibration, .25);
   h.api.closeSheet(); h.api.openPronunciationSheet();
   [...h.w.document.querySelectorAll('button')].find((b) => b.textContent === '恢复默认').click();
@@ -648,25 +648,49 @@ test('player preferences and word-card source stay with their audio across switc
   assert.equal(h.api.trackCfg.pronunciation.voices.en, voice);
 });
 
-test('track voice migration and reset never modify global defaults or another audio', (t) => {
+test('track reset copies current global preferences, refreshes the UI and stays isolated after reload', (t) => {
   const h = harness(t);
   h.api.setPronunciation({ source: 'standard', autoPlay: true, volumeBalance: false, voices: { en: 'uk' } });
-  const globalBefore = h.w.localStorage.getItem('linguatrack.settings.v1');
   h.api.initTrackCfg('other', 'en');
   h.api.setTrackPronunciation({ voices: { en: 'us' } });
   const otherBefore = h.w.localStorage.getItem('linguatrack.track.other');
   h.api.initTrackCfg(track.id, track.lang);
+  h.api.setTrackCfg('pos', 0);
+  h.api.setTrackFontSize('textSize', 32);
+  h.api.setVideoCfg({ captionSize: 28 });
   h.api.openPronunciationSheet({ track });
   h.w.document.querySelector('[data-voice-language="en"]').click();
   assert.ok(h.api.trackCfg.pronunciation.voices.en.startsWith('voice:'));
   assert.equal(h.api.settings.pronunciation.voices.en, 'uk');
   h.api.closeSheet();
-  [...h.w.document.querySelectorAll('button')].find((b) => b.textContent === '恢复默认').click();
-  assert.equal(JSON.stringify(h.api.trackCfg.pronunciation), JSON.stringify(normalizePronunciation()));
+
+  // Read the latest global values when resetting, even if this sheet was already open.
+  h.api.setTrackPronunciation(normalizePronunciation({ voices: { en: 'us', fr: 'local-fr' } }));
+  const globalVoices = { en: h.api.speechVoiceKey(h.voices[1]), ja: h.api.speechVoiceKey(h.voices[2]) };
+  h.api.setPronunciation({ onlineVoices: true, voices: globalVoices });
+  h.api.setSetting('ttsCalibration', .25);
+  const globalBefore = h.w.localStorage.getItem('linguatrack.settings.v1');
+  [...h.w.document.querySelectorAll('button')].find((b) => b.textContent.startsWith('恢复')).click();
+  assert.equal(JSON.stringify(h.api.trackCfg.pronunciation), JSON.stringify(h.api.settings.pronunciation));
+  assert.notEqual(h.api.trackCfg.pronunciation.voices, h.api.settings.pronunciation.voices);
+  assert.equal([...h.w.document.querySelectorAll('button')].find((b) => b.textContent === '标准').getAttribute('aria-pressed'), 'true');
+  assert.equal(h.w.document.querySelector('[aria-label="打开词卡自动发音"]').getAttribute('aria-pressed'), 'true');
+  assert.equal(h.w.document.querySelector('[aria-label="音量均衡"]').getAttribute('aria-pressed'), 'false');
+  assert.equal(h.w.document.querySelector('[aria-label="在线音色"]').getAttribute('aria-pressed'), 'true');
+  assert.match(h.w.document.querySelector('[data-voice-language="en"]').textContent, /English UK/);
+  h.api.closeSheet();
+  h.api.initSettings();
   h.api.initTrackCfg(track.id, track.lang);
-  assert.equal(h.api.trackCfg.pronunciation.source, 'audio');
-  assert.equal(h.api.trackCfg.pronunciation.autoPlay, false);
-  assert.equal(h.api.trackCfg.pronunciation.voices.en, undefined);
+  assert.equal(JSON.stringify(h.api.trackCfg.pronunciation), JSON.stringify(h.api.settings.pronunciation));
+  assert.equal(h.api.trackCfg.pos, 0);
+  assert.equal(h.api.trackCfg.fonts.textSize, 32);
+  assert.equal(h.api.trackCfg.video.captionSize, 28);
+  assert.equal(h.api.settings.ttsCalibration, .25);
+  assert.equal(h.w.localStorage.getItem('linguatrack.settings.v1'), globalBefore);
+  assert.equal(h.w.localStorage.getItem('linguatrack.track.other'), otherBefore);
+
+  h.api.setTrackPronunciation({ voices: { en: 'us' } });
+  assert.equal(h.api.settings.pronunciation.voices.en, globalVoices.en);
   assert.equal(h.w.localStorage.getItem('linguatrack.settings.v1'), globalBefore);
   assert.equal(h.w.localStorage.getItem('linguatrack.track.other'), otherBefore);
 });
