@@ -6,7 +6,7 @@ import { audioBlob } from './library.js';
 import { el, icon, toast, copyText } from './util.js';
 import { sourceName } from './langs.js';
 import { button, buttonBar, textField } from './rows.js';
-import { openSheet, closeSheet } from './sheet.js';
+import { openSheet } from './sheet.js';
 import { errorMessage } from './errors.js';
 import { renderMarkdown } from './md.js';
 import { createPronunciation, wordAudioRange, clipAudioRange } from './pronunciation.js';
@@ -108,15 +108,51 @@ export function openFavoriteDetail(f, { onSave = () => {} } = {}) {
   const learning = el('div', 'fav-learning'); learning.append(learningContent(f));
   const note = textField('学习笔记', { value: f.note, placeholder: '写下联想、用法或自己的例句…', rows: 4 });
   note.input.maxLength = 4000;
-  const save = button('保存笔记', { main: true, onPick: async () => {
-    save.disabled = true;
+  const initialNote = note.input.value;
+  let saving = false, confirming = false, scrollTop = 0;
+  const save = button('保存笔记', { main: true, onPick: saveNote });
+  async function saveNote() {
+    if (saving || closed) return;
+    saving = true; save.disabled = true; note.input.disabled = true;
+    for (const control of view.body.querySelectorAll('.confirm button')) control.disabled = true;
     try {
       await editFavorite(f.id, { note: note.input.value });
-      if (!closed) closeSheet();
+      view.close();
       await onSave(); toast('笔记已保存');
-    } catch (error) { toast(errorMessage(error, '笔记保存失败')); }
-    finally { save.disabled = false; }
-  } });
+    } catch (error) {
+      if (!closed && confirming) { note.input.disabled = false; restoreEditor(); }
+      toast(errorMessage(error, '笔记保存失败'));
+    } finally { saving = false; save.disabled = false; note.input.disabled = false; }
+  }
+
+  function restoreEditor() {
+    confirming = false;
+    view.title.textContent = '收藏详情';
+    view.sheet.classList.add('sheet-tall');
+    view.body.replaceChildren(body);
+    view.body.scrollTop = scrollTop;
+    note.input.focus({ preventScroll: true });
+  }
+
+  function beforeClose() {
+    if (saving) return false;
+    if (confirming) { restoreEditor(); return false; }
+    if (note.input.value === initialNote) return;
+    confirming = true; scrollTop = view.body.scrollTop;
+    session.stop();
+    const prompt = el('div', 'confirm');
+    prompt.append(el('p', 'confirm-t', '笔记尚未保存。'));
+    const actions = el('div', 'confirm-acts');
+    const keep = button('保存', { main: true, onPick: saveNote });
+    actions.append(button('放弃更改', { onPick: () => view.close() }), keep);
+    prompt.append(actions);
+    view.title.textContent = '保存更改？';
+    view.sheet.classList.remove('sheet-tall');
+    view.body.replaceChildren(prompt);
+    view.body.scrollTop = 0;
+    keep.focus({ preventScroll: true });
+    return false;
+  }
   readingLine.append(reading, sounds);
   body.append(readingLine, roman, soundStatus, learning, note, buttonBar(button('复制', { glyph: 'i-copy', onPick: async () => {
     toast(await copyText([current.text, current.reading, current.roman, learning.textContent, note.input.value].filter(Boolean).join('\n')) ? '已复制' : '复制失败');
@@ -125,9 +161,9 @@ export function openFavoriteDetail(f, { onSave = () => {} } = {}) {
     closed = true; session.dispose(); blob = null;
     window.removeEventListener('pagehide', leave);
   }
-  function leave() { if (!closed) closeSheet(); }
+  function leave() { view.close(); }
   window.addEventListener('pagehide', leave);
-  openSheet('收藏详情', body, { cls: 'sheet-tall', onClose: dispose });
+  const view = openSheet('收藏详情', body, { cls: 'sheet-tall', onClose: dispose, onBeforeClose: beforeClose });
 
   void (async () => {
     try {
