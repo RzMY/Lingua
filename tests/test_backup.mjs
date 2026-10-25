@@ -131,6 +131,25 @@ test('independent subtitle fonts survive backup restore and reject invalid sizes
   }
 });
 
+test('language system sizes and legacy media overrides survive backups and reject invalid values', async () => {
+  const backup = fixture();
+  const sizes = { ja: 28, en: 24, ko: 22, 'pt-BR': 26 };
+  backup.localStorage[GLOBAL_KEYS[1]] = JSON.stringify({ captionSizes: sizes, video: { captionSize: 20 } });
+  backup.localStorage['linguatrack.track.lesson'] = JSON.stringify({ video: { captionSize: 32 } });
+  await seed(backup);
+  const exported = parseBackup(JSON.stringify(await exportBackup()));
+  const plan = prepareImport(exported, await snapshot(BACKUP_STORES), backup.localStorage);
+  applyLocalData(plan.changes);
+  assert.deepEqual(JSON.parse(localStorage.getItem(GLOBAL_KEYS[1])).captionSizes, sizes);
+  const copyId = plan.mapping.get('lesson');
+  assert.equal(JSON.parse(localStorage.getItem('linguatrack.track.' + copyId)).video.captionSize, 32);
+  for (const value of [null, [], '28', { ja: 0 }, { ja: 37 }, { ja: 20.5 }, { ja: '28' },
+    { ja: null }, { 'bad code': 24 }]) {
+    backup.localStorage[GLOBAL_KEYS[1]] = JSON.stringify({ captionSizes: value });
+    assert.throws(() => parseBackup(JSON.stringify(backup)), /系统字幕字号/);
+  }
+});
+
 test('language fonts and audio font/pronunciation settings survive backups and audio ID remapping', async () => {
   const backup = fixture();
   const language = { fonts: { ja: { textSize: 32 }, en: { readSize: 18.5 } }, ttsCalibration: .35 };

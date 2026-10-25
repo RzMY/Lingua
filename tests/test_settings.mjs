@@ -16,7 +16,7 @@ globalThis.localStorage = {
 };
 const {
   settings, initSettings, setSetting, FONT_DEFAULTS, fontSizes, setLangFontSize, resetLangFontSizes,
-  setGlobalVideo, setPronunciation,
+  setGlobalVideo, setPronunciation, captionSize, setLangCaptionSize, resetLangCaptionSize, videoSettings,
 } = await import('../web/js/settings.js');
 const {
   trackCfg, initTrackCfg, readTrackCfg, setTrackCfg, setTrackFontSize, resetTrackFontSizes, dropTrackCfg,
@@ -108,6 +108,60 @@ test('video defaults inherit per field and font/display edits do not freeze them
   assert.equal(trackCfg.video.width, settings.video.width);
   saved.set('linguatrack.track.legacy', JSON.stringify({ video: { captionSize: 18, position: 20 } }));
   assert.equal(readTrackCfg('legacy').video.captionSize, 18);
+});
+
+test('system caption sizes inherit legacy values and persist per source language with media overrides', () => {
+  saved.set(KEY, JSON.stringify({ video: { captionSize: 26, position: 60 },
+    captionSizes: { JA: 28, en: 24 } }));
+  initSettings();
+  assert.equal(captionSize('ja'), 28);
+  assert.equal(captionSize('en'), 24);
+  assert.equal(captionSize('ko'), 26);
+  const changes = [];
+  initTrackCfg('japanese', 'ja', null, (...args) => changes.push(args));
+  assert.equal(trackCfg.video.captionSize, 28);
+  setVideoCfg({ width: 80 });
+  assert.equal(trackCfg.video.captionSize, 28);
+  assert.deepEqual(JSON.parse(saved.get('linguatrack.track.japanese')).video, { width: 80 });
+  setVideoCfg({ captionSize: 32 });
+  setLangCaptionSize('ja', 30);
+  setLangCaptionSize('en', 22);
+  initSettings();
+  assert.equal(readTrackCfg('japanese', 'ja').video.captionSize, 32);
+  initTrackCfg('japanese', 'ja');
+  resetVideoCfg(['captionSize']);
+  assert.equal(trackCfg.video.captionSize, 30);
+  assert.equal(trackCfg.video.width, 80);
+  assert.equal(changes.at(-1)[0], 'video');
+  assert.equal(changes.at(-1)[2], false);
+  assert.equal(readTrackCfg('new-japanese', 'ja').video.captionSize, 30);
+  assert.equal(readTrackCfg('english', 'en').video.captionSize, 22);
+  assert.equal(readTrackCfg('korean', 'ko').video.captionSize, 26);
+  resetLangCaptionSize('ja');
+  assert.equal(captionSize('ja'), 20);
+  assert.equal(captionSize('en'), 22);
+  assert.equal(settings.video.captionSize, 26);
+  assert.equal(videoSettings('en').position, 60);
+  saved.set('linguatrack.track.legacy-caption', JSON.stringify({ video: { captionSize: 18 } }));
+  assert.equal(readTrackCfg('legacy-caption', 'ja').video.captionSize, 18);
+});
+
+test('language caption settings validate sizes and codes and work without persistent storage', () => {
+  saved.set(KEY, JSON.stringify({ captionSizes: { ja: 999, en: 13.6, ko: '28',
+    fr: null, de: {}, es: true, 'bad code': 24, it: -1 } }));
+  initSettings();
+  assert.deepEqual(settings.captionSizes, { ja: 36, en: 14, it: 12 });
+  for (const value of [NaN, Infinity, null, '28', {}, []]) setLangCaptionSize('ko', value);
+  assert.equal(captionSize('ko'), 20);
+  setLangCaptionSize('__proto__', 28);
+  const write = localStorage.setItem;
+  localStorage.setItem = () => { throw Error('storage unavailable'); };
+  try {
+    setLangCaptionSize('KO', 28.4);
+    assert.equal(captionSize('ko'), 28);
+    resetLangCaptionSize('ko');
+    assert.equal(captionSize('ko'), 20);
+  } finally { localStorage.setItem = write; }
 });
 
 test('raw subtitle edits preserve hidden learning preferences for later analysis', () => {

@@ -21,7 +21,7 @@
 
 import { config, langDefaults } from './config.js';
 import { sourceSpec } from './langs.js';
-import { FONT_DEFAULTS, fontSizes, normFontSize, normalizeFonts, setFontContext, settings } from './settings.js';
+import { FONT_DEFAULTS, fontSizes, normFontSize, normalizeFonts, setFontContext, settings, videoSettings } from './settings.js';
 import { normalizeVideo, videoOverrides } from './video-config.js';
 import { normalizePronunciation } from './pronunciation-config.js';
 
@@ -64,7 +64,7 @@ export const cfgSupports = (key) => supported.has(key);
  */
 export function readTrackCfg(id, srcLang = '') {
   const out = { ...langDefaults(srcLang), id, lang: config.targetLang || 'zh-CN', fonts: {},
-    video: normalizeVideo(settings.video), videoOverrides: {},
+    video: videoSettings(srcLang), videoOverrides: {},
     pronunciation: normalizePronunciation(settings.pronunciation) };
   try {
     const saved = JSON.parse(localStorage.getItem(PREFIX + id) || 'null');
@@ -73,7 +73,7 @@ export function readTrackCfg(id, srcLang = '') {
       if (typeof saved.lang === 'string' && saved.lang) out.lang = saved.lang;
       out.fonts = normalizeFonts(saved.fonts);
       out.videoOverrides = videoOverrides(saved.video);
-      out.video = normalizeVideo({ ...settings.video, ...out.videoOverrides });
+      out.video = videoSettings(srcLang, out.videoOverrides);
       if (saved.pronunciation && typeof saved.pronunciation === 'object' && !Array.isArray(saved.pronunciation)) {
         out.pronunciation = normalizePronunciation(saved.pronunciation);
       }
@@ -187,7 +187,7 @@ export function setTrackCfg(key, value) {
 /** Video fields are bounded before persistence; they never modify subtitle font overrides. */
 export function setVideoCfg(fields) {
   const overrides = { ...trackCfg.videoOverrides, ...videoOverrides(fields) };
-  const next = normalizeVideo({ ...settings.video, ...overrides });
+  const next = videoSettings(trackCfg.srcLang, overrides);
   if (JSON.stringify(next) === JSON.stringify(trackCfg.video)) return;
   trackCfg.video = next;
   trackCfg.videoOverrides = overrides;
@@ -207,7 +207,7 @@ export function resetVideoCfg(keys) {
   const overrides = { ...trackCfg.videoOverrides };
   for (const key of keys) delete overrides[key];
   trackCfg.videoOverrides = overrides;
-  trackCfg.video = normalizeVideo({ ...settings.video, ...overrides });
+  trackCfg.video = videoSettings(trackCfg.srcLang, overrides);
   save();
   onChange('video', trackCfg.video, false);
 }

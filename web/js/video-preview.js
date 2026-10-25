@@ -40,14 +40,18 @@ export function videoPreview(sentence, getConfig) {
   }, dispose() { observer.disconnect(); cancelAnimationFrame(fitFrame); } };
 }
 
-export function captionPreview(text, translation) {
+export function captionPreview(text, translation, { sourceLang = '', targetLang = '' } = {}) {
   const frame = el('div', 'caption-preview');
+  frame.dataset.lang = sourceLang;
   frame.setAttribute('role', 'region');
   frame.setAttribute('aria-label', '系统字幕画中画示例');
   const header = el('div', 'caption-preview-head');
   header.append(el('span', null, '画中画示例'), el('span', null, '↗'));
   const original = el('div', 'caption-preview-text', text);
+  original.lang = sourceLang;
   const translated = el('div', 'caption-preview-tr', translation);
+  translated.lang = targetLang;
+  translated.hidden = !translation;
   frame.append(header, original, translated);
   return { element: frame, update(size) {
     original.style.fontSize = size + 'px';

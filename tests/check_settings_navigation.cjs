@@ -85,10 +85,11 @@ const base = process.argv[3] || 'http://127.0.0.1:5173';
         await page.waitForFunction(() => [...document.querySelectorAll('.sheet .row')]
           .some((r) => r.textContent.includes('翻译进度2 / 2 句')));
 
-        for (const label of ['字幕字号', '系统字幕字号', ...(kind === 'video' ? ['视频字幕布局'] : [])]) {
+        assert.equal(await page.getByRole('button', { name: /^系统字幕字号/ }).count(), 0);
+        for (const label of ['字幕字号', ...(kind === 'video' ? ['视频字幕布局'] : [])]) {
           stage = kind + ': ' + label;
           await page.getByRole('button', { name: new RegExp('^' + label) }).click();
-          if (label === '系统字幕字号') {
+          if (label === '字幕字号') {
             const input = page.getByRole('spinbutton', { name: '系统字幕字号 (px)' });
             await input.fill('28'); await input.press('Tab');
           }
@@ -97,7 +98,9 @@ const base = process.argv[3] || 'http://127.0.0.1:5173';
           assert.equal(await page.locator('#sheetTitle').textContent(), kind === 'audio' ? '音频配置' : '视频设置');
           assert.match(await progress.textContent(), /2 \/ 2 句/);
         }
-        assert.match(await page.getByRole('button', { name: /^系统字幕字号/ }).textContent(), /28 px/);
+        await page.getByRole('button', { name: /^字幕字号/ }).click();
+        assert.equal(await page.getByRole('spinbutton', { name: '系统字幕字号 (px)' }).inputValue(), '28');
+        await page.locator('.sheet-head [aria-label="关闭"]').click();
         await page.locator('.sheet-head [aria-label="关闭"]').click();
         assert.equal(await page.locator('.sheet').getAttribute('aria-hidden'), 'true');
         await page.unroute('**/mock/v1/chat/completions');

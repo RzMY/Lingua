@@ -6,10 +6,12 @@ import { sourceLangs } from './langs.js';
 import {
   applyFontSizes, fontSizes, setLangFontSize, resetLangFontSizes,
   FONT_SIZE_MIN, FONT_SIZE_MAX, FONT_SIZE_STEP,
-  settings,
+  settings, captionSize, setLangCaptionSize, resetLangCaptionSize,
 } from './settings.js';
-import { videoPreview } from './video-preview.js';
-import { trackCfg, setTrackFontSize, resetTrackFontSizes, deferTrackFontSizes } from './trackcfg.js';
+import { videoPreview, captionPreview } from './video-preview.js';
+import {
+  trackCfg, setTrackFontSize, resetTrackFontSizes, deferTrackFontSizes, setVideoCfg, resetVideoCfg,
+} from './trackcfg.js';
 
 // All examples describe the same sentence, so the translation preview needs no model request.
 const SAMPLES = {
@@ -76,7 +78,7 @@ export function previewSentence(spec, track, layers) {
 }
 
 /**
- * 共用二级菜单; 播放页传入固定的语言与每条音频的写值器.
+ * 共用字号菜单; 普通与系统字幕按源语言保存, 播放页可覆盖当前媒体.
  *
  * 头部只留「关闭」那一枚 X: 二级菜单不需要第二个能离开本页的图标按钮
  * (以前那枚返回箭头在设置页里做的就是同一件事, 两个按钮挨在一起只会让人犹豫).
@@ -117,6 +119,27 @@ export function openFontSheet({ track = null, video = false, onClose, onBack } =
       ['read', 'roman'].includes(key) && supports(key)), ...(supports('tr') ? ['tr'] : [])];
     const preview = previewSentence(spec, track, layers);
     landscape = video ? videoPreview(preview, () => ({ ...(track ? trackCfg.video : settings.video), subtitles: 1 })) : null;
+    const text = [...preview.querySelectorAll('.font-preview-text')].map((node) => node.textContent)
+      .join(spec.spaceDelimited === false ? '' : ' ');
+    const translation = preview.querySelector('.font-preview-tr');
+    const caption = captionPreview(text, translation?.textContent || '', {
+      sourceLang: code, targetLang: translation?.lang || '',
+    });
+    const getCaptionSize = () => track ? trackCfg.video.captionSize : captionSize(code);
+    const captionHint = '仅影响画中画和悬浮窗中字幕的大小';
+    const captionRow = stepRow('系统字幕字号', captionHint, getCaptionSize, (captionSize) => {
+      if (track) setVideoCfg({ captionSize });
+      else setLangCaptionSize(code, captionSize);
+      caption.update(getCaptionSize());
+    }, { min: 12, max: 36, step: 1, unit: 'px' });
+    const resetCaption = button(track ? '恢复语言默认系统字号' : '恢复默认系统字号', {
+      onPick: () => {
+        if (track) resetVideoCfg(['captionSize']);
+        else resetLangCaptionSize(code);
+        captionRow.refresh();
+        caption.update(getCaptionSize());
+      },
+    });
     const get = () => fontSizes(code, track ? trackCfg.fonts : {});
     fitPreview = () => {
       if (!preview.isConnected) return;
@@ -152,7 +175,10 @@ export function openFontSheet({ track = null, video = false, onClose, onBack } =
         updatePreview();
       },
     });
-    content.replaceChildren(sectionTitle(video ? '横屏视频示例' : '例句'), landscape?.element || preview, group(...rows), buttonBar(reset));
+    content.replaceChildren(sectionTitle(video ? '横屏视频示例' : '例句'), landscape?.element || preview,
+      group(...rows), buttonBar(reset), sectionTitle('系统字幕'), caption.element,
+      group(captionRow), buttonBar(resetCaption));
+    caption.update(getCaptionSize());
     updatePreview();
   }
 

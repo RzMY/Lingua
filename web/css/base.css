@@ -79,6 +79,7 @@
   /* 原文层的字体: 默认这套服务拉丁字母, 每门语言再按 `<html data-lang>` 覆盖.
      后端新增一门语言时这里不必动 —— 没写覆盖就吃默认那套。 */
   --font-text: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", sans-serif;
+  --font-translation: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", sans-serif;
   --font-ui: system-ui, -apple-system, "Segoe UI", "PingFang SC",
              "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
   --font-roman: ui-rounded, "SF Pro Rounded", "Segoe UI", Roboto, system-ui, sans-serif;
@@ -90,14 +91,30 @@
 }
 
 /* 日语必须用日文字形 (同一个汉字中日写法不同), 韩语要谚文字形. */
-html[data-lang="ja"], .font-preview[data-lang="ja"] {
+html[data-lang="ja"], .font-preview[data-lang="ja"], .caption-preview[data-lang="ja"] {
   --font-text: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic Medium",
                "Yu Gothic", "Noto Sans JP", "Meiryo", system-ui, sans-serif;
 }
 
-html[data-lang="ko"], .font-preview[data-lang="ko"] {
+html[data-lang="ko"], .font-preview[data-lang="ko"], .caption-preview[data-lang="ko"] {
   --font-text: "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR",
                "Nanum Gothic", system-ui, sans-serif;
+}
+
+/* Translation glyphs belong to the target language, independently of the source font. */
+:is(.font-preview-tr, .caption-preview-tr):lang(zh-CN) {
+  --font-translation: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+}
+:is(.font-preview-tr, .caption-preview-tr):lang(zh-TW) {
+  --font-translation: "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+}
+:is(.font-preview-tr, .caption-preview-tr):lang(ja) {
+  --font-translation: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic Medium",
+                      "Yu Gothic", "Noto Sans JP", "Meiryo", system-ui, sans-serif;
+}
+:is(.font-preview-tr, .caption-preview-tr):lang(ko) {
+  --font-translation: "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR",
+                      "Nanum Gothic", system-ui, sans-serif;
 }
 
 /* 用空格分词的语言: 词与词之间要留出「看得出是空格」的间距, 否则一整句糊成一片.

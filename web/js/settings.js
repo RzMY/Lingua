@@ -48,7 +48,7 @@ function legacyFonts(size) {
   ]));
 }
 
-export const settings = { ...DEFAULTS, fonts: {}, video: normalizeVideo(), pronunciation: normalizePronunciation() };
+export const settings = { ...DEFAULTS, fonts: {}, captionSizes: {}, video: normalizeVideo(), pronunciation: normalizePronunciation() };
 
 let onChange = () => {};
 let media = null;
@@ -74,6 +74,33 @@ export function fontSizes(code = '', overrides = {}) {
   return { ...defaults, ...settings.fonts[languageCode(code)], ...normalizeFonts(overrides) };
 }
 
+/** System captions inherit the old shared size until a source language is configured. */
+export function captionSize(code = '') {
+  return settings.captionSizes[languageCode(code)] ?? settings.video.captionSize;
+}
+
+export function videoSettings(code = '', overrides = {}) {
+  return normalizeVideo({ ...settings.video, captionSize: captionSize(code), ...videoOverrides(overrides) });
+}
+
+export function setLangCaptionSize(code, value) {
+  code = languageCode(code);
+  if (!code || typeof value !== 'number' || !Number.isFinite(value)) return;
+  const size = normalizeVideo({ captionSize: value }).captionSize;
+  if (size === captionSize(code)) return;
+  settings.captionSizes[code] = size;
+  save();
+  onChange('video', videoSettings(fontContext.code), false);
+}
+
+export function resetLangCaptionSize(code) {
+  code = languageCode(code);
+  if (!code) return;
+  settings.captionSizes[code] = normalizeVideo().captionSize;
+  save();
+  onChange('video', videoSettings(fontContext.code), false);
+}
+
 export function applyFontSizes(sizes, target = document.documentElement) {
   for (const [key, css] of Object.entries(FONT_CSS)) target.style.setProperty(css, sizes[key] + 'px');
 }
@@ -86,12 +113,20 @@ export function setFontContext(code = '', overrides = {}) {
 
 export function initSettings(handler) {
   onChange = handler || onChange;
-  Object.assign(settings, DEFAULTS, { fonts: {}, video: normalizeVideo(), pronunciation: normalizePronunciation() });
+  Object.assign(settings, DEFAULTS, { fonts: {}, captionSizes: {}, video: normalizeVideo(), pronunciation: normalizePronunciation() });
   fontContext = { code: '', overrides: {} };
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
     if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
       settings.video = normalizeVideo(saved.video);
+      if (saved.captionSizes && typeof saved.captionSizes === 'object' && !Array.isArray(saved.captionSizes)) {
+        for (const [code, value] of Object.entries(saved.captionSizes)) {
+          const key = languageCode(code);
+          if (key && typeof value === 'number' && Number.isFinite(value)) {
+            settings.captionSizes[key] = normalizeVideo({ captionSize: value }).captionSize;
+          }
+        }
+      }
       settings.pronunciation = normalizePronunciation(saved.pronunciation);
       Object.assign(settings, legacyFonts(saved.size));
       for (const k of Object.keys(DEFAULTS)) {

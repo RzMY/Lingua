@@ -10,6 +10,7 @@ const { outputFiles } = await build({ stdin: { contents: `
   export { setupAudioPip } from './web/js/audio-pip.js';
   export { setupVideo } from './web/js/video-player.js';
   export { openTrackSheet } from './web/js/ui.js';
+  export { setLangCaptionSize } from './web/js/settings.js';
   export { initTrackCfg, trackCfg, setVideoCfg, readTrackCfg } from './web/js/trackcfg.js';`, resolveDir: root },
   bundle: true, write: false, format: 'iife', globalName: 'PipTest' });
 const html = await readFile(new URL('../web/player.html', import.meta.url), 'utf8');
@@ -22,6 +23,7 @@ function harness(t, { kind = 'audio', ios = true, platform = ios ? 'ios' : null,
   w.console.warn = () => {};
   w.matchMedia = () => ({ matches: false, addEventListener() {} });
   w.screen.orientation = { unlock() {} };
+  w.ResizeObserver = class { observe() {} disconnect() {} };
   Object.defineProperty(w.HTMLMediaElement.prototype, 'paused', { configurable: true, get() { return this._paused !== false; } });
   w.HTMLMediaElement.prototype.play = function () {
     if (this.paused) { this._paused = false; this.dispatchEvent(new w.Event('play')); }
@@ -42,6 +44,7 @@ function harness(t, { kind = 'audio', ios = true, platform = ios ? 'ios' : null,
     videoWidth: { value: 1280 }, videoHeight: { value: 720 } });
   const track = { S: 2, sStart: [0, 10], sEnd: [10, 30], title: 'Lesson',
     sentences: [{ text: 'First sentence.', translation: '第一句。' }, { text: 'Second sentence.', translation: '第二句。' }],
+    lang: 'en', langName: '英语', space: true, features: ['tr'],
     layerOrder: [], layers: {}, supports: () => false };
   const engine = { track, reader: { activeS: 0 }, seek: (t) => { media.currentTime = t; } };
   api.initTrackCfg('lesson', 'en'); doc.documentElement.dataset.tr = '1';
@@ -296,18 +299,31 @@ test('system close animation blocks new requests, then multiple reopen cycles ac
   }
 });
 
-test('audio and video expose caption overrides next to subtitle fonts', (t) => {
+test('audio and video expose caption overrides inside subtitle fonts', (t) => {
   const h = harness(t);
   for (const video of [undefined, {}]) {
     h.api.openTrackSheet(h.track, { video });
-    const rows = [...h.doc.querySelectorAll('.row')].filter((row) => row.querySelector('b')?.textContent === '系统字幕字号');
-    assert.equal(rows.length, 1);
-    assert.equal(rows[0].previousElementSibling.querySelector('b').textContent, '字幕字号');
-    rows[0].click();
+    const row = (label) => [...h.doc.querySelectorAll('.sheet .row')]
+      .find((node) => node.querySelector('b')?.textContent === label);
+    assert.equal(row('系统字幕字号'), undefined);
+    row('字幕字号').click();
     assert.ok(h.doc.querySelector('.caption-preview'));
-    const input = h.doc.querySelector('.sheet input'); input.value = '28'; input.dispatchEvent(new h.w.Event('change'));
+    const input = row('系统字幕字号').querySelector('input');
+    input.value = '28'; input.dispatchEvent(new h.w.Event('change'));
     assert.equal(h.api.readTrackCfg('lesson').video.captionSize, 28);
     assert.equal(h.doc.querySelector('.caption-preview-text').style.fontSize, '28px');
   }
+});
+
+for (const kind of ['audio', 'video']) test(`${kind}: native captions inherit source-language size and immediately apply a media override`, async (t) => {
+  const h = harness(t, { kind });
+  h.api.setLangCaptionSize('ja', 30);
+  h.api.setLangCaptionSize('en', 24);
+  h.api.initTrackCfg('lesson', 'en');
+  await h.pip.toggle(); await flush();
+  assert.equal(h.calls.find(([name]) => name === 'open')[1].captionSize, 24);
+  h.api.setVideoCfg({ captionSize: 28 }); h.pip.refresh(); await flush();
+  assert.equal(h.calls.at(-1)[1].captionSize, 28);
+  assert.equal(h.api.readTrackCfg('japanese', 'ja').video.captionSize, 30);
 });
 

@@ -18,7 +18,7 @@ import { setSetting, settings } from './settings.js';
 import { openFontSheet } from './font-settings.js';
 import { openPronunciationSheet } from './pronunciation-settings.js';
 import { setTrackCfg, trackCfg } from './trackcfg.js';
-import { openVideoSheet, openCaptionSheet } from './video-settings.js';
+import { openVideoSheet } from './video-settings.js';
 import { TARGET_LANGS } from './config.js';
 import { featureText } from './langs.js';
 import { favoriteButton } from './favorite-button.js';
@@ -72,7 +72,6 @@ export function openTrackSheet(track, { translator, video, onSubtitles } = {}) {
   }
 
   rows.push(navRow('字幕字号', '', { onPick: () => openFontSheet({ track, video: !!video, onBack }) }));
-  rows.push(navRow('系统字幕字号', '', { value: trackCfg.video.captionSize + ' px', onPick: () => openCaptionSheet({ track, onBack }) }));
   rows.push(navRow('发音设置', '', { onPick: () => openPronunciationSheet({ track, onBack }) }));
   if (onSubtitles) rows.push(navRow('字幕管理', '', { onPick: onSubtitles }));
   body.append(sectionTitle(video ? '当前视频' : '当前音频'), group(...rows));

@@ -42,7 +42,6 @@ const lazyAction = (load, name) => (...args) => load().then((module) => module[n
   .catch((err) => toast(errorMessage(err, '功能加载失败，请刷新页面后重试')));
 const openFontSheet = lazyAction(() => import('./font-settings.js'), 'openFontSheet');
 const openVideoSheet = lazyAction(() => import('./video-settings.js'), 'openVideoSheet');
-const openCaptionSheet = lazyAction(() => import('./video-settings.js'), 'openCaptionSheet');
 const openPronunciationSheet = lazyAction(() => import('./pronunciation-settings.js'), 'openPronunciationSheet');
 const openBackupExport = lazyAction(() => import('./backup-ui.js'), 'openBackupExport');
 const openBackupImport = lazyAction(() => import('./backup-ui.js'), 'openBackupImport');
@@ -577,7 +576,6 @@ function paintSettings() {
         { value: sourceLangs().length + ' 种', onPick: langsPane }),
       navRow('字幕字号', '', { onPick: () => openFontSheet() }),
       navRow('发音设置', '', { onPick: () => openPronunciationSheet() }),
-      navRow('系统字幕字号', '', { onPick: () => openCaptionSheet() }),
       navRow('视频设置', '', { onPick: () => openVideoSheet() }),
       segRow('主题', '', () => settings.theme, (v) => setSetting('theme', v), THEMES),
     ),

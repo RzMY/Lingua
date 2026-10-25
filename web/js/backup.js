@@ -78,6 +78,14 @@ function validateLocal(key, text) {
     }
   } else if (key === GLOBAL_KEYS[1]) {
     if (value.video !== undefined) validateVideo(value.video);
+    if (value.captionSizes !== undefined) {
+      require(object(value.captionSizes), '系统字幕字号格式错误');
+      const [min, max] = VIDEO_RANGES.captionSize;
+      for (const [code, size] of Object.entries(value.captionSizes)) {
+        require(/^[a-z]{2,8}(?:-[a-z0-9]{1,8})*$/i.test(code), '系统字幕字号语言代码错误');
+        require(Number.isInteger(size) && size >= min && size <= max, '系统字幕字号数值错误');
+      }
+    }
     require(value.theme === undefined || ['auto', 'light', 'dark'].includes(value.theme), '主题错误');
     require(value.rate === undefined || (finite(value.rate) && value.rate > 0), '播放速度错误');
     require(value.size === undefined || finite(value.size) || ['s', 'm', 'l'].includes(value.size), '字号错误');

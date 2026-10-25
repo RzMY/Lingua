@@ -60,6 +60,61 @@ const output = path.resolve('.cache/frontend-review');
       assert.equal(await font.evaluate((node) => node === document.activeElement), true);
       assert.equal(await page.locator('.sheet').evaluate((node) => node.inert), true);
 
+      assert.equal(await page.locator('#setBody').getByRole('button', { name: /^系统字幕字号/ }).count(), 0);
+      await page.evaluate(async () => (await import('/js/config.js')).setConfig({ importLang: 'ja', targetLang: 'zh-TW' }));
+      await open('字幕字号');
+      const captionSize = page.getByRole('spinbutton', { name: '系统字幕字号 (px)' });
+      const codes = ['ja', 'en', 'es', 'fr', 'de', 'ko'];
+      let translationFont;
+      for (const [index, code] of codes.entries()) {
+        await page.locator(`.font-languages [data-value="${code}"]`).click();
+        assert.equal(await captionSize.inputValue(), '20');
+        await captionSize.fill(String(28 + index)); await captionSize.press('Tab');
+        await page.waitForFunction((size) => getComputedStyle(document.querySelector('.caption-preview-text')).fontSize === size,
+          `${28 + index}px`);
+        const preview = await page.evaluate(() => {
+          const font = document.querySelector('.font-preview');
+          const caption = document.querySelector('.caption-preview-text');
+          const translation = document.querySelector('.caption-preview-tr');
+          return { text: caption.textContent, language: caption.lang,
+            sample: [...font.querySelectorAll('.font-preview-text')].map((node) => node.textContent)
+              .join(font.dataset.space === '0' ? '' : ' '),
+            translation: translation.textContent, target: translation.lang,
+            size: getComputedStyle(caption).fontSize,
+            font: getComputedStyle(caption).fontFamily,
+            translationFont: getComputedStyle(translation).fontFamily,
+            ordinaryTranslationFont: getComputedStyle(font.querySelector('.font-preview-tr')).fontFamily,
+            ordinaryFont: getComputedStyle(font.querySelector('.font-preview-text')).fontFamily };
+        });
+        assert.equal(preview.language, code); assert.equal(preview.text, preview.sample);
+        assert.equal(preview.translation, '我們聽了音樂'); assert.equal(preview.target, 'zh-TW');
+        assert.equal(preview.size, `${28 + index}px`, code + ': ' + await captionSize.inputValue());
+        assert.equal(preview.font, preview.ordinaryFont);
+        translationFont ??= preview.translationFont;
+        assert.match(preview.translationFont, /Microsoft JhengHei/);
+        assert.equal(preview.translationFont, translationFont);
+        assert.equal(preview.translationFont, preview.ordinaryTranslationFont);
+        assert.equal(await captionSize.inputValue(), String(28 + index));
+        await checkLayout('font language ' + code);
+      }
+      await close();
+      await page.reload(); await open('字幕字号');
+      for (const [index, code] of codes.entries()) {
+        await page.locator(`.font-languages [data-value="${code}"]`).click();
+        assert.equal(await captionSize.inputValue(), String(28 + index));
+      }
+      await close();
+      for (const [target, expected] of [['zh-CN', /Microsoft YaHei/], ['zh-TW', /Microsoft JhengHei/],
+        ['ja', /Yu Gothic/], ['ko', /Malgun Gothic/], ['en', /Segoe UI/]]) {
+        await page.evaluate(async (targetLang) => (await import('/js/config.js')).setConfig({ targetLang }), target);
+        await open('字幕字号');
+        const font = await page.locator('.caption-preview-tr').evaluate((node) => getComputedStyle(node).fontFamily);
+        assert.match(font, expected);
+        await page.locator('.font-languages [data-value="en"]').click();
+        assert.equal(await page.locator('.caption-preview-tr').evaluate((node) => getComputedStyle(node).fontFamily), font);
+        await close();
+      }
+
       await open('分析后端');
       backend = 'html';
       await page.getByRole('button', { name: '测试连接', exact: true }).click();
@@ -98,7 +153,7 @@ const output = path.resolve('.cache/frontend-review');
           await page.getByRole('button', { name: '设置', exact: true }).click();
           await checkLayout('settings');
           if (width === 390) await page.screenshot({ path: path.join(output, `${engine.name()}-${theme}-settings.png`), animations: 'disabled' });
-          for (const name of ['分析后端', '大模型', '调用参数', '译文语言', '字幕字号', '系统字幕字号', '视频设置', '导出数据', '导入数据', '存储明细']) {
+          for (const name of ['分析后端', '大模型', '调用参数', '译文语言', '字幕字号', '视频设置', '导出数据', '导入数据', '存储明细']) {
             await open(name); await checkLayout(name);
             if (width === 390 && ['大模型', '调用参数', '字幕字号', '视频设置', '导出数据'].includes(name)) {
               await page.screenshot({ path: path.join(output, `${engine.name()}-${theme}-${name}.png`), animations: 'disabled' });
