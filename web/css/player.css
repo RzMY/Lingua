@@ -225,7 +225,7 @@ body.video-rotated {
   transform: translate(-50%, -50%) rotate(90deg);
   overflow: hidden;
 }
-.video-rotated .sheet-chat { height: calc(var(--rotated-height) * .86); max-height: calc(var(--rotated-height) * .92); }
+.video-rotated .sheet-sentence { height: calc(var(--rotated-height) * .86); max-height: calc(var(--rotated-height) * .92); }
 .video-rotated .wcard { width: min(calc(var(--rotated-width) - 32px), 390px); max-height: calc(var(--rotated-height) - 24px); }
 .video-rotated .app.has-video.is-immersive { width: var(--rotated-width); height: var(--rotated-height); }
 
@@ -381,55 +381,49 @@ body.video-rotated {
 
 /* ---------------------------------------------------------------- 讲解面板 */
 
-.panel {
-  flex: none;
-  margin: 0 10px 6px;
-  max-height: min(40vh, 320px);
-  display: flex;
-  flex-direction: column;
-  border-radius: 22px;
-  background: var(--bg-soft);
-  border: 1px solid var(--line);
-  overflow: hidden;
-}
-
-.panel-head {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 10px 7px 14px;
-  border-bottom: 1px solid var(--line);
-}
-.panel-title { flex: 1; font-size: 13px; font-weight: 700; }
 .favorite-toggle { display: inline-flex; align-items: center; gap: 5px; min-height: 36px; padding: 6px 10px; border-radius: 12px; font-size: 13px; color: var(--ink-2); }
 .favorite-toggle[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-2); }
 .favorite-toggle[aria-pressed="true"] .ic { fill: currentColor; }
-.explain-sentence { margin: 0 0 10px; padding: 8px 6px; color: var(--ink-2); line-height: 1.7; overflow-wrap: anywhere; }
-.panel-sub {
-  margin-left: 8px;
-  font-size: 11.5px;
-  font-weight: 500;
-  color: var(--ink-3);
-  font-variant-numeric: tabular-nums;
-}
-.panel-body {
+.sheet-explain .sheet-body { flex: 1; min-height: 0; display: flex; overflow: hidden; padding-bottom: 0; }
+.explain { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.explain-preview { flex: none; max-height: min(65%, calc(100% - 100px)); min-height: 0; display: flex; overflow: hidden; border-radius: var(--radius-card); }
+.explain-preview .s { position: relative; min-height: 0; display: flex; flex-direction: column; }
+.explain-preview .s-words { min-height: 0; overflow: auto; overscroll-behavior: contain; touch-action: pan-y; }
+.explain-preview .s-tr { flex: none; }
+/* The study view shows the saved translation even when playback translations are hidden. */
+.sheet-explain .s-tr:not(:empty) { display: block; }
+.explain-label { flex: none; margin: 12px 2px 6px; font-size: 12px; font-weight: 600; color: var(--ink-3); }
+.explain-words {
+  position: relative;
+  flex: 1;
+  min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  padding: 2px 14px 10px;
+  padding-bottom: 8px;
 }
+.explain-empty { margin: 12px 2px; font-size: 13px; line-height: 1.6; color: var(--ink-3); }
+.explain-actions { display: grid; grid-template-columns: 1fr 1fr 1.35fr; gap: 8px; }
+.explain-action { width: 100%; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 8px 4px; border-radius: 12px; background: var(--bg-soft); color: var(--ink-2); font-size: 13px; }
+.explain-actions > .explain-action:last-child { color: var(--accent-2); }
+.explain-action:active { background: var(--accent-soft); }
+.video-immersive .sheet-sentence { height: calc(var(--video-view-h, 100dvh) * .86); max-height: calc(var(--video-view-h, 100dvh) - 24px); }
+.video-immersive .sheet-explain { background: var(--sheet); }
 
 .gw {
-  display: grid;
-  grid-template-columns: minmax(0, auto) 1fr;
-  column-gap: 12px;
-  align-items: baseline;
-  padding: 8px 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 10px 8px;
   border-top: 1px solid var(--line);
   cursor: pointer;
   border-radius: 8px;
+  text-align: left;
+  overflow-wrap: anywhere;
 }
+.gw-pick { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 12px; width: 100%; min-height: 36px; align-items: baseline; text-align: left; }
 .gw:first-child { border-top: 0; }
 .gw.is-cur { background: color-mix(in oklab, var(--accent) 12%, transparent); }
 

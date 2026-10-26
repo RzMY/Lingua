@@ -185,8 +185,12 @@ html[data-theme="dark"] .wc-err { color: #f0bfb6; }
 
 /* ---------------------------------------------------------------- 讲解对话框 */
 
-/* 需求 6: 大约 2/3 屏 */
-.sheet-chat { height: 68vh; max-height: 68vh; }
+/* 句子拆解、修改字幕和大模型讲解统一高度，切换时保持窗口位置。 */
+.sheet-sentence { height: 68vh; height: 68dvh; max-height: 68vh; max-height: 68dvh; }
+.sheet-sentence .sheet-body { flex: 1; min-height: 0; }
+@media (max-height: 500px) {
+  .sheet-sentence { height: calc(100vh - 24px); height: calc(100dvh - 24px); max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); }
+}
 .sheet-chat .sheet-body { padding-bottom: 6px; }
 
 .chat-log { display: flex; flex-direction: column; gap: 13px; padding: 2px 0 6px; }

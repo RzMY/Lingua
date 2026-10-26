@@ -109,7 +109,7 @@ const base = process.argv[3] || 'http://127.0.0.1:5173';
       await page.locator('#explainFavorite button').click();
       await page.waitForFunction(() => document.querySelector('#explainFavorite button')?.getAttribute('aria-pressed') === 'true');
       await page.screenshot({ path: path.join(shots, name + '-sentence.png') });
-      await page.locator('#btnExplainClose').click();
+      await page.locator('.sheet-head [aria-label="关闭"]').click();
       await page.goto(base + '/index.html#favorites');
       await page.waitForFunction(() => document.querySelectorAll('.fav-card').length === 2);
       // Details and notes render untrusted text literally.

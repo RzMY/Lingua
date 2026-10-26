@@ -47,7 +47,6 @@ import { chatOpen, closeChat, openChat } from './chat.js';
 import { actionRow, button, buttonBar, group, segRow, switchRow } from './rows.js';
 import { prepareSubtitleEdit, saveSubtitleEdit, sentenceAnalyzed, subtitleEditDefaults } from './subtitle-edit.js';
 import { openSubtitleEditor } from './subtitle-edit-ui.js';
-import { setupSubtitleGestures } from './subtitle-gestures.js';
 import { createPronunciationLoudness } from './pronunciation-loudness.js';
 import { getFavorite, favoritePosition } from './favorites.js';
 
@@ -66,8 +65,6 @@ const dom = {
   setup: $('setup'),
   trackTitle: $('trackTitle'), btnBack: $('btnBack'), btnDisplay: $('btnDisplay'),
   btnFiles: $('btnFiles'),
-  explainPanel: $('explainPanel'), explainSub: $('explainSub'), explainBody: $('explainBody'),
-  btnExplainClose: $('btnExplainClose'),
   player: $('player'), seek: $('seek'), seekFill: $('seekFill'), seekThumb: $('seekThumb'),
   timeNow: $('timeNow'), timeTotal: $('timeTotal'),
   btnPin: $('btnPin'), btnExplain: $('btnExplain'), btnRepeat: $('btnRepeat'),
@@ -91,6 +88,9 @@ let videoPlayer = null;
 let audioPip = null;
 let setupOnBack = null;
 let editingSubtitle = false;
+let pageActive = true;
+window.addEventListener('pagehide', () => { pageActive = false; });
+window.addEventListener('pageshow', () => { pageActive = true; });
 
 function syncVideoLayout() {
   const visible = videoReady && dom.setup.hidden;
@@ -117,10 +117,10 @@ function syncFollowAlign() {
 
 const engine = new Engine({ audio, reader: null, vlist: null, scroller: dom.scroller, dom });
 const explain = createExplain({
-  explainPanel: dom.explainPanel, explainSub: dom.explainSub, explainBody: dom.explainBody,
-  explainFavorite: $('explainFavorite'),
+  explainPanel: $('explainPanel'), explainPreview: $('explainPreview'), explainBody: $('explainBody'),
   explainTitle: $('explainTitle'),
-}, (i, j) => seekWord(i, j), () => player?.overlays.close('explain'));
+}, { metrics, onEdit: editSubtitle, onChat: showChat, onReturn: openExplain,
+  onClose: () => player?.overlays.close('explain') });
 
 // ---------------------------------------------------------------- 空态 / 提示
 
@@ -594,6 +594,7 @@ function applyTranslations(batch) {
     list.push(i);
   }
   if (list.length) { videoPlayer?.refreshPip?.(); audioPip?.refresh(); }   // 小窗里的译文跟着补齐
+  if (list.length) void explain.refreshTranslation();
   if (!dom.setup.hidden || !list.length || !vlist) return;
   if (document.documentElement.dataset.tr === '0') return;   // 没显示译文, 高度不变
   vlist.invalidate(list);
@@ -670,28 +671,21 @@ function restartTranslator() {
   syncTranslate();
 }
 
-function showSubtitleActions(i) {
-  if (!track?.sentences[i] || editingSubtitle) return;
-  cancelPress();
-  openSheet('字幕操作', group(actionRow('修改', '修改本句字幕或译文', {
-    onPick: () => editSubtitle(i),
-  })));
-}
-
-async function editSubtitle(i) {
+async function editSubtitle(i, { onBack } = {}) {
   if (editingSubtitle) return;
   editingSubtitle = true;
   const original = track, lang = trackCfg.lang;
   translator?.stop();
   player.overlays.open('subtitle-edit');
   let closed = false, transferred = false;
-  const finish = () => {
+  const finish = ({ dismissed } = {}) => {
     editingSubtitle = false;
     if (track === original) restartTranslator();
+    if (dismissed && !sheetOpen() && track === original && pageActive && !engine.suspended) onBack?.();
     player.overlays.close('subtitle-edit');
   };
-  openSheet('修改字幕', el('p', 'field-hint', '正在读取字幕…'), { onClose: () => {
-    if (!transferred) { closed = true; finish(); }
+  openSheet('修改字幕', el('p', 'field-hint', '正在读取字幕…'), { cls: 'sheet-sentence', onClose: (reason) => {
+    if (!transferred) { closed = true; finish(reason); }
   } });
   try {
     const defaults = await subtitleEditDefaults(original, i, lang);
@@ -774,6 +768,7 @@ function onPressStart(e) {
   const art = e.target.closest('.s');
   if (!art) return;
   cancelPress();
+  pressFired = false;
   press.id = e.pointerId;
   press.x = e.clientX;
   press.y = e.clientY;
@@ -788,7 +783,10 @@ function onPressStart(e) {
 
 function onPressMove(e) {
   if (!press.timer || e.pointerId !== press.id) return;
-  if (Math.abs(e.clientX - press.x) > 8 || Math.abs(e.clientY - press.y) > 8) cancelPress();
+  if (Math.abs(e.clientX - press.x) > 8 || Math.abs(e.clientY - press.y) > 8) {
+    pressFired = true;
+    cancelPress();
+  }
 }
 
 function wireReader() {
@@ -836,8 +834,6 @@ function wireReader() {
   });
   syncPresentation();
 
-  setupSubtitleGestures(dom.viewport, { onSwipe: showSubtitleActions, onMove: cancelPress,
-    rotated: () => document.body.classList.contains('video-rotated') });
   dom.viewport.addEventListener('click', onReaderClick);
   dom.viewport.addEventListener('pointerdown', onPressStart);
   dom.viewport.addEventListener('pointermove', onPressMove);
@@ -847,21 +843,19 @@ function wireReader() {
     const art = event.target.closest('.s');
     if (!art) return;
     event.preventDefault();
-    // Touch long-press keeps its existing explanation action; mouse right-click offers editing.
-    if (!press.timer && !pressFired) showSubtitleActions(+art.dataset.i);
+    if (!press.timer && !pressFired) openExplain(+art.dataset.i);
   });
 }
 
 // ---------------------------------------------------------------- 工具行
 
 /** 长按打开的本地逐词拆解 (不调模型). */
-function openExplain(i) {
-  if (!track?.S) return;
+function openExplain(i, state) {
+  if (!track?.S || !pageActive || engine.suspended) return;
   const at = i >= 0 ? i : curIndex();
+  if (explain.isOpen) return;
   player.overlays.open('explain');
-  explain.open(at);
-  // 引擎只在游标变化时回调, 面板刚打开时得自己补一次当前词.
-  if (reader && reader.activeS === at) explain.cursor(at, reader.activeW, false);
+  explain.open(at, state);
   engine.markScrollDirty();
   if (engine.follow) engine.scrollToActive();
 }
@@ -870,13 +864,19 @@ function openExplain(i) {
 function toggleChat() {
   if (!track?.S || track.raw.subtitleMode === 'plain') return;
   if (chatOpen()) { closeChat(); return; }
-  const i = curIndex();
+  showChat(curIndex());
+}
+
+function showChat(i, { onBack } = {}) {
+  if (!track?.sentences[i]) return;
+  const original = track;
   player.overlays.open('chat');
   dom.btnExplain.setAttribute('aria-pressed', 'true');
   openChat({
     track, i, lang: trackCfg.lang,
-    onClose: () => {
+    onClose: ({ dismissed } = {}) => {
       dom.btnExplain.setAttribute('aria-pressed', 'false');
+      if (dismissed && track === original && pageActive && !engine.suspended) onBack?.();
       player.overlays.close('chat');
     },
   });
@@ -931,10 +931,6 @@ function wireTools() {
   });
 
   dom.btnExplain.addEventListener('click', toggleChat);
-  dom.btnExplainClose.addEventListener('click', () => {
-    explain.close();
-    engine.markScrollDirty();
-  });
 
   dom.btnRepeat.addEventListener('click', () => {
     if (!track) return;
@@ -954,7 +950,6 @@ function wireTools() {
   audio.addEventListener('ratechange', paintSpeed);
 
   engine.onCursor = (s, w, changed) => {
-    explain.cursor(s, w, changed);
     if (changed) {
       wantVisible();
       if (engine.follow && dom.app.classList.contains('is-immersive')) dom.scroller.scrollLeft = 0;
@@ -997,6 +992,7 @@ function onSetting(key, value, layout) {
 /** 本条音频的配置回调. */
 function onTrackCfg(key, value, layout) {
   audioPip?.refresh();
+  if (key === 'lang') void explain.refreshTranslation();
   if (key === 'video') { videoPlayer?.apply(); return; }
   if (key === 'tr' || key === 'lang') { syncTranslate(); videoPlayer?.refreshPip?.(); }
   if (layout) relayout(true);

@@ -24,6 +24,39 @@ const CHIP_TPL = (() => {
   return t.content.firstElementChild;
 })();
 
+/** 播放阅读区与句子详情共用同一份字幕卡片结构。 */
+export function createSentenceCard(track, i, metrics) {
+  const s = track.sentences[i];
+  const art = document.createElement('article');
+  art.className = s.wordTiming ? 's' : 's no-wt';
+  art.classList.toggle('s-plain', !(s.analyzed ?? (track.raw.subtitleMode !== 'plain')));
+  art.dataset.i = i;
+
+  const wrap = document.createElement('div');
+  wrap.className = 's-words';
+  const chips = s.words.map((w, j) => {
+    const chip = CHIP_TPL.cloneNode(true);
+    const base = 'w p-' + (w.pos || 'other');
+    chip.className = chip._cls = base;
+    chip.dataset.j = j;
+    if (w.read) chip.children[0].textContent = w.read;
+    chip.children[1].textContent = w.text;
+    if (w.roman) chip.children[3].textContent = w.roman;
+    chip._fill = chip.children[2].firstElementChild;
+    for (const layer of metrics?.layers || []) {
+      chip.style.setProperty('--fit-' + layer.key, metrics.layerScale(w, layer));
+    }
+    wrap.append(chip);
+    return chip;
+  });
+  const tr = document.createElement('p');
+  tr.className = 's-tr';
+  tr.textContent = s.translation || '';
+  art.append(wrap, tr);
+  art._chips = chips;
+  return art;
+}
+
 export class Reader {
   constructor(viewport, track, metrics) {
     this.viewport = viewport;
@@ -40,38 +73,7 @@ export class Reader {
   // ------------------------------------------------------------ 构建
 
   _create(i) {
-    const s = this.track.sentences[i];
-    const art = document.createElement('article');
-    art.className = s.wordTiming ? 's' : 's no-wt';
-    art.classList.toggle('s-plain', s.analyzed === false || this.track.raw.subtitleMode === 'plain');
-    art.dataset.i = i;
-
-    const wrap = document.createElement('div');
-    wrap.className = 's-words';
-    const chips = new Array(s.words.length);
-    for (let j = 0; j < s.words.length; j++) {
-      const w = s.words[j];
-      const chip = CHIP_TPL.cloneNode(true);
-      const base = 'w p-' + (w.pos || 'other');
-      chip.className = base;
-      chip._cls = base;
-      chip.dataset.j = j;
-      if (w.read) chip.children[0].textContent = w.read;
-      chip.children[1].textContent = w.text;
-      if (w.roman) chip.children[3].textContent = w.roman;
-      chip._fill = chip.children[2].firstElementChild;
-      chips[j] = chip;
-      wrap.appendChild(chip);
-    }
-    art.appendChild(wrap);
-
-    const tr = document.createElement('p');
-    tr.className = 's-tr';
-    if (s.translation) tr.textContent = s.translation;
-    art.appendChild(tr);
-
-    art._chips = chips;
-    return art;
+    return createSentenceCard(this.track, i);
   }
 
   // ------------------------------------------------------------ 挂载 / 回收

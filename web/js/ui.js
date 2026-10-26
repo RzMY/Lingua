@@ -11,7 +11,7 @@
  * 英法德西「音标 / 原形」)。所以后端新增一门语言, 这个面板不用改。
  */
 
-import { el } from './util.js';
+import { el, icon } from './util.js';
 import { openSheet } from './sheet.js';
 import { group, infoRow, navRow, sectionTitle, segRow, switchRow } from './rows.js';
 import { setSetting, settings } from './settings.js';
@@ -22,6 +22,9 @@ import { openVideoSheet } from './video-settings.js';
 import { TARGET_LANGS } from './config.js';
 import { featureText } from './langs.js';
 import { favoriteButton } from './favorite-button.js';
+import { createSentenceCard } from './reader.js';
+import { cachedTranslation } from './translate.js';
+import { sentenceAnalyzed } from './subtitle-edit.js';
 
 const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const THEMES = [['auto', '跟随系统'], ['light', '浅色'], ['dark', '深色']];
@@ -110,33 +113,68 @@ export function openSpeedSheet(audio, onPick) {
 /* ---------------------------------------------------------------- 讲解面板 */
 
 /**
- * 当前句的逐词拆解 (长按句子打开). 只在句子变化时重建 DOM, 词变化时只挪一个 class.
+ * 长按句子的详情。与修改、讲解共用窗口高度，固定所选句子。
  */
-export function createExplain(dom, onPick, onClose) {
-  let track = null, open = false, shown = -1, curRow = null;
-  let favoriteCtl = null;
+export function createExplain(dom, { onEdit, onChat, onReturn, onClose, metrics } = {}) {
+  const parent = dom.explainPanel.parentNode, nextSibling = dom.explainPanel.nextSibling;
+  let track = null, open = false, shown = -1, selected = -1;
+  let favoriteCtl = null, view = null, card = null, translationVersion = 0;
   const rows = [];
 
+  function selectWord(j) {
+    if (!open || !rows[j] || !card?._chips[j]) return;
+    if (selected >= 0) {
+      rows[selected]?.classList.remove('is-cur');
+      rows[selected]?.querySelector('.gw-pick').setAttribute('aria-pressed', 'false');
+      card._chips[selected]?.classList.remove('is-cur');
+      card._chips[selected]?.setAttribute('aria-pressed', 'false');
+    }
+    selected = j;
+    rows[j].classList.add('is-cur');
+    rows[j].querySelector('.gw-pick').setAttribute('aria-pressed', 'true');
+    const chip = card._chips[j];
+    chip.classList.add('is-cur');
+    chip.setAttribute('aria-pressed', 'true');
+    const reveal = (box, top, height) => {
+      if (top < box.scrollTop || top + height > box.scrollTop + box.clientHeight) box.scrollTop = Math.max(0, top - box.clientHeight * .35);
+    };
+    reveal(dom.explainBody, rows[j].offsetTop, rows[j].offsetHeight);
+    const words = card.firstElementChild;
+    reveal(words, chip.offsetTop - words.offsetTop, chip.offsetHeight);
+  }
+
   function build(sIdx) {
+    shown = sIdx;
+    selected = -1;
     const s = track.sentences[sIdx];
-    const plain = s.analyzed === false || track.raw?.subtitleMode === 'plain';
-    if (dom.explainTitle) dom.explainTitle.textContent = plain ? '句子' : '逐词拆解';
-    dom.explainPanel.setAttribute('aria-label', plain ? '句子' : '逐词拆解');
-    favoriteCtl?.abort();
-    favoriteCtl = new AbortController();
-    dom.explainFavorite?.replaceChildren(favoriteButton(() => ({ track, i: sIdx, lang: trackCfg.lang }),
-      { signal: favoriteCtl.signal }));
+    const plain = !sentenceAnalyzed(track, s);
+    dom.explainTitle.textContent = '逐词拆解';
+    dom.explainTitle.hidden = plain;
+    card = createSentenceCard(track, sIdx, metrics);
+    card.classList.add('is-active');
+    for (const chip of card._chips) if (s.words[+chip.dataset.j].pos !== 'punct' && !plain) {
+      chip.setAttribute('role', 'button');
+      chip.tabIndex = 0;
+      chip.setAttribute('aria-pressed', 'false');
+      chip.setAttribute('aria-label', '选择词汇：' + s.words[+chip.dataset.j].text);
+    }
+    dom.explainPreview.replaceChildren(card);
+    dom.explainPreview.scrollTop = 0;
     rows.length = 0;
     const frag = document.createDocumentFragment();
-    frag.append(el('p', 'explain-sentence', s.text));
     (plain ? [] : s.words).forEach((w, j) => {
       if (w.pos === 'punct') { rows.push(null); return; }
       const row = el('div', 'gw p-' + (w.pos || 'other'));
-      const left = el('div', 'gw-l');
+      row.dataset.j = j;
+      const pick = el('button', 'gw-pick');
+      pick.type = 'button';
+      pick.setAttribute('aria-label', '选择词汇：' + w.text);
+      pick.setAttribute('aria-pressed', 'false');
+      const left = el('span', 'gw-l');
       if (w.read) left.append(el('span', 'gw-read', w.read));
       left.append(el('span', 'gw-text', w.text));
       if (w.roman) left.append(document.createTextNode(' '), el('span', 'gw-roman', w.roman));
-      const right = el('div', 'gw-r');
+      const right = el('span', 'gw-r');
       right.append(el('span', 'gw-pos', track.posLabel(w.pos)));
       const bits = [];
       if (w.lemma && w.lemma !== w.text) bits.push('原形 ' + w.lemma);
@@ -144,52 +182,98 @@ export function createExplain(dom, onPick, onClose) {
       if (w.parts) bits.push(w.parts.map((p) => p.text).join(' + '));
       if (w.posDetail && !bits.length) bits.push(w.posDetail);
       if (bits.length) right.append(el('span', 'gw-meta', bits.join(' · ')));
-      row.append(left, right);
-      row.addEventListener('click', () => onPick(sIdx, j));
+      pick.append(left, right);
+      pick.addEventListener('click', () => selectWord(j));
+      row.append(pick);
       rows.push(row);
       frag.append(row);
     });
-    dom.explainBody.textContent = '';
-    dom.explainBody.append(frag);
+    if (plain) frag.append(el('p', 'explain-empty', '本句尚未分析，可在「修改」中开启重新分析。'));
+    else if (!frag.childNodes.length) frag.append(el('p', 'explain-empty', '本句没有可拆解的单词。'));
+    dom.explainBody.replaceChildren(frag);
     dom.explainBody.scrollTop = 0;
-    dom.explainSub.textContent = `${sIdx + 1} / ${track.S}`;
-    shown = sIdx;
-    curRow = null;
+    void refreshTranslation();
   }
 
+  async function refreshTranslation() {
+    if (!open || !card) return;
+    const version = ++translationVersion, s = track.sentences[shown], lang = trackCfg.lang;
+    let text = '';
+    try {
+      text = Object.hasOwn(s.translations || {}, lang) ? s.translations[lang]
+        : (!s.translationLang || s.translationLang === lang) && s.translation
+          || await cachedTranslation(track.id, lang, s.text);
+    } catch { /* 缓存不可用时保留原文与本地拆解。 */ }
+    if (open && version === translationVersion) card.lastElementChild.textContent = text || '';
+  }
+
+  function cleanup() {
+    open = false;
+    translationVersion++;
+    favoriteCtl?.abort();
+    dom.explainPanel.hidden = true;
+    parent.insertBefore(dom.explainPanel, nextSibling);
+    view = null;
+    onClose?.();
+  }
+
+  dom.explainPreview.addEventListener('click', (event) => {
+    const word = event.target.closest('.w');
+    if (open && word) selectWord(+word.dataset.j);
+  });
+  dom.explainPreview.addEventListener('keydown', (event) => {
+    const word = event.target.closest('.w[role="button"]');
+    if (word && (event.key === 'Enter' || event.key === ' ')) {
+      event.preventDefault(); event.stopPropagation(); selectWord(+word.dataset.j);
+    }
+  });
+
   return {
-    setTrack(t) { favoriteCtl?.abort(); track = t; shown = -1; },
+    setTrack(t) { this.close(); favoriteCtl?.abort(); track = t; shown = -1; },
     get isOpen() { return open; },
     toggle(sIdx) { open ? this.close() : this.open(sIdx); return open; },
-    open(sIdx) {
+    open(sIdx, state) {
+      if (!track?.sentences[sIdx]) return;
+      favoriteCtl?.abort();
+      favoriteCtl = new AbortController();
+      const footer = el('div', 'explain-actions');
+      const action = (label, glyph, onClick) => {
+        const b = el('button', 'explain-action');
+        b.type = 'button';
+        b.append(icon(glyph, 'ic ic-sm'), el('span', null, label));
+        b.addEventListener('click', () => {
+          const snapshot = { selectedText: track.sentences[sIdx].words[selected]?.text,
+            selected, scrollTop: dom.explainBody.scrollTop,
+            previewScrollTop: card.firstElementChild.scrollTop };
+          onClick?.(sIdx, { onBack: () => onReturn?.(sIdx, snapshot) });
+        });
+        return b;
+      };
+      const favorite = el('div', 'explain-favorite');
+      favorite.id = 'explainFavorite';
+      favorite.append(favoriteButton(() => ({ track, i: sIdx, lang: trackCfg.lang }),
+        { signal: favoriteCtl.signal, className: 'favorite-toggle explain-action' }));
+      footer.append(favorite, action('修改', 'i-pen', onEdit),
+        action('大模型讲解', 'i-spark', onChat));
+      view = openSheet(`句子拆解 · ${sIdx + 1} / ${track.S}`, dom.explainPanel, {
+        cls: 'sheet-sentence sheet-explain', footer, onClose: cleanup,
+      });
       open = true;
       dom.explainPanel.hidden = false;
-      if (dom.btnExplain) dom.btnExplain.setAttribute('aria-pressed', 'true');
-      if (sIdx >= 0) build(sIdx);
+      build(sIdx);
+      if (state) {
+        const words = track.sentences[sIdx].words;
+        const j = words[state.selected]?.text === state.selectedText ? state.selected
+          : words.findIndex((w) => w.text === state.selectedText);
+        if (j >= 0) selectWord(j);
+        dom.explainBody.scrollTop = state.scrollTop || 0;
+        card.firstElementChild.scrollTop = state.previewScrollTop || 0;
+      }
     },
     close() {
       if (!open) return;
-      open = false;
-      favoriteCtl?.abort();
-      dom.explainPanel.hidden = true;
-      if (dom.btnExplain) dom.btnExplain.setAttribute('aria-pressed', 'false');
-      onClose?.();
+      view?.close();
     },
-    /** 由渲染循环的游标回调驱动. */
-    cursor(sIdx, wIdx, sentenceChanged) {
-      if (!open || sIdx < 0 || !track) return;
-      if (sentenceChanged || shown !== sIdx) build(sIdx);
-      const next = wIdx >= 0 ? rows[wIdx] : null;
-      if (next === curRow) return;
-      if (curRow) curRow.classList.remove('is-cur');
-      curRow = next;
-      if (!curRow) return;
-      curRow.classList.add('is-cur');
-      const box = dom.explainBody;
-      const top = curRow.offsetTop, bottom = top + curRow.offsetHeight;
-      if (top < box.scrollTop || bottom > box.scrollTop + box.clientHeight) {
-        box.scrollTop = top - box.clientHeight * 0.35;
-      }
-    },
+    refreshTranslation,
   };
 }

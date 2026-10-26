@@ -130,15 +130,14 @@ async function harness(t, kind = 'audio', { plain = false, favoriteTime } = {}) 
   };
   const close = (panel, method = 'button') => {
     if (method === 'escape') {
-      const target = find(panel === 'word' ? '.wcard' : panel === 'chat' ? '.sheet' : '#viewport');
+      const target = find(panel === 'word' ? '.wcard' : '.sheet');
       target.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     } else if (method === 'scrim') find(panel === 'word' ? '.wc-scrim' : '.scrim').click();
     else if (method === 'drag') {
       const grip = find('.sheet-grip');
       pointer(grip, 'pointerdown'); pointer(grip, 'pointermove', 150); pointer(grip, 'pointerup', 150);
     } else if (method === 'toggle') find('#btnExplain').click();
-    else find(panel === 'word' ? '.wc-a-main' : panel === 'chat'
-      ? '.sheet-head [aria-label="关闭"]' : '#btnExplainClose').click();
+    else find(panel === 'word' ? '.wc-a-main' : '.sheet-head [aria-label="关闭"]').click();
   };
   calls.length = 0;
   return { w, doc, api, media, calls, find, word, pointer, advance, frame, open, close };
@@ -149,7 +148,8 @@ test('unanalysed subtitles expose sentence collection without showing fake word 
   const sentence = h.find('#viewport .s');
   h.pointer(sentence, 'pointerdown'); h.advance(500); h.pointer(sentence, 'pointerup');
   await flush(); h.frame();
-  assert.equal(h.find('#explainTitle').textContent, '句子');
+  assert.equal(h.find('#explainTitle').hidden, true);
+  assert.equal(h.find('#explainPreview .s-words').textContent, 'Plain subtitle.');
   assert.equal(h.doc.querySelectorAll('#explainBody .gw').length, 0);
   h.find('#explainFavorite button').click();
   for (let i = 0; i < 12; i++) await flush();
@@ -191,7 +191,7 @@ for (const kind of ['audio', 'video']) {
   test(`${kind}: learning panels pause and every dismissal resumes at the same time and speed`, async (t) => {
     const h = await harness(t, kind);
     for (const [panel, methods] of [
-      ['word', ['button', 'scrim', 'escape']], ['explain', ['button', 'escape']],
+      ['word', ['button', 'scrim', 'escape']], ['explain', ['button', 'scrim', 'escape', 'drag']],
       ['chat', ['button', 'scrim', 'escape', 'drag', 'toggle']],
     ]) {
       for (const method of methods) {
@@ -221,18 +221,64 @@ for (const kind of ['audio', 'video']) {
   });
 }
 
-test('overlapping and repeated panels resume only after the last one closes', async (t) => {
+test('overlapping word cards and repeated sentence details resume only after the last one closes', async (t) => {
   const h = await harness(t);
-  for (const top of ['word', 'chat']) {
-    for (const first of ['explain', top]) {
+  for (const first of ['explain', 'word']) {
       await h.media.play();
-      await h.open('explain'); await h.open('explain'); await h.open(top);
+      await h.open('explain'); await h.open('explain'); await h.open('word');
       h.close(first);
       assert.equal(h.media.paused, true);
-      h.close(first === 'explain' ? top : 'explain');
+      h.close(first === 'explain' ? 'word' : 'explain');
       assert.equal(h.media.paused, false);
-    }
   }
+});
+
+test('sentence details show the cached translation with playback translations hidden and keep the selected cue', async (t) => {
+  const h = await harness(t);
+  await h.api.put('tr', h.api.translationKey('lesson', 'zh-CN', 'Hello world.'), '你好，世界。');
+  h.media.currentTime = 16; await h.media.play(); h.frame();
+  await h.open('explain');
+  assert.equal(h.find('.sheet').classList.contains('sheet-explain'), true);
+  assert.equal(h.find('#explainPreview .s-tr').textContent, '你好，世界。');
+  assert.equal(h.find('#explainPreview .s').dataset.i, '0');
+  assert.equal(h.find('#explainBody .gw-text').textContent, 'Hello');
+  h.w.LT.engine.onCursor(1, 0, true);
+  assert.equal(h.find('#explainPreview .s').dataset.i, '0');
+  h.find('#explainFavorite button').click();
+  for (let i = 0; i < 12; i++) await flush();
+  assert.equal((await h.api.listFavorites())[0].text, 'Hello world.');
+});
+
+for (const kind of ['audio', 'video']) test(`${kind}: sentence detail actions use the selected cue and transfer the playback pause`, async (t) => {
+  const h = await harness(t, kind);
+  h.media.currentTime = 16; await h.media.play(); h.frame(); h.calls.length = 0;
+  await h.open('explain');
+  const actions = () => [...h.doc.querySelectorAll('.explain-actions button')];
+  h.find('#explainPreview .w[data-j="1"]').click();
+  actions().find((b) => b.textContent === '大模型讲解').click();
+  await flush(); h.frame();
+  assert.equal(h.api.chatOpen(), true);
+  assert.equal(h.find('#sheetTitle').textContent, '讲解 · 第 1 句');
+  assert.equal(h.find('#explainPanel').hidden, true);
+  assert.equal(h.media.paused, true);
+  assert.equal(h.calls.some(([action]) => action === 'play'), false);
+  h.close('chat');
+  assert.equal(h.find('#explainPanel').hidden, false);
+  assert.equal(h.find('#explainPreview .w.is-cur').dataset.j, '1');
+  assert.equal(h.media.paused, true);
+  h.calls.length = 0;
+  actions().find((b) => b.textContent === '修改').click();
+  for (let i = 0; i < 12; i++) await flush(); h.frame();
+  assert.equal(h.find('.subtitle-editor textarea').value, 'Hello world.');
+  assert.equal(h.media.paused, true);
+  assert.equal(h.calls.some(([action]) => action === 'play'), false);
+  h.find('.sheet-head [aria-label="关闭"]').click();
+  assert.equal(h.find('#explainPanel').hidden, false);
+  assert.equal(h.find('#explainPreview .w.is-cur').dataset.j, '1');
+  assert.equal(h.media.paused, true);
+  assert.equal(h.media.currentTime, 16);
+  h.close('explain');
+  assert.equal(h.media.paused, false);
 });
 
 test('word cards disabled, punctuation, sentence seeks and cancelled long presses keep playing', async (t) => {
@@ -279,14 +325,8 @@ test('closing a panel cannot resume a replacement media source', async (t) => {
 });
 
 async function openEditor(h) {
-  const target = h.find('#viewport .s[data-i="0"]');
-  const pointer = (type, x, y = 10) => target.dispatchEvent(Object.assign(
-    new h.w.Event(type, { bubbles: true, cancelable: true }),
-    { pointerId: 1, clientX: x, clientY: y, button: 0, isPrimary: true }));
-  pointer('pointerdown', 180); pointer('pointermove', 90); pointer('pointerup', 90);
-  target.click(); // The synthesized click must not seek or open a word card.
-  assert.equal(h.find('#sheetTitle').textContent, '字幕操作');
-  [...h.doc.querySelectorAll('.sheet button')].find((b) => b.textContent.includes('修改')).click();
+  if (h.find('#explainPanel').hidden) await h.open('explain');
+  [...h.doc.querySelectorAll('.explain-actions button')].find((b) => b.textContent === '修改').click();
   for (let i = 0; i < 12; i++) await flush();
   h.frame();
   assert.equal(h.find('#sheetTitle').textContent, '修改字幕');
@@ -300,7 +340,7 @@ async function openEditor(h) {
   };
 }
 
-for (const kind of ['audio', 'video']) test(`${kind}: left swipe edits and persists one cue without seeking or resetting repeat/speed`, async (t) => {
+for (const kind of ['audio', 'video']) test(`${kind}: detail editor persists one cue and returns to its updated details without seeking or resetting repeat/speed`, async (t) => {
   const h = await harness(t, kind);
   h.w.File = File; h.w.Blob = Blob;
   h.w.fetch = () => { throw new Error('unexpected network request'); };
@@ -316,7 +356,7 @@ for (const kind of ['audio', 'video']) test(`${kind}: left swipe edits and persi
   edit.flag('重新分析').click(); edit.flag('重新翻译').click();
   edit.input(0, 'A corrected sentence.'); edit.input(1, '人工修正'); edit.save();
   for (let i = 0; i < 20; i++) await flush(); h.frame();
-  assert.equal(h.doc.documentElement.classList.contains('sheet-open'), false);
+  assert.equal(h.find('#explainPanel').hidden, false);
   const data = await h.api.get('data', 'lesson');
   assert.equal(data.sentences[0].text, 'A corrected sentence.');
   assert.equal(data.sentences[0].translations['zh-CN'], '人工修正');
@@ -325,7 +365,9 @@ for (const kind of ['audio', 'video']) test(`${kind}: left swipe edits and persi
   assert.match(h.find('#viewport .s[data-i="0"] .s-words').textContent, /A corrected sentence/);
   assert.equal(h.find('#viewport .s[data-i="0"] .s-tr').textContent, '人工修正');
   assert.equal(h.media.currentTime, 6);
-  assert.equal(h.media.paused, false);
+  assert.equal(h.media.paused, true);
+  assert.match(h.find('#explainPreview .s-words').textContent, /A corrected sentence/);
+  assert.equal(h.find('#explainPreview .s-tr').textContent, '人工修正');
   assert.equal(h.media.playbackRate, 1.5);
   assert.equal(h.w.LT.engine.repeat, 1);
   h.advance(600);
@@ -363,4 +405,60 @@ test('vertical scroll and cancelled swipe never open subtitle actions or trigger
   pointer('pointerdown', 180); pointer('pointermove', 90); pointer('pointercancel', 90);
   pointer('pointerup', 90); h.advance(600);
   assert.equal(h.doc.documentElement.classList.contains('sheet-open'), false);
+});
+
+for (const kind of ['audio', 'video']) test(`${kind}: detail word selections leave the main clock intact without pronunciation controls`, async (t) => {
+  const h = await harness(t, kind);
+  h.media.currentTime = 16; h.media.playbackRate = 1.5;
+  await h.media.play(); h.frame(); await h.open('explain'); h.calls.length = 0;
+  assert.deepEqual([...h.doc.querySelectorAll('.explain-actions button')].map((b) => b.textContent), ['收藏', '修改', '大模型讲解']);
+  h.find('#explainPreview .w[data-j="1"]').click();
+  assert.equal(h.find('#explainPreview .w.is-cur').dataset.j, '1');
+  assert.equal(h.find('#explainBody .gw.is-cur').dataset.j, '1');
+  h.find('#explainBody .gw[data-j="0"] .gw-pick').click();
+  assert.equal(h.find('#explainPreview .w.is-cur').dataset.j, '0');
+  h.w.LT.engine.onCursor(0, 1, false);
+  assert.equal(h.find('#explainPreview .w.is-cur').dataset.j, '0');
+  assert.equal(h.api.isCardOpen(), false);
+  assert.equal(h.find('#sheetTitle').textContent, '句子拆解 · 1 / 2');
+  assert.equal(h.doc.querySelector('.sheet-explain .explain-sound'), null);
+  assert.equal(h.media.currentTime, 16);
+  assert.equal(h.media.paused, true);
+  assert.equal(h.media.playbackRate, 1.5);
+  assert.equal(h.calls.some(([action, id]) => action === 'play' && id === kind), false);
+  h.close('explain');
+  assert.equal(h.doc.querySelector('audio[hidden][playsinline]'), null);
+  assert.equal(h.media.paused, false);
+  assert.equal(h.media.currentTime, 16);
+});
+
+test('left swiping subtitles has no edit entry and suppresses the release click', async (t) => {
+  const h = await harness(t);
+  h.media.currentTime = 16; await h.media.play(); h.frame(); h.calls.length = 0;
+  const target = h.word();
+  const pointer = (type, x) => target.dispatchEvent(Object.assign(new h.w.Event(type, { bubbles: true }),
+    { pointerId: 1, clientX: x, clientY: 10, button: 0, isPrimary: true }));
+  pointer('pointerdown', 180); pointer('pointermove', 90); pointer('pointerup', 90); target.click();
+  h.advance(600);
+  assert.equal(h.doc.documentElement.classList.contains('sheet-open'), false);
+  assert.equal(h.api.isCardOpen(), false);
+  assert.equal(h.media.currentTime, 16);
+  assert.equal(h.media.paused, false);
+});
+
+test('leaving or replacing a detail child never reopens the sentence panel or resumes playback', async (t) => {
+  const h = await harness(t);
+  await h.media.play(); await h.open('explain');
+  [...h.doc.querySelectorAll('.explain-actions button')].find((b) => b.textContent === '修改').click();
+  for (let i = 0; i < 12; i++) await flush();
+  h.find('#btnDisplay').click();
+  assert.equal(h.find('#explainPanel').hidden, true);
+  assert.notEqual(h.find('#sheetTitle').textContent, '句子拆解 · 1 / 2');
+  h.close('explain');
+  await h.open('explain');
+  [...h.doc.querySelectorAll('.explain-actions button')].find((b) => b.textContent === '大模型讲解').click();
+  await flush(); h.w.dispatchEvent(new h.w.Event('pagehide'));
+  h.close('chat');
+  assert.equal(h.find('#explainPanel').hidden, true);
+  assert.equal(h.media.paused, true);
 });

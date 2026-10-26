@@ -119,7 +119,8 @@ function dragToClose(handle) {
  * @param {string} title
  * @param {Node} body
  * @param {object|Function} [opts] `{onClose, onBeforeClose, onBack, footer, cls, actions:[Node]}`; 传函数等价于 onClose
- * onClose 负责清理; onBack 只在用户关闭时返回上一级, 被其他浮层替换时不调用。
+ * onClose({dismissed}) 负责清理，dismissed 区分主动关闭与浮层替换;
+ * onBack 只在用户关闭时返回上一级, 被其他浮层替换时不调用。
  * onBeforeClose 返回 false 可阻止用户关闭; 返回的 close() 用于保存成功或离页后的直接清理。
  */
 export function openSheet(title, body, opts = {}) {
@@ -189,7 +190,7 @@ function dismissSheet(back) {
   document.documentElement.classList.remove('sheet-open');
   sheetEl.classList.remove('is-open');
   scrimEl.classList.remove('is-open');
-  cleanup?.();
+  cleanup?.({ dismissed: back });
   restore?.();
 }
 

@@ -22,7 +22,7 @@ export function openSubtitleEditor(defaults, { onSave, onClose } = {}) {
   const cancel = button('取消', { onPick: closeSheet });
   const save = button('保存', { main: true, onPick: submit });
   body.append(fields, status);
-  let busy = false, closed = false, committing = false;
+  let busy = false, closed = false, committing = false, closeReason;
   let ctl;
   async function submit() {
     if (busy) return;
@@ -44,12 +44,13 @@ export function openSubtitleEditor(defaults, { onSave, onClose } = {}) {
       committing = false;
       fields.disabled = save.disabled = false;
       body.removeAttribute('aria-busy');
-      if (closed) onClose?.();
+      if (closed) onClose?.(closeReason);
     }
   }
-  openSheet('修改字幕', body, { footer: buttonBar(cancel, save), onClose: () => {
+  openSheet('修改字幕', body, { cls: 'sheet-sentence', footer: buttonBar(cancel, save), onClose: (reason) => {
     closed = true;
+    closeReason = reason;
     if (!committing) ctl?.abort();
-    if (!busy) onClose?.();
+    if (!busy) onClose?.(closeReason);
   } });
 }

@@ -90,13 +90,10 @@
     </main>
   </div>
 
-  <section class="panel" id="explainPanel" hidden aria-label="逐词拆解">
-    <div class="panel-head">
-      <div class="panel-title"><span id="explainTitle">逐词拆解</span><span class="panel-sub" id="explainSub"></span></div>
-      <div id="explainFavorite"></div>
-      <button class="tb-btn tb-btn-sm" id="btnExplainClose" aria-label="关闭拆解"><svg class="ic"><use href="#i-x"/></svg></button>
-    </div>
-    <div class="panel-body" id="explainBody"></div>
+  <section class="explain" id="explainPanel" hidden aria-label="句子拆解">
+    <div class="explain-preview" id="explainPreview"></div>
+    <h3 class="explain-label" id="explainTitle">逐词拆解</h3>
+    <div class="explain-words" id="explainBody" role="group" aria-labelledby="explainTitle"></div>
   </section>
 
   <footer class="player" id="player">

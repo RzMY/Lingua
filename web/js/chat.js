@@ -116,13 +116,13 @@ export async function openChat({ track, i, lang, onClose }) {
   live = state;
 
   const view = openSheet(`讲解 · 第 ${i + 1} 句`, wrap, {
-    cls: 'sheet-chat',
+    cls: 'sheet-sentence sheet-chat',
     footer: foot,
     actions: [menuBtn],
-    onClose() {
+    onClose(reason) {
       if (ctl) { ctl.abort(); ctl = null; }
       live = null;
-      if (onClose) onClose();
+      if (onClose) onClose(reason);
     },
   });
   const scroller = view.body;
@@ -298,6 +298,7 @@ export async function openChat({ track, i, lang, onClose }) {
   /** 首轮: 有缓存就直接展示, 否则按模板问一次. */
   async function start() {
     const hit = state.msgs.length ? null : await cacheGet('chat', cacheKey);
+    if (live !== state) return;
     if (hit && Array.isArray(hit.msgs) && hit.msgs.length) {
       state.msgs = hit.msgs;
       repaint();
