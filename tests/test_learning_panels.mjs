@@ -342,8 +342,16 @@ async function openEditor(h) {
 
 for (const kind of ['audio', 'video']) test(`${kind}: detail editor persists one cue and returns to its updated details without seeking or resetting repeat/speed`, async (t) => {
   const h = await harness(t, kind);
-  h.w.File = File; h.w.Blob = Blob;
-  h.w.fetch = () => { throw new Error('unexpected network request'); };
+  h.w.File = File; h.w.Blob = Blob; h.w.Headers = Headers;
+  const requests = [];
+  h.w.fetch = async (url, init) => {
+    requests.push(String(url));
+    assert.match(String(url), /\/api\/analyze/);
+    assert.deepEqual(JSON.parse(await init.body.text()).segments,
+      [{ start: 0, end: 10, text: 'A corrected sentence.' }]);
+    return Response.json({ track: { sentences: [{ text: 'A corrected sentence.', wordTiming: false,
+      words: [{ text: 'A corrected sentence.', pos: 'noun', read: 'fresh analysis' }] }] } });
+  };
   await h.api.put('tr', h.api.translationKey('lesson', 'zh-CN', 'Hello world.'), '原译文');
   h.media.currentTime = 6; h.media.playbackRate = 1.5;
   h.w.LT.engine.setRepeat(1);
@@ -351,16 +359,27 @@ for (const kind of ['audio', 'video']) test(`${kind}: detail editor persists one
   const edit = await openEditor(h);
   assert.equal(h.media.currentTime, 6);
   assert.equal(h.media.paused, true);
-  assert.equal(edit.flag('重新分析').getAttribute('aria-pressed'), 'true');
+  assert.equal(edit.flag('重新分析').getAttribute('aria-pressed'), 'false');
+  assert.equal(edit.flag('重新翻译').getAttribute('aria-pressed'), 'false');
+  edit.input(0, 'A corrected sentence.');
   assert.equal(edit.flag('重新翻译').getAttribute('aria-pressed'), 'true');
-  edit.flag('重新分析').click(); edit.flag('重新翻译').click();
-  edit.input(0, 'A corrected sentence.'); edit.input(1, '人工修正'); edit.save();
+  edit.input(1, '人工修正');
+  assert.equal(edit.flag('重新翻译').getAttribute('aria-pressed'), 'false');
+  assert.equal(h.doc.querySelector('.subtitle-editor .row-label span'), null);
+  assert.equal(edit.flag('重新分析').getAttribute('aria-pressed'), 'true');
+  assert.equal(edit.flag('重新分析').disabled, true);
+  edit.flag('重新分析').click();
+  assert.equal(edit.flag('重新分析').getAttribute('aria-pressed'), 'true');
+  edit.save();
   for (let i = 0; i < 20; i++) await flush(); h.frame();
   assert.equal(h.find('#explainPanel').hidden, false);
   const data = await h.api.get('data', 'lesson');
   assert.equal(data.sentences[0].text, 'A corrected sentence.');
   assert.equal(data.sentences[0].translations['zh-CN'], '人工修正');
   assert.equal(data.sentences[0].wordTiming, false);
+  assert.equal(data.sentences[0].analyzed, true);
+  assert.equal(data.sentences[0].words[0].read, 'fresh analysis');
+  assert.equal(requests.length, 1);
   assert.equal(data.sentences[1].words[0].start, 10);
   assert.match(h.find('#viewport .s[data-i="0"] .s-words').textContent, /A corrected sentence/);
   assert.equal(h.find('#viewport .s[data-i="0"] .s-tr').textContent, '人工修正');
@@ -373,7 +392,8 @@ for (const kind of ['audio', 'video']) test(`${kind}: detail editor persists one
   h.advance(600);
   const reopened = await openEditor(h);
   assert.equal(reopened.flag('重新分析').getAttribute('aria-pressed'), 'false');
-  assert.equal(reopened.flag('重新翻译').getAttribute('aria-pressed'), 'true');
+  assert.equal(reopened.flag('重新分析').disabled, false);
+  assert.equal(reopened.flag('重新翻译').getAttribute('aria-pressed'), 'false');
 });
 
 test('plain subtitle editor defaults both operations off; validation/failure retain draft and cancel leaves data intact', async (t) => {

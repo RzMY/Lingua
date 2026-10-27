@@ -7,16 +7,29 @@ export function openSubtitleEditor(defaults, { onSave, onClose } = {}) {
   const values = { ...defaults };
   const body = el('div', 'subtitle-editor');
   const fields = el('fieldset', 'setup-fields');
+  let requestedAnalysis = !!values.reanalyze;
+  const analysis = switchRow('重新分析', '', () => values.reanalyze,
+    (on) => { requestedAnalysis = !!on; syncAnalysis(); });
+  const retranslation = switchRow('重新翻译', '', () => values.retranslate,
+    (on) => { values.retranslate = !!on; });
+  function syncAnalysis() {
+    const required = !!defaults.hasAnalysis && values.text.trim() !== defaults.text;
+    values.reanalyze = required || requestedAnalysis;
+    analysis.querySelector('button').disabled = required;
+    analysis.refresh();
+  }
+  function syncTranslation() {
+    const sourceChanged = values.text.trim() !== defaults.text;
+    const translationChanged = values.translation.trim() !== (defaults.translation || '').trim();
+    values.retranslate = sourceChanged && !translationChanged;
+    retranslation.refresh();
+  }
+  syncAnalysis();
   const source = textField('字幕原文', { value: values.text, rows: 4,
-    onInput: (text) => { values.text = text; } });
+    onInput: (text) => { values.text = text; syncAnalysis(); syncTranslation(); } });
   const translation = textField('译文', { value: values.translation, rows: 3,
-    onInput: (text) => { values.translation = text; } });
-  fields.append(source, translation, group(
-    switchRow('重新分析', '更新本句的分词、注音和词性', () => values.reanalyze,
-      (on) => { values.reanalyze = !!on; }),
-    switchRow('重新翻译', '根据原文生成新译文，替换上方译文', () => values.retranslate,
-      (on) => { values.retranslate = !!on; }),
-  ));
+    onInput: (text) => { values.translation = text; syncTranslation(); } });
+  fields.append(source, translation, group(analysis, retranslation));
   const status = el('p', 'field-hint');
   status.setAttribute('role', 'status');
   const cancel = button('取消', { onPick: closeSheet });

@@ -12,7 +12,8 @@ export async function subtitleEditDefaults(track, i, lang) {
   const translation = Object.hasOwn(s.translations || {}, lang) ? s.translations[lang]
     : ((!s.translationLang || s.translationLang === lang) && s.translation)
       || await cachedTranslation(track.id, lang, s.text);
-  return { text: s.text, translation, reanalyze: sentenceAnalyzed(track, s), retranslate: !!translation };
+  return { text: s.text, translation, hasAnalysis: sentenceAnalyzed(track, s),
+    reanalyze: false, retranslate: false };
 }
 
 /** Keep sentence boundaries and genuine word timing in the editable subtitle source. */
@@ -29,10 +30,11 @@ export async function prepareSubtitleEdit(track, i, values, { signal, onStage = 
   const text = String(values.text || '').trim();
   if (!previous || !text) throw new Error('字幕原文不能为空');
   const changed = text !== previous.text;
+  const reanalyze = !!values.reanalyze || (changed && sentenceAnalyzed(track, previous));
   let sentence = changed ? plainSentence({ ...previous, text }) : { ...previous };
   sentence.analyzed = changed ? false : sentenceAnalyzed(track, previous);
   let analyzed;
-  if (values.reanalyze) {
+  if (reanalyze) {
     onStage('正在重新分析本句…');
     const response = await analyze(editedTranscript({ lang: { code: track.lang }, sentences: [sentence] }), {
       lang: track.lang, id: track.id, title: track.title, duration: track.duration,
@@ -70,7 +72,7 @@ export async function prepareSubtitleEdit(track, i, values, { signal, onStage = 
   data.hasWordTiming = data.sentences.some((s) => s.wordTiming);
   data.stats = { sentences: data.sentences.length,
     words: data.sentences.reduce((n, s) => n + (s.analyzed ? s.words.length : 0), 0) };
-  return { data, translation, lang: values.lang, text, sourceChanged: changed || !!values.reanalyze };
+  return { data, translation, lang: values.lang, text, sourceChanged: changed || reanalyze };
 }
 
 export async function saveSubtitleEdit(track, prepared) {

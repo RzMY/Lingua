@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test, beforeEach } from 'node:test';
 import { Track } from '../web/js/track.js';
-import { plainTrack } from '../web/js/subtitles.js';
+import { plainSentence, plainTrack } from '../web/js/subtitles.js';
 import { prepareSubtitleEdit, saveSubtitleEdit, subtitleEditDefaults } from '../web/js/subtitle-edit.js';
 import { createTranslator, translationKey, cachedTranslation } from '../web/js/translate.js';
 import { getTrack, trackData, transcriptBlob } from '../web/js/library.js';
@@ -23,23 +23,28 @@ const flush = () => new Promise((r) => setImmediate(r));
 beforeEach(() => Object.assign(config, { baseUrl: 'https://model.example', model: 'test', apiKey: '',
   jsonMode: 1, timeout: 10, concurrency: 1 }));
 
-test('edit defaults use per-sentence analysis and the selected translation language, even when hidden', async () => {
+test('edit defaults leave both operations off and load the selected translation language, even when hidden', async () => {
   const track = lesson('defaults');
   assert.deepEqual(await subtitleEditDefaults(track, 0, 'zh-CN'),
-    { text: 'Hello.', translation: '', reanalyze: true, retranslate: false });
+    { text: 'Hello.', translation: '', hasAnalysis: true, reanalyze: false, retranslate: false });
   await put('tr', translationKey(track.id, 'zh-CN', 'Hello.'), '你好', track.id);
-  assert.equal((await subtitleEditDefaults(track, 0, 'zh-CN')).retranslate, true);
+  assert.deepEqual(await subtitleEditDefaults(track, 0, 'zh-CN'),
+    { text: 'Hello.', translation: '你好', hasAnalysis: true, reanalyze: false, retranslate: false });
   track.sentences[0].translation = '你好'; track.sentences[0].translationLang = 'zh-CN';
   assert.equal((await subtitleEditDefaults(track, 0, 'fr')).retranslate, false);
   track.sentences[0].analyzed = false;
   assert.equal((await subtitleEditDefaults(track, 0, 'zh-CN')).reanalyze, false);
+  assert.equal((await subtitleEditDefaults(track, 0, 'zh-CN')).hasAnalysis, false);
   const plain = Track.fromData(plainTrack({ id: 'plain', lang: 'en' }, [{ text: 'Hello.', start: 0, end: 2 }]));
   assert.equal((await subtitleEditDefaults(plain, 0, 'zh-CN')).reanalyze, false);
+  assert.equal((await subtitleEditDefaults(plain, 0, 'zh-CN')).hasAnalysis, false);
 });
 
-test('offline source editing persists only the changed sentence, translation and reusable timing source', async (t) => {
+test('unanalyzed subtitles allow offline source edits and preserve other cues', async (t) => {
   t.mock.method(globalThis, 'fetch', () => { throw new Error('No network allowed'); });
-  const track = lesson('persist');
+  const track = Track.fromData(plainTrack({ id: 'persist', title: 'Lesson', lang: 'en' }, [
+    { text: 'Hello.', start: 1, end: 4 }, { text: 'Bye.', start: 6, end: 10 },
+  ]));
   await put('tracks', track.id, { id: track.id, title: 'Lesson', position: 7, audio: { name: 'a.mp3' } });
   const snapshot = structuredClone(track.raw);
   const prepared = await prepareSubtitleEdit(track, 0, values());
@@ -56,10 +61,52 @@ test('offline source editing persists only the changed sentence, translation and
   assert.equal(await cachedTranslation(track.id, 'zh-CN', 'Corrected text.'), '修正译文');
   const source = JSON.parse(await (await transcriptBlob(track.id)).text());
   assert.deepEqual(source.segments[0], { text: 'Corrected text.', start: 1, end: 4 });
-  assert.deepEqual(source.segments[1].words, [{ text: 'Bye', start: 6, end: 10 }]);
+  assert.deepEqual(source.segments[1], { text: 'Bye.', start: 6, end: 10 });
   const reopened = Track.fromData(data);
-  assert.equal(reopened.N, 1);
+  assert.equal(reopened.N, 0);
   assert.equal((await subtitleEditDefaults(reopened, 0, 'zh-CN')).reanalyze, false);
+});
+
+for (const mode of ['legacy', 'analyzed']) {
+  test(`${mode} tracks force source reanalysis even when the submitted switch is off`, async (t) => {
+    const track = lesson(`forced-${mode}`);
+    if (mode !== 'legacy') track.raw.subtitleMode = 'analyzed';
+    const snapshot = structuredClone(track.raw), requests = [];
+    t.mock.method(globalThis, 'fetch', async (url, init) => {
+      requests.push(String(url));
+      assert.match(String(url), /\/api\/analyze/);
+      assert.deepEqual(JSON.parse(await init.body.text()).segments,
+        [{ start: 1, end: 4, text: 'Corrected text.' }]);
+      return Response.json({ track: { sentences: [{ wordTiming: false,
+        words: [{ text: 'Corrected text.', pos: 'noun', read: 'fresh' }] }] } });
+    });
+    const prepared = await prepareSubtitleEdit(track, 0, values());
+    assert.equal(requests.length, 1);
+    assert.deepEqual(track.raw, snapshot);
+    assert.equal(prepared.data.sentences[0].analyzed, true);
+    assert.equal(prepared.data.sentences[0].words[0].read, 'fresh');
+    assert.deepEqual(prepared.data.sentences[1].words, snapshot.sentences[1].words);
+    assert.deepEqual(prepared.data.sentences.map((s) => [s.i, s.start, s.end]), [[0, 1, 4], [1, 6, 10]]);
+    await put('tracks', track.id, { id: track.id });
+    await saveSubtitleEdit(track, prepared);
+    assert.equal((await trackData(track.id)).sentences[0].analyzed, true);
+    const source = JSON.parse(await (await transcriptBlob(track.id)).text());
+    assert.deepEqual(source.segments[1].words, [{ text: 'Bye', start: 6, end: 10 }]);
+  });
+}
+
+test('editing an unanalyzed sentence in a mixed track keeps reanalysis optional and preserves analyzed neighbors', async (t) => {
+  t.mock.method(globalThis, 'fetch', () => { throw new Error('No network allowed'); });
+  const track = lesson('mixed-offline');
+  track.raw.subtitleMode = 'analyzed';
+  track.sentences[0] = plainSentence(track.sentences[0]);
+  const defaults = await subtitleEditDefaults(track, 0, 'zh-CN');
+  assert.equal(defaults.hasAnalysis, false);
+  const prepared = await prepareSubtitleEdit(track, 0, values());
+  assert.equal(prepared.data.sentences[0].analyzed, false);
+  assert.equal(prepared.data.sentences[0].text, 'Corrected text.');
+  assert.deepEqual(prepared.data.sentences[1].words, track.sentences[1].words);
+  assert.equal(prepared.data.subtitleMode, 'analyzed');
 });
 
 test('translation-only edits preserve analysis and the original subtitle file', async (t) => {
@@ -90,8 +137,10 @@ test('analyzing one plain cue enables analysis layers without marking neighborin
   const updated = Track.fromData(prepared.data);
   assert.equal(updated.supports('read'), true);
   assert.equal(updated.raw.subtitleMode, 'analyzed');
-  assert.equal((await subtitleEditDefaults(updated, 0, 'zh-CN')).reanalyze, true);
+  assert.equal((await subtitleEditDefaults(updated, 0, 'zh-CN')).reanalyze, false);
+  assert.equal((await subtitleEditDefaults(updated, 0, 'zh-CN')).hasAnalysis, true);
   assert.equal((await subtitleEditDefaults(updated, 1, 'zh-CN')).reanalyze, false);
+  assert.equal((await subtitleEditDefaults(updated, 1, 'zh-CN')).hasAnalysis, false);
 });
 
 test('reanalyze and retranslate request only the edited sentence, bypass old translations and preserve boundaries', async (t) => {
@@ -127,11 +176,11 @@ test('validation, failed analysis, failed translation and cancellation leave sav
   await put('tracks', track.id, { id: track.id }); await put('data', track.id, snapshot);
   await assert.rejects(prepareSubtitleEdit(track, 0, values({ text: '  ' })), /不能为空/);
   t.mock.method(globalThis, 'fetch', async () => Response.json({ track: { sentences: [] } }));
-  await assert.rejects(prepareSubtitleEdit(track, 0, values({ reanalyze: true })), /单句分析/);
+  await assert.rejects(prepareSubtitleEdit(track, 0, values()), /单句分析/);
   t.mock.method(globalThis, 'fetch', async () => reply(''));
-  await assert.rejects(prepareSubtitleEdit(track, 0, values({ retranslate: true })), /未收到本句译文/);
+  await assert.rejects(prepareSubtitleEdit(track, 0, values({ text: 'Hello.', retranslate: true })), /未收到本句译文/);
   const ctl = new AbortController(); ctl.abort();
-  await assert.rejects(prepareSubtitleEdit(track, 0, values(), { signal: ctl.signal }), { name: 'AbortError' });
+  await assert.rejects(prepareSubtitleEdit(track, 0, values({ text: 'Hello.' }), { signal: ctl.signal }), { name: 'AbortError' });
   assert.deepEqual(track.raw, snapshot); assert.deepEqual(await trackData(track.id), snapshot);
 });
 
