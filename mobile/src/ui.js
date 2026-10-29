@@ -14,8 +14,7 @@ export const nativeStyles = `
 .native-field input{font-size:16px}
 .native-field select{appearance:none;-webkit-appearance:none;padding-right:40px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%236c7364' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center}
 .native-dialog :focus-visible{outline:2px solid var(--ring,#4f9b35);outline-offset:3px}
-.native-settings :is(select,button):focus{outline:none}
-.native-settings :is(select,button):focus-visible{box-shadow:inset 0 -2px 0 var(--ink-3,#6c7364)}
+.native-settings :focus{outline:none;box-shadow:none}
 .native-status{margin:16px 0;color:var(--ink-2,#40463a);overflow-wrap:anywhere}
 .native-status:empty{display:none}
 .native-actions{display:flex;gap:10px;margin-top:24px}
