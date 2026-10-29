@@ -25,9 +25,9 @@ export function openSubtitleEditor(defaults, { onSave, onClose } = {}) {
     retranslation.refresh();
   }
   syncAnalysis();
-  const source = textField('字幕原文', { value: values.text, rows: 4,
+  const source = textField('字幕原文', { value: values.text, rows: 2,
     onInput: (text) => { values.text = text; syncAnalysis(); syncTranslation(); } });
-  const translation = textField('译文', { value: values.translation, rows: 3,
+  const translation = textField('译文', { value: values.translation, rows: 2,
     onInput: (text) => { values.translation = text; syncTranslation(); } });
   fields.append(source, translation, group(analysis, retranslation));
   const status = el('p', 'field-hint');
@@ -60,7 +60,7 @@ export function openSubtitleEditor(defaults, { onSave, onClose } = {}) {
       if (closed) onClose?.(closeReason);
     }
   }
-  openSheet('修改字幕', body, { cls: 'sheet-sentence', footer: buttonBar(cancel, save), onClose: (reason) => {
+  openSheet('修改字幕', body, { cls: 'sheet-sentence sheet-subtitle-editor', footer: buttonBar(cancel, save), onClose: (reason) => {
     closed = true;
     closeReason = reason;
     if (!committing) ctl?.abort();

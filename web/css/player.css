@@ -417,14 +417,16 @@ body.video-rotated {
   gap: 12px;
   min-height: 48px;
   padding: 10px 8px;
-  border-top: 1px solid var(--line);
+  border: 0;
   cursor: pointer;
-  border-radius: 8px;
+  border-radius: 0;
   text-align: left;
   overflow-wrap: anywhere;
 }
 .gw-pick { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 12px; width: 100%; min-height: 36px; align-items: baseline; text-align: left; }
-.gw:first-child { border-top: 0; }
+.gw + .gw { border-top: 1px solid var(--line); }
+.gw-pick:focus { outline: none; }
+.gw-pick:focus-visible .gw-text { text-decoration: underline; text-underline-offset: 4px; }
 .gw.is-cur { background: color-mix(in oklab, var(--accent) 12%, transparent); }
 
 .gw-l { min-width: 0; }
@@ -503,7 +505,30 @@ body.video-rotated {
 .setup-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
 .setup-actions .btn { justify-content: center; min-height: 48px; padding: 12px 8px; border-radius: 16px; }
 .setup-fields:disabled .setup-pick { opacity: .55; cursor: wait; }
+.sheet-subtitle-editor .sheet-body { display: flex; }
+.subtitle-editor { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.subtitle-editor .setup-fields { flex: 1; min-height: 0; display: grid; grid-template-rows: repeat(2, minmax(0, 1fr)) auto; gap: 10px; }
+.subtitle-editor .field { display: flex; flex-direction: column; min-height: 0; margin: 0; }
+.subtitle-editor .field > b { flex: none; margin-bottom: 4px; }
+.subtitle-editor .field textarea { display: block; flex: 1; height: 0; min-height: 0; padding: 8px 10px; font-size: 16px; line-height: 1.45; resize: none; }
+.subtitle-editor .rows { margin-bottom: 0; }
+.subtitle-editor .field-hint:empty { display: none; }
+.subtitle-editor .field-hint:not(:empty) { flex: none; margin: 8px 0 0; }
 .subtitle-editor .switch:disabled { background: var(--line-2); opacity: .65; cursor: not-allowed; }
+@media (max-height: 700px) {
+  .subtitle-editor .setup-fields { gap: 8px; }
+  .subtitle-editor .field textarea { padding-block: 6px; }
+  .subtitle-editor .rows { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 0 8px; }
+  .subtitle-editor .rows > .row { min-height: 44px; gap: 6px; border: 0; }
+  .subtitle-editor .row-label b { font-size: 14px; }
+}
+@media (min-width: 600px) and (max-height: 500px) {
+  .subtitle-editor .setup-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: minmax(0, 1fr) auto; }
+  .subtitle-editor .rows { grid-column: 1 / -1; }
+}
+.video-immersive .subtitle-editor .setup-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: minmax(0, 1fr) auto; }
+.video-immersive .subtitle-editor .rows { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 0 8px; }
+.video-immersive .subtitle-editor .rows > .row { min-height: 44px; border: 0; }
 @media (max-width: 380px) {
   .setup { padding: 20px 14px calc(22px + var(--safe-b)); }
   .setup-card { padding: 0; }

@@ -250,7 +250,6 @@ export async function openChat({ track, i, lang, onClose }) {
     const text = box.value.trim();
     if (!text || state.busy) return;
     box.value = '';
-    box.style.height = '';
     state.msgs.push({ role: 'user', content: text });
     log.append(userBubble(text));
     state.pinned = true;
@@ -264,11 +263,6 @@ export async function openChat({ track, i, lang, onClose }) {
       e.preventDefault();
       submit();
     }
-  });
-  // 单行 pill 输入框, 最多长到 5 行
-  box.addEventListener('input', () => {
-    box.style.height = 'auto';
-    box.style.height = Math.min(box.scrollHeight, 132) + 'px';
   });
 
   menuBtn.addEventListener('click', () => openMenu(menuBtn, [

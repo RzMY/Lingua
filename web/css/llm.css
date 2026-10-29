@@ -186,8 +186,12 @@ html[data-theme="dark"] .wc-err { color: #f0bfb6; }
 /* ---------------------------------------------------------------- 讲解对话框 */
 
 /* 句子拆解、修改字幕和大模型讲解统一高度，切换时保持窗口位置。 */
-.sheet-sentence { height: 68vh; height: 68dvh; max-height: 68vh; max-height: 68dvh; }
+.sheet-sentence { --sentence-control-h: 48px; height: 68vh; height: 68dvh; max-height: 68vh; max-height: 68dvh; }
 .sheet-sentence .sheet-body { flex: 1; min-height: 0; }
+.sheet-sentence .sheet-foot { height: calc(var(--sentence-control-h) + 9px); }
+.sheet-sentence .sheet-foot > * { height: var(--sentence-control-h); min-width: 0; }
+.sheet-sentence .sheet-foot .field-acts { margin: 0; flex-wrap: nowrap; }
+.sheet-sentence .sheet-foot :is(.btn, .explain-action) { height: var(--sentence-control-h); }
 @media (max-height: 500px) {
   .sheet-sentence { height: calc(100vh - 24px); height: calc(100dvh - 24px); max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); }
 }
@@ -242,9 +246,10 @@ html[data-theme="dark"] .wc-err { color: #f0bfb6; }
 .chat-foot { display: block; }
 .chat-in {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
+  height: 100%;
   gap: 8px;
-  padding: 4px 4px 4px 14px;
+  padding: 3px 3px 3px 14px;
   border-radius: 24px;
   background: var(--bg-soft);
   border: 1px solid var(--line);
@@ -252,13 +257,14 @@ html[data-theme="dark"] .wc-err { color: #f0bfb6; }
 .chat-in textarea {
   flex: 1;
   min-width: 0;
-  max-height: 132px;
-  padding: 9px 0;
+  height: 100%;
+  min-height: 0;
+  padding: 8px 0;
   border: 0;
   background: none;
   resize: none;
   overflow-y: auto;
-  font: 400 14.5px/1.5 var(--font-ui);
+  font: 400 16px/1.5 var(--font-ui);
   color: var(--ink);
 }
 .chat-in textarea:focus { outline: none; }

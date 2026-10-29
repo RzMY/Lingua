@@ -31,7 +31,7 @@
 .fav-filter-chip.btn { gap: 4px; min-height: 32px; padding: 4px 8px; border: 0; border-radius: 9px; background: var(--card); color: var(--accent-2); font-size: 11px; }
 .fav-filter-chip .ic { width: 12px; height: 12px; }
 .fav-list { display: grid; gap: 12px; }
-.fav-card { min-width: 0; padding: 18px; border: 1px solid var(--line); border-radius: 20px; background: var(--sheet); overflow-wrap: anywhere; content-visibility: auto; contain-intrinsic-size: auto 240px; cursor: pointer; }
+.fav-card { min-width: 0; padding: 18px 18px 12px; border: 1px solid var(--line); border-radius: 20px; background: var(--sheet); overflow-wrap: anywhere; content-visibility: auto; contain-intrinsic-size: auto 240px; cursor: pointer; }
 .fav-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; font-size: 11.5px; line-height: 1.6; color: var(--ink-3); }
 .fav-meta time { margin-left: auto; }
 .fav-badge { padding: 2px 7px; background: var(--card); color: var(--accent-2); border-radius: 7px; font-weight: 600; }
@@ -48,7 +48,7 @@
 .fav-content > .fav-answer, .fav-content > .fav-reveal { grid-area: 1 / 1; min-width: 0; }
 .fav-content.is-concealed > .fav-answer, .fav-content:not(.is-concealed) > .fav-reveal { visibility: hidden; }
 .fav-reveal.btn { align-self: center; justify-self: start; margin: 8px 0; min-height: 44px; border-color: transparent; background: var(--card); color: var(--accent-2); }
-.fav-actions.field-acts { justify-content: flex-start; align-items: center; flex-wrap: nowrap; gap: 6px; margin: 12px 0 0; padding-top: 8px; border-top: 1px solid var(--line); cursor: default; }
+.fav-actions.field-acts { justify-content: flex-start; align-items: center; flex-wrap: nowrap; gap: 6px; margin: 8px 0 0; padding-top: 4px; border-top: 1px solid var(--line); cursor: default; }
 .fav-actions .btn { flex: none; justify-content: center; gap: 4px; font-size: 12px; padding: 6px 8px; min-height: 44px; border-color: transparent; background: transparent; }
 .fav-actions .fav-back { padding-left: 0; color: var(--accent-2); }
 .favorites .fav-back .ic { stroke: var(--accent-2); }
@@ -97,7 +97,7 @@
 .fav-model-note pre { white-space: pre-wrap; }
 .fav-model-note a { color: var(--accent-2); }
 @media (max-width: 359px) {
-  .fav-card { padding: 14px; }
+  .fav-card { padding: 14px 14px 10px; }
   .fav-toolbar > .fav-review { padding-inline: 8px; }
   .fav-actions .btn { padding-inline: 6px; }
   .fav-actions .fav-back { padding-left: 0; }

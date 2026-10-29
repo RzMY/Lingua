@@ -46,7 +46,7 @@ export function captionPreview(text, translation, { sourceLang = '', targetLang 
   frame.setAttribute('role', 'region');
   frame.setAttribute('aria-label', '系统字幕画中画示例');
   const header = el('div', 'caption-preview-head');
-  header.append(el('span', null, '画中画示例'), el('span', null, '↗'));
+  header.append(el('span', null, '画中画示例'));
   const original = el('div', 'caption-preview-text', text);
   original.lang = sourceLang;
   const translated = el('div', 'caption-preview-tr', translation);
