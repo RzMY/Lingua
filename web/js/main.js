@@ -63,7 +63,7 @@ const dom = {
   topbar: document.querySelector('.topbar'),
   scroller: $('scroller'), viewport: $('viewport'), readerState: $('readerState'),
   setup: $('setup'),
-  trackTitle: $('trackTitle'), btnBack: $('btnBack'), btnDisplay: $('btnDisplay'),
+  btnBack: $('btnBack'), btnDisplay: $('btnDisplay'),
   btnFiles: $('btnFiles'),
   player: $('player'), seek: $('seek'), seekFill: $('seekFill'), seekThumb: $('seekThumb'),
   timeNow: $('timeNow'), timeTotal: $('timeTotal'),
@@ -158,7 +158,6 @@ function showSetup(onBack = null) {
   dom.viewport.hidden = true;
   dom.player.hidden = true;
   const title = record.title || record.id;
-  dom.trackTitle.textContent = title;
   document.title = title + ' · Lingua';
 
   const box = dom.setup;
@@ -527,7 +526,6 @@ function apply(next) {
   document.documentElement.dataset.subtitleMode = next.raw.subtitleMode || 'analyzed';
   const title = (record && record.title) || next.title;
   next.title = title;
-  dom.trackTitle.textContent = title;
   document.title = title + ' · Lingua';
   setSetting('track', next.id);
   // 这条音频到底支持哪些显示层, 由 track.json 自述的 features 说了算
@@ -1004,6 +1002,15 @@ function onTrackCfg(key, value, layout) {
 async function boot() {
   loadConfig();
   initSettings(onSetting);
+  // Only update the mode selector UI; playback behavior is not connected yet.
+  const modeButtons = [...document.querySelectorAll('.play-mode')];
+  for (const button of modeButtons) {
+    button.addEventListener('click', () => {
+      for (const option of modeButtons) {
+        option.setAttribute('aria-pressed', String(option === button));
+      }
+    });
+  }
   wireReader();
   nativeReady(); // A valid entry point is ready before network or large media reads.
   dom.btnBack.addEventListener('click', async () => {

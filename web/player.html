@@ -69,7 +69,13 @@
 <div class="app" id="app">
   <header class="topbar">
     <button class="tb-btn" id="btnBack" aria-label="返回首页"><svg class="ic"><use href="#i-back"/></svg></button>
-    <h1 class="tb-title" id="trackTitle">Lingua</h1>
+    <div class="play-modes">
+      <div class="play-mode-options" role="group" aria-label="播放模式">
+        <button class="play-mode" type="button" aria-pressed="true">精读</button>
+        <button class="play-mode" type="button" aria-pressed="false">盲读</button>
+        <button class="play-mode" type="button" aria-pressed="false">延迟揭晓</button>
+      </div>
+    </div>
     <button class="tb-btn" id="btnFiles" aria-label="补充文件" title="补充媒体与字幕" hidden><svg class="ic"><use href="#i-upload"/></svg></button>
     <button class="tb-btn" id="btnDisplay" aria-label="字幕配置" aria-haspopup="dialog"><svg class="ic"><use href="#i-tune"/></svg></button>
   </header>

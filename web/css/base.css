@@ -293,6 +293,64 @@ button {
   color: var(--ink);
 }
 
+.play-modes {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.play-mode-options {
+  --mode-index: 0;
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: 252px;
+  max-width: 100%;
+  padding: 2px;
+}
+.play-mode-options:has(.play-mode:nth-child(2)[aria-pressed="true"]) { --mode-index: 1; }
+.play-mode-options:has(.play-mode:nth-child(3)[aria-pressed="true"]) { --mode-index: 2; }
+.play-mode-options::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: 5px;
+  bottom: 5px;
+  left: 6px;
+  width: calc((100% - 4px) / 3 - 8px);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-soft) 70%, var(--bg));
+  transform: translateX(calc(var(--mode-index) * (100% + 8px)));
+  transition: transform .3s var(--ease);
+}
+.play-mode {
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 6px;
+  border-radius: 999px;
+  color: var(--ink-3);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  white-space: nowrap;
+  transition: color .2s ease;
+}
+.play-mode[aria-pressed="true"] {
+  color: var(--accent-2);
+}
+.play-mode:focus-visible { outline-offset: -2px; }
+@media (hover: hover) {
+  .play-mode:hover { color: var(--accent-2); }
+}
+@media (max-width: 380px) {
+  .play-mode { padding-inline: 3px; font-size: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .play-mode-options::before, .play-mode { transition: none; }
+}
+
 /* ---------------------------------------------------------------- 浮层 / 面板 */
 
 /*  遮罩常驻在 DOM 里 (只淡入淡出, 不增删节点), 所以关闭时必须交出指针事件 ——
