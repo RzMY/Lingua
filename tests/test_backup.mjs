@@ -51,6 +51,21 @@ async function seed(backup) {
   for (const [key, value] of Object.entries(backup.localStorage)) localStorage.setItem(key, value);
 }
 
+test('blind reveal progress survives backup ID remapping and rejects malformed token indices', () => {
+  const backup = fixture(), key = 'linguatrack.track.lesson';
+  const progress = { enabled: true, revealed: { 0: { signature: '123', words: [0] } },
+    translations: { 0: { signature: '123', texts: ['456'] } } };
+  backup.localStorage[key] = JSON.stringify({ blindRead: progress });
+  const parsed = parseBackup(JSON.stringify(backup));
+  const imported = prepareImport(parsed, fixture().stores, {}, {});
+  assert.deepEqual(JSON.parse(imported.changes.get('linguatrack.track.lesson-2')).blindRead, progress);
+  for (const words of [[-1], ['0'], [1.5]]) {
+    backup.localStorage[key] = JSON.stringify({ blindRead: { ...progress,
+      revealed: { 0: { signature: '123', words } } } });
+    assert.throws(() => parseBackup(JSON.stringify(backup)), /盲读词序/);
+  }
+});
+
 test('export includes every data store and saved configuration, but only source filenames', async () => {
   const original = fixture();
   original.stores.tracks[0].value.audio = { name: 'C:\\audio\\lesson.wav', size: 500, type: 'audio/wav' };

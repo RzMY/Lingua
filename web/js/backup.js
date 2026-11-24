@@ -103,6 +103,24 @@ function validateLocal(key, text) {
     if (value.fonts !== undefined) validateFonts(value.fonts);
     if (value.video !== undefined) validateVideo(value.video);
     require(value.lang === undefined || typeof value.lang === 'string', '译文语言错误');
+    if (value.blindRead !== undefined) {
+      const progress = value.blindRead;
+      require(object(progress) && [0, 1, false, true].includes(progress.enabled)
+        && object(progress.revealed), '盲读进度格式错误');
+      for (const [i, row] of Object.entries(progress.revealed)) {
+        require(/^(0|[1-9]\d*)$/.test(i) && Number.isSafeInteger(+i) && object(row)
+          && typeof row.signature === 'string' && Array.isArray(row.words)
+          && row.words.every((j) => Number.isSafeInteger(j) && j >= 0), '盲读词序错误');
+      }
+      if (progress.translations !== undefined) {
+        require(object(progress.translations), '盲读译文进度格式错误');
+        for (const [i, row] of Object.entries(progress.translations)) {
+          require(/^(0|[1-9]\d*)$/.test(i) && Number.isSafeInteger(+i) && object(row)
+            && typeof row.signature === 'string' && Array.isArray(row.texts)
+            && row.texts.every((text) => typeof text === 'string' && text.length), '盲读译文进度格式错误');
+        }
+      }
+    }
   }
 }
 

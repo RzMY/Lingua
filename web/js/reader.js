@@ -14,13 +14,16 @@
  * 千万别改成「空了就不占高度」—— 字幕会因为个别词有注音而上下参差。
  */
 
+import { blindWord } from './blind-read.js';
+
 const CACHE_MAX = 200;
 
 const CHIP_TPL = (() => {
   const t = document.createElement('template');
   t.innerHTML =
     '<span class="w"><span class="w-read"></span><span class="w-text"></span>' +
-    '<i class="w-bar"><i class="w-fill"></i></i><span class="w-roman"></span></span>';
+    '<i class="w-bar"><i class="w-fill"></i></i><span class="w-roman"></span>' +
+    '<i class="w-mask" aria-hidden="true"></i></span>';
   return t.content.firstElementChild;
 })();
 
@@ -51,7 +54,11 @@ export function createSentenceCard(track, i, metrics) {
   });
   const tr = document.createElement('p');
   tr.className = 's-tr';
-  tr.textContent = s.translation || '';
+  const trText = document.createElement('span');
+  trText.className = 's-tr-text';
+  trText.textContent = s.translation || '';
+  tr.append(trText);
+  tr.hidden = !s.translation;
   art.append(wrap, tr);
   art._chips = chips;
   return art;
@@ -68,6 +75,8 @@ export class Reader {
     this.activeW = -1;
     this.curFill = null;
     this._lastP = -1;
+    this.blind = false;
+    this.blindProgress = null;
   }
 
   // ------------------------------------------------------------ 构建
@@ -88,6 +97,7 @@ export class Reader {
       el._y = NaN;
       this.els.set(i, el);
       this._apply(el, i);
+      this._applyBlind(el, i);
       for (let j = 0; j < el._chips.length; j++) {
         for (const layer of this.metrics.layers) {
           el._chips[j].style.setProperty('--fit-' + layer.key,
@@ -129,12 +139,84 @@ export class Reader {
    * 句子高度会因此变化, 所以调用方紧接着要让虚拟列表重量这几行;
    * 已经回收进 LRU 缓存的节点也一起改, 免得滚回去看到旧内容。
    */
-  setTranslation(i, text) {
+  setTranslation(i, text, lang) {
     const s = this.track.sentences[i];
     if (!s) return false;
     s.translation = text;
+    if (lang !== undefined) s.translationLang = lang;
     const el = this.els.get(i) || this.cache.get(i);
-    if (el) el.lastElementChild.textContent = text;
+    if (el) {
+      el.lastElementChild.firstElementChild.textContent = text;
+      el.lastElementChild.hidden = !text;
+      this._applyBlindTranslation(el, i);
+    }
+    return true;
+  }
+
+  /** Attributes survive the playback loop's className writes and LRU reuse. */
+  setBlindRead(enabled, progress = this.blindProgress) {
+    if (this.blind === !!enabled && this.blindProgress === progress) return;
+    this.blind = !!enabled;
+    this.blindProgress = progress;
+    this.viewport.classList.toggle('is-blind', this.blind);
+    for (const [i, el] of this.els) this._applyBlind(el, i);
+    for (const [i, el] of this.cache) this._applyBlind(el, i);
+  }
+
+  _applyBlind(el, i) {
+    el._chips.forEach((chip, j) => {
+      const word = this.track.sentences[i].words[j];
+      const on = this.blind && blindWord(word);
+      const hidden = on && !this.blindProgress?.has(i, j);
+      if (on) {
+        chip.dataset.blind = hidden ? 'hidden' : 'revealed';
+        chip.setAttribute('role', 'button');
+        chip.tabIndex = 0;
+        chip.setAttribute('aria-label', hidden ? `显示第 ${j + 1} 个词` : word.text);
+      } else {
+        delete chip.dataset.blind;
+        chip.removeAttribute('role');
+        chip.removeAttribute('tabindex');
+        chip.removeAttribute('aria-label');
+      }
+      for (let k = 0; k < 4; k++) {
+        if (hidden) chip.children[k].setAttribute('aria-hidden', 'true');
+        else chip.children[k].removeAttribute('aria-hidden');
+      }
+    });
+    this._applyBlindTranslation(el, i);
+  }
+
+  _applyBlindTranslation(el, i) {
+    const tr = el.lastElementChild, text = this.track.sentences[i].translation;
+    const on = this.blind && !!text?.trim();
+    const hidden = on && !this.blindProgress?.hasTranslation(i);
+    if (on) {
+      tr.dataset.blind = hidden ? 'hidden' : 'revealed';
+      tr.setAttribute('role', 'button');
+      tr.tabIndex = 0;
+      tr.setAttribute('aria-label', hidden ? '显示译文' : '译文：' + text);
+    } else {
+      delete tr.dataset.blind;
+      tr.removeAttribute('role');
+      tr.removeAttribute('tabindex');
+      tr.removeAttribute('aria-label');
+    }
+    if (hidden) tr.firstElementChild.setAttribute('aria-hidden', 'true');
+    else tr.firstElementChild.removeAttribute('aria-hidden');
+  }
+
+  revealWord(i, j) {
+    if (!this.blind || !this.blindProgress?.reveal(i, j)) return false;
+    const el = this.els.get(i) || this.cache.get(i);
+    if (el) this._applyBlind(el, i);
+    return true;
+  }
+
+  revealTranslation(i) {
+    if (!this.blind || !this.blindProgress?.revealTranslation(i)) return false;
+    const el = this.els.get(i) || this.cache.get(i);
+    if (el) this._applyBlindTranslation(el, i);
     return true;
   }
 

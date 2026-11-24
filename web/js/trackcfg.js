@@ -24,6 +24,7 @@ import { sourceSpec } from './langs.js';
 import { FONT_DEFAULTS, fontSizes, normFontSize, normalizeFonts, setFontContext, settings, videoSettings } from './settings.js';
 import { normalizeVideo, videoOverrides } from './video-config.js';
 import { normalizePronunciation } from './pronunciation-config.js';
+import { normalizeBlindRead } from './blind-read.js';
 
 const PREFIX = 'linguatrack.track.';
 
@@ -48,6 +49,7 @@ export const trackCfg = {
   fonts: {},       // 只保存这条音频明确调整过的字号
   video: normalizeVideo(),
   pronunciation: normalizePronunciation(),
+  blindRead: normalizeBlindRead(),
 };
 
 const bit = (v, fallback) => (v === undefined || v === null ? fallback : (v ? 1 : 0));
@@ -65,7 +67,7 @@ export const cfgSupports = (key) => supported.has(key);
 export function readTrackCfg(id, srcLang = '') {
   const out = { ...langDefaults(srcLang), id, lang: config.targetLang || 'zh-CN', fonts: {},
     video: videoSettings(srcLang), videoOverrides: {},
-    pronunciation: normalizePronunciation(settings.pronunciation) };
+    pronunciation: normalizePronunciation(settings.pronunciation), blindRead: normalizeBlindRead() };
   try {
     const saved = JSON.parse(localStorage.getItem(PREFIX + id) || 'null');
     if (saved && typeof saved === 'object') {
@@ -74,6 +76,7 @@ export function readTrackCfg(id, srcLang = '') {
       out.fonts = normalizeFonts(saved.fonts);
       out.videoOverrides = videoOverrides(saved.video);
       out.video = videoSettings(srcLang, out.videoOverrides);
+      out.blindRead = normalizeBlindRead(saved.blindRead);
       if (saved.pronunciation && typeof saved.pronunciation === 'object' && !Array.isArray(saved.pronunciation)) {
         out.pronunciation = normalizePronunciation(saved.pronunciation);
       }
@@ -130,6 +133,10 @@ function save() {
   let previous = {};
   try { previous = JSON.parse(localStorage.getItem(PREFIX + trackCfg.id) || '{}') || {}; } catch { /* ignore */ }
   const out = { lang: trackCfg.lang, pronunciation: trackCfg.pronunciation };
+  if (trackCfg.blindRead.enabled || Object.keys(trackCfg.blindRead.revealed).length
+    || Object.keys(trackCfg.blindRead.translations || {}).length) {
+    out.blindRead = trackCfg.blindRead;
+  }
   if (Object.keys(trackCfg.fonts).length) out.fonts = trackCfg.fonts;
   if (Object.keys(trackCfg.videoOverrides || {}).length) out.video = trackCfg.videoOverrides;
   for (const k of SAVED) {
@@ -178,6 +185,7 @@ export function resetTrackFontSizes() {
 export function setTrackCfg(key, value) {
   if (!(key in trackCfg) || trackCfg[key] === value) return;
   if (SAVED.includes(key) && !supported.has(key)) return;
+  if (key === 'blindRead') value = normalizeBlindRead(value);
   trackCfg[key] = value;
   save();
   applyTrackCfg();

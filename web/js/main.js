@@ -23,6 +23,7 @@ import { enterView } from './motion.js';
 import { Track } from './track.js';
 import { Metrics } from './metrics.js';
 import { Reader } from './reader.js';
+import { BlindReadProgress } from './blind-read.js';
 import { VirtualList } from './virtual.js';
 import { Engine } from './engine.js';
 import { setupPlayer } from './player.js';
@@ -30,7 +31,7 @@ import { mediaKind } from './media.js';
 import { setupVideo } from './video-player.js';
 import { setupAudioPip } from './audio-pip.js';
 import { initSettings, setSetting, settings } from './settings.js';
-import { initTrackCfg, trackCfg } from './trackcfg.js';
+import { initTrackCfg, setTrackCfg, trackCfg } from './trackcfg.js';
 import { config, loadConfig } from './config.js';
 import { nativeApp, nativeReady } from './native.js';
 import { sourceLangs } from './langs.js';
@@ -71,12 +72,14 @@ const dom = {
   btnSpeed: $('btnSpeed'), speedText: $('speedText'),
   btnPlay: $('btnPlay'), playText: $('playText'),
   btnShadow: $('btnShadow'), hint: $('hint'),
+  modeButtons: [...document.querySelectorAll('.play-mode')],
 };
 
 // The engine's historic `audio` name refers to the one active HTMLMediaElement.
 let audio = $('audio');
 const metrics = new Metrics($('probe'));
 let track = null, reader = null, vlist = null;
+let blindProgress = null;
 let player = null;
 let translator = null, sweepTimer = 0;
 let record = null;                 // 当前音频的库记录 (library.js)
@@ -538,6 +541,8 @@ function apply(next) {
   dom.viewport.textContent = '';
   dom.scroller.scrollTop = 0;
   reader = new Reader(dom.viewport, next, metrics);
+  blindProgress = new BlindReadProgress(next, trackCfg.blindRead);
+  syncBlindRead();
   vlist = new VirtualList(dom.scroller, dom.viewport, reader, metrics);
   vlist.followSingle = dom.app.classList.contains('is-immersive');
   engine.reader = reader;
@@ -587,8 +592,7 @@ function apply(next) {
 function applyTranslations(batch) {
   if (!reader) return;
   const list = [];
-  for (const [i, text] of batch) if (reader.setTranslation(i, text)) {
-    track.sentences[i].translationLang = translator.lang;
+  for (const [i, text] of batch) if (reader.setTranslation(i, text, translator.lang)) {
     list.push(i);
   }
   if (list.length) { videoPlayer?.refreshPip?.(); audioPip?.refresh(); }   // 小窗里的译文跟着补齐
@@ -703,6 +707,8 @@ async function editSubtitle(i, { onBack } = {}) {
       const anchor = vlist.indexAt(dom.scroller.scrollTop);
       document.documentElement.dataset.subtitleMode = original.raw.subtitleMode;
       initTrackCfg(original.id, original.lang, original.features, onTrackCfg);
+      blindProgress = new BlindReadProgress(original, trackCfg.blindRead);
+      syncBlindRead();
       reader.clearAll();
       reader.cache.clear();
       metrics.sync(dom.viewport.clientWidth);
@@ -744,9 +750,17 @@ function onReaderClick(e) {
   const art = e.target.closest('.s');
   if (!art) return;
   const i = +art.dataset.i;
+  if (e.target.closest('.s-tr') && reader.revealTranslation(i)) {
+    setTrackCfg('blindRead', blindProgress.snapshot(true));
+    return;
+  }
   const chip = e.target.closest('.w');
   if (!chip) { engine.seekSentence(i, null); engine.kick(); return; }
   const j = +chip.dataset.j;
+  if (reader.revealWord(i, j)) {
+    setTrackCfg('blindRead', blindProgress.snapshot(true));
+    return;
+  }
   seekWord(i, j);
   const w = track.sentences[i] && track.sentences[i].words[j];
   if (trackCfg.card && w && w.pos !== 'punct' && sentenceAnalyzed(track, track.sentences[i])) {
@@ -763,6 +777,8 @@ function cancelPress() {
 
 function onPressStart(e) {
   if (e.button > 0 || e.isPrimary === false) return;
+  cancelPress();
+  if (e.target.closest('[data-blind="hidden"]')) { pressFired = false; return; }
   const art = e.target.closest('.s');
   if (!art) return;
   cancelPress();
@@ -833,6 +849,13 @@ function wireReader() {
   syncPresentation();
 
   dom.viewport.addEventListener('click', onReaderClick);
+  dom.viewport.addEventListener('keydown', (event) => {
+    if (!event.target.closest('.w[data-blind], .s-tr[data-blind]') || !['Enter', ' '].includes(event.key)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    pressFired = false;
+    onReaderClick(event);
+  });
   dom.viewport.addEventListener('pointerdown', onPressStart);
   dom.viewport.addEventListener('pointermove', onPressMove);
   dom.viewport.addEventListener('pointerup', cancelPress);
@@ -841,6 +864,7 @@ function wireReader() {
     const art = event.target.closest('.s');
     if (!art) return;
     event.preventDefault();
+    if (event.target.closest('[data-blind="hidden"]')) return;
     if (!press.timer && !pressFired) openExplain(+art.dataset.i);
   });
 }
@@ -989,6 +1013,7 @@ function onSetting(key, value, layout) {
 
 /** 本条音频的配置回调. */
 function onTrackCfg(key, value, layout) {
+  if (key === 'blindRead') { syncBlindRead(); return; }
   audioPip?.refresh();
   if (key === 'lang') void explain.refreshTranslation();
   if (key === 'video') { videoPlayer?.apply(); return; }
@@ -999,14 +1024,22 @@ function onTrackCfg(key, value, layout) {
 
 // ---------------------------------------------------------------- 启动
 
+function syncBlindRead() {
+  reader?.setBlindRead(trackCfg.blindRead.enabled, blindProgress);
+  for (const button of dom.modeButtons) {
+    button.setAttribute('aria-pressed', String(button.dataset.mode ===
+      (trackCfg.blindRead.enabled ? 'blind' : 'read')));
+  }
+}
+
 async function boot() {
   loadConfig();
   initSettings(onSetting);
-  // Only update the mode selector UI; playback behavior is not connected yet.
-  const modeButtons = [...document.querySelectorAll('.play-mode')];
-  for (const button of modeButtons) {
+  for (const button of dom.modeButtons) {
     button.addEventListener('click', () => {
-      for (const option of modeButtons) {
+      if (!blindProgress || !dom.setup.hidden) return;
+      setTrackCfg('blindRead', blindProgress.snapshot(button.dataset.mode === 'blind'));
+      for (const option of dom.modeButtons) {
         option.setAttribute('aria-pressed', String(option === button));
       }
     });

@@ -33,6 +33,29 @@ beforeEach(() => {
   initSettings(() => {});
 });
 
+test('blind reading mode and reveals stay with each media across display/font/video edits', () => {
+  initTrackCfg('blind-a', 'en', ['card']);
+  const blindRead = { enabled: true, revealed: { 0: { signature: '123', words: [1, 2] } },
+    translations: { 0: { signature: '123', texts: ['456'] } } };
+  setTrackCfg('blindRead', blindRead);
+  setTrackCfg('card', 0);
+  setTrackFontSize('textSize', 32);
+  setVideoCfg({ width: 80 });
+  initTrackCfg('blind-b', 'ja');
+  assert.deepEqual(trackCfg.blindRead, { enabled: false, revealed: {} });
+  initTrackCfg('blind-a', 'en');
+  assert.deepEqual(trackCfg.blindRead, blindRead);
+  setTrackCfg('blindRead', { ...blindRead, enabled: false });
+  initTrackCfg('blind-a', 'en');
+  assert.equal(trackCfg.blindRead.enabled, false);
+  assert.deepEqual(trackCfg.blindRead.revealed, blindRead.revealed);
+  setTrackCfg('blindRead', { ...blindRead, enabled: false, revealed: {} });
+  initTrackCfg('blind-a', 'en');
+  assert.deepEqual(trackCfg.blindRead.translations, blindRead.translations);
+  dropTrackCfg('blind-a');
+  assert.deepEqual(readTrackCfg('blind-a').blindRead, { enabled: false, revealed: {} });
+});
+
 test('TTS calibration defaults lower, validates old/corrupt settings and stays global', () => {
   assert.equal(settings.ttsCalibration, .5);
   for (const invalid of [null, true, {}, [], '', 'bad']) {

@@ -163,6 +163,71 @@ for (const favoriteTime of [0, 28]) test(`favorite entry at ${favoriteTime}s ove
 });
 
 for (const kind of ['audio', 'video']) {
+  test(`${kind}: late translations mask immediately and reveal without changing playback`, async (t) => {
+    const h = await harness(t, kind), reader = h.w.LT.reader;
+    await h.media.play(); h.media.currentTime = 2; h.frame(); h.calls.length = 0;
+    h.find('.play-mode[data-mode="blind"]').click();
+    reader.setTranslation(0, '我们在学习。', 'zh-CN');
+    const tr = h.find('#viewport .s[data-i="0"] .s-tr');
+    assert.equal(tr.dataset.blind, 'hidden');
+    assert.equal(tr.firstElementChild.getAttribute('aria-hidden'), 'true');
+    h.pointer(tr, 'pointerdown'); h.advance(500); h.pointer(tr, 'pointerup'); tr.click();
+    assert.equal(tr.dataset.blind, 'revealed');
+    assert.equal(tr.firstElementChild.getAttribute('aria-hidden'), null);
+    assert.equal(h.media.currentTime, 2);
+    assert.equal(h.media.paused, false);
+    assert.deepEqual(h.calls, []);
+    assert.equal(JSON.parse(h.w.localStorage.getItem('linguatrack.track.lesson')).blindRead.translations[0].texts.length, 1);
+    assert.equal(h.word().dataset.blind, 'hidden');
+    h.find('.play-mode[data-mode="read"]').click();
+    h.find('.play-mode[data-mode="blind"]').click();
+    assert.equal(tr.dataset.blind, 'revealed');
+    reader.setTranslation(0, 'Learning.', 'en');
+    assert.equal(tr.dataset.blind, 'hidden');
+    tr.dispatchEvent(new h.w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    assert.equal(tr.dataset.blind, 'revealed');
+    reader.setTranslation(0, '我们在学习。', 'zh-CN');
+    assert.equal(tr.dataset.blind, 'revealed');
+    reader.unmount(0); reader.cache.delete(0); reader.mount(0, 0);
+    assert.equal(h.find('#viewport .s[data-i="0"] .s-tr').dataset.blind, 'revealed');
+    reader.setTranslation(0, '', 'zh-CN');
+    assert.equal(h.find('#viewport .s[data-i="0"] .s-tr').hidden, true);
+  });
+
+  test(`${kind}: blind word taps reveal without seeking, pausing or opening a learning panel`, async (t) => {
+    const h = await harness(t, kind);
+    await h.media.play(); h.media.currentTime = 2; h.frame(); h.calls.length = 0;
+    h.find('.play-mode[data-mode="blind"]').click();
+    const word = h.word();
+    assert.equal(word.dataset.blind, 'hidden');
+    assert.equal(word.children[1].getAttribute('aria-hidden'), 'true');
+    h.pointer(word, 'pointerdown'); h.advance(500); h.pointer(word, 'pointerup');
+    word.click(); h.frame();
+    assert.equal(word.dataset.blind, 'revealed');
+    assert.equal(h.media.currentTime, 2);
+    assert.equal(h.media.paused, false);
+    assert.deepEqual(h.calls, []);
+    assert.equal(h.api.isCardOpen(), false);
+    assert.equal(h.find('#explainPanel').hidden, true);
+    const saved = JSON.parse(h.w.localStorage.getItem('linguatrack.track.lesson')).blindRead;
+    assert.equal(saved.enabled, true);
+    assert.deepEqual(saved.revealed[0].words, [1]);
+    h.find('.play-mode[data-mode="read"]').click();
+    assert.equal(word.hasAttribute('data-blind'), false);
+    h.find('.play-mode[data-mode="blind"]').click();
+    assert.equal(word.dataset.blind, 'revealed');
+    const first = h.find('#viewport .s[data-i="0"] .w[data-j="0"]');
+    first.dispatchEvent(new h.w.KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }));
+    assert.equal(first.dataset.blind, 'revealed');
+    assert.equal(h.media.currentTime, 2);
+    assert.equal(h.media.paused, false);
+    const reader = h.w.LT.reader;
+    reader.unmount(0); reader.mount(0, 0); reader.setActive(0, 1);
+    assert.equal(h.word().dataset.blind, 'revealed');
+    assert.ok(h.word().classList.contains('is-cur'));
+    assert.equal(h.find('#viewport .w.p-punct').hasAttribute('data-blind'), false);
+  });
+
   test(`${kind}: word and long-press sentence favorites work without a model and survive panel reopening`, async (t) => {
     const h = await harness(t, kind);
     h.w.structuredClone = structuredClone;

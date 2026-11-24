@@ -222,6 +222,53 @@ html[data-tr="0"] .s-tr { display: none; }
   letter-spacing: 0;
 }
 
+/* Blind reading retains every word's grid dimensions, including hidden layers. */
+.reader-vp.is-blind .s::before {
+  background: color-mix(in oklab, var(--sheet) 90%, #808080);
+}
+.w-mask { display: none; pointer-events: none; }
+.reader-vp.is-blind .w[data-blind="hidden"]::before {
+  content: "";
+  position: absolute;
+  inset: var(--lh-read) 0 var(--lh-roman);
+  z-index: -1;
+  border-radius: calc(var(--radius-chip) + 2px);
+  background: var(--sheet);
+  pointer-events: none;
+}
+.reader-vp.is-blind .s.is-active .w[data-blind="hidden"]::before {
+  background: color-mix(in oklab, var(--pc) 20%, var(--sheet));
+}
+.w[data-blind="hidden"] > :not(.w-mask) {
+  visibility: hidden;
+}
+.reader-vp.is-blind .w[data-blind="hidden"] .w-mask {
+  display: block;
+  position: absolute;
+  top: calc(var(--lh-read) + (var(--lh-text) + var(--h-bar) + var(--gap-bar)) * .5);
+  left: var(--chip-px);
+  right: var(--chip-px);
+  height: calc(var(--lh-text) * .52);
+  transform: translateY(-50%);
+  border-radius: calc(var(--radius-chip) * .75);
+  background: color-mix(in oklab, var(--ink) 12%, var(--sheet));
+}
+.s-tr[data-blind] { position: relative; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.s-tr[data-blind="hidden"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-chip);
+  background: color-mix(in oklab, var(--ink) 8%, var(--sheet));
+  pointer-events: none;
+}
+.s-tr[data-blind="hidden"] > .s-tr-text { visibility: hidden; }
+.reader-vp.is-blind :is(.w, .s-tr)[data-blind]:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-chip);
+}
+
 @media (hover: hover) {
   .w:hover .w-text { color: var(--accent-2); }
 }
