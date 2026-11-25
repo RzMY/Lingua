@@ -73,3 +73,37 @@ test('translation reveals restore independently and follow the exact translation
   s.words[0].text = 'Changed';
   assert.equal(new BlindReadProgress(track, saved).translations.size, 0);
 });
+
+test('whole-sentence reveal includes translation and preserves other sentences across restore', () => {
+  const track = fixture(), progress = new BlindReadProgress(track);
+  Object.assign(track.sentences[0], { translation: '我们在跑步。', translationLang: 'zh-CN' });
+  progress.reveal(1, 0);
+  assert.equal(progress.revealSentence(0), true);
+  assert.equal(progress.revealSentence(0), false);
+  assert.equal(progress.revealSentence(99), false);
+  const restored = new BlindReadProgress(track, progress.snapshot(true));
+  assert.deepEqual(restored.snapshot(true).revealed[0].words, [0, 1, 2]);
+  assert.equal(restored.hasTranslation(0), true);
+  assert.equal(restored.has(1, 0), true);
+});
+
+test('hiding a sentence clears partial reveals and all its translation variants durably', () => {
+  const track = fixture(), progress = new BlindReadProgress(track), s = track.sentences[0];
+  progress.reveal(0, 1); progress.reveal(1, 0);
+  Object.assign(s, { translation: '我们在跑步。', translationLang: 'zh-CN' });
+  progress.revealTranslation(0);
+  s.translationLang = 'zh-TW'; progress.revealTranslation(0);
+  assert.equal(progress.hideSentence(0), true);
+  assert.equal(progress.hideSentence(0), false);
+  assert.equal(progress.hideSentence(99), false);
+  const saved = progress.snapshot(true), restored = new BlindReadProgress(track, saved);
+  assert.equal(saved.revealed[0], undefined);
+  assert.equal(saved.translations, undefined);
+  assert.equal(restored.has(0, 1), false);
+  assert.equal(restored.hasTranslation(0), false);
+  s.translationLang = 'zh-CN';
+  assert.equal(restored.hasTranslation(0), false);
+  assert.equal(restored.has(1, 0), true);
+  progress.revealTranslation(0);
+  assert.equal(progress.hideSentence(0), true, 'translation-only reveals can also be hidden');
+});

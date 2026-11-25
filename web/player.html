@@ -37,6 +37,10 @@
   <symbol id="i-speed" viewBox="0 0 24 24"><path d="M3.6 17.4a9 9 0 1116.8 0z"/><path d="M12 14.6l4-4.6"/></symbol>
   <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 4.8l11 7.2-11 7.2z" stroke-linejoin="round"/></symbol>
   <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 5v14M15 5v14" stroke-width="2.4"/></symbol>
+  <symbol id="i-reveal" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-hide" viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 5.1A12 12 0 0112 5c6.5 0 10 7 10 7a19 19 0 01-3.3 4.2M6.1 6.1A21 21 0 002 12s3.5 7 10 7a12 12 0 005.9-1.7M9.9 9.9a3 3 0 004.2 4.2"/></symbol>
+  <symbol id="i-prev" viewBox="0 0 24 24"><path d="M5 5v14M19 5l-10 7 10 7z"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24"><path d="M19 5v14M5 5l10 7-10 7z"/></symbol>
   <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2.6" width="6" height="10.4" rx="3"/><path d="M5.5 11.4a6.5 6.5 0 0013 0"/><path d="M12 17.9V21"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.8l4.2 4.2L19 7.4"/></symbol>
   <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M6 4a1 1 0 011-1h10a1 1 0 011 1v17l-6-4-6 4z"/></symbol>
@@ -103,6 +107,19 @@
   </section>
 
   <footer class="player" id="player">
+    <div class="blind-controls" id="blindControls" role="group" aria-label="盲读控制" hidden>
+      <button class="blind-control" type="button" data-blind-action="reveal" aria-label="揭晓当前整句" title="揭晓当前整句（含译文）">
+        <svg class="ic" aria-hidden="true"><use href="#i-reveal"/></svg></button>
+      <button class="blind-control" type="button" data-blind-action="prev" aria-label="上一句" title="上一句">
+        <svg class="ic" aria-hidden="true"><use href="#i-prev"/></svg></button>
+      <button class="blind-control" type="button" id="btnBlindPlay" data-blind-action="play" aria-label="播放">
+        <svg class="ic ic-play" aria-hidden="true"><use href="#i-play"/></svg>
+        <svg class="ic ic-pause" aria-hidden="true"><use href="#i-pause"/></svg></button>
+      <button class="blind-control" type="button" data-blind-action="next" aria-label="下一句" title="下一句">
+        <svg class="ic" aria-hidden="true"><use href="#i-next"/></svg></button>
+      <button class="blind-control" type="button" data-blind-action="hide" aria-label="隐藏当前整句" title="隐藏当前整句">
+        <svg class="ic" aria-hidden="true"><use href="#i-hide"/></svg></button>
+    </div>
     <div class="p-seek">
       <span class="p-t" id="timeNow">0:00</span>
       <div class="seek" id="seek" role="slider" tabindex="0" aria-label="播放进度"

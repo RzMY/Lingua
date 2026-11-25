@@ -83,6 +83,21 @@ export class BlindReadProgress {
     return true;
   }
 
+  revealSentence(i) {
+    const sentence = this.track.sentences[i];
+    if (!sentence) return false;
+    let changed = false;
+    sentence.words.forEach((_, j) => { if (this.reveal(i, j)) changed = true; });
+    return this.revealTranslation(i) || changed;
+  }
+
+  hideSentence(i) {
+    const words = this.rows.delete(i);
+    // Clear every saved translation of this sentence so changing language cannot reveal it again.
+    const translations = this.translations.delete(i);
+    return words || translations;
+  }
+
   snapshot(enabled) {
     const revealed = {};
     for (const [i, words] of this.rows) {

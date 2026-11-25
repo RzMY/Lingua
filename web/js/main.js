@@ -18,7 +18,7 @@
  *   学习面板全部关闭后, 仅恢复打开前正在播放的媒体。
  */
 
-import { $, debounce, el, fmtTime, fmtSize, icon, isIOS, rafOnce, toast } from './util.js';
+import { $, clamp, debounce, el, fmtTime, fmtSize, icon, isIOS, locate, rafOnce, toast } from './util.js';
 import { enterView } from './motion.js';
 import { Track } from './track.js';
 import { Metrics } from './metrics.js';
@@ -71,6 +71,7 @@ const dom = {
   btnPin: $('btnPin'), btnExplain: $('btnExplain'), btnRepeat: $('btnRepeat'),
   btnSpeed: $('btnSpeed'), speedText: $('speedText'),
   btnPlay: $('btnPlay'), playText: $('playText'),
+  blindControls: $('blindControls'), btnBlindPlay: $('btnBlindPlay'),
   btnShadow: $('btnShadow'), hint: $('hint'),
   modeButtons: [...document.querySelectorAll('.play-mode')],
 };
@@ -404,6 +405,7 @@ function updateFileState() {
   dom.btnFiles.hidden = !record || (!record.audio?.missing && !record.transcript?.missing);
   dom.btnPlay.disabled = !objUrl;
   dom.btnPlay.title = objUrl ? '' : '请先补充音频或视频文件';
+  syncBlindControls();
 }
 
 async function repairFiles() {
@@ -1026,15 +1028,42 @@ function onTrackCfg(key, value, layout) {
 
 function syncBlindRead() {
   reader?.setBlindRead(trackCfg.blindRead.enabled, blindProgress);
+  dom.blindControls.hidden = !trackCfg.blindRead.enabled;
+  syncBlindControls();
   for (const button of dom.modeButtons) {
     button.setAttribute('aria-pressed', String(button.dataset.mode ===
       (trackCfg.blindRead.enabled ? 'blind' : 'read')));
   }
 }
 
+function syncBlindControls() {
+  for (const button of dom.blindControls.querySelectorAll('button')) {
+    const action = button.dataset.blindAction;
+    const sentenceOnly = action === 'reveal' || action === 'hide';
+    const needsSentence = sentenceOnly || action === 'prev' || action === 'next';
+    button.disabled = (needsSentence && !track?.S) || (!sentenceOnly && !objUrl);
+  }
+}
+
+function onBlindControl(event) {
+  const button = event.target.closest('[data-blind-action]');
+  if (!button || button.disabled || !trackCfg.blindRead.enabled || !track) return;
+  const action = button.dataset.blindAction;
+  // Read the media clock so rapid actions also work before the next render frame.
+  const i = Math.max(0, locate(track.sStart, track.S, audio.currentTime + .004, reader?.activeS));
+  if (action === 'reveal' || action === 'hide') {
+    if (reader?.setSentenceRevealed(i, action === 'reveal')) {
+      setTrackCfg('blindRead', blindProgress.snapshot(true));
+    }
+  } else if (action === 'prev' || action === 'next') {
+    engine.seekSentence(clamp(i + (action === 'prev' ? -1 : 1), 0, track.S - 1));
+  }
+}
+
 async function boot() {
   loadConfig();
   initSettings(onSetting);
+  dom.blindControls.addEventListener('click', onBlindControl);
   for (const button of dom.modeButtons) {
     button.addEventListener('click', () => {
       if (!blindProgress || !dom.setup.hidden) return;

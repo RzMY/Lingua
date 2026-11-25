@@ -92,18 +92,17 @@ export function setupPlayer(ctx) {
   const progress = ctx.savePosition ? createProgressSaver(audio, ctx.savePosition, ctx.stagePosition) : null;
   let currentId = '';
 
-  audio.addEventListener('play', () => {
-    dom.player.classList.add('is-playing');
-    dom.btnPlay.setAttribute('aria-label', '暂停');
-    dom.playText.textContent = '暂停';
+  const syncPlayback = () => {
+    const playing = !audio.paused && !audio.ended;
+    const label = playing ? '暂停' : '播放';
+    dom.player.classList.toggle('is-playing', playing);
+    dom.btnPlay.setAttribute('aria-label', label);
+    dom.playText.textContent = label;
+    dom.btnBlindPlay?.setAttribute('aria-label', label);
     engine.kick();
-  });
-  audio.addEventListener('pause', () => {
-    dom.player.classList.remove('is-playing');
-    dom.btnPlay.setAttribute('aria-label', '播放');
-    dom.playText.textContent = '播放';
-    engine.kick();
-  });
+  };
+  for (const event of ['play', 'pause', 'ended', 'emptied']) audio.addEventListener(event, syncPlayback);
+  syncPlayback();
   audio.addEventListener('loadedmetadata', () => {
     const dur = audio.duration;
     if (Number.isFinite(dur)) {
@@ -128,6 +127,7 @@ export function setupPlayer(ctx) {
     else media.pause();
   };
   dom.btnPlay.addEventListener('click', toggle);
+  dom.btnBlindPlay?.addEventListener('click', toggle);
 
   setupSeek(ctx);
   setupKeys(ctx, toggle);

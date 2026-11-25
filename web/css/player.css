@@ -183,6 +183,8 @@ html.video-immersive, html.video-immersive body { background: #000; }
 .has-video:not(.controls-visible) .video-rotate,
 .has-video:not(.controls-visible) .video-pip,
 .has-video.is-immersive:not(.controls-visible) .player { visibility: hidden; opacity: 0; pointer-events: none; }
+/* Refresh SVG use instances when immersive chrome becomes visible again. */
+html.video-immersive:not(.sheet-open) .has-video.controls-visible .player .ic { visibility: visible; }
 .has-video.is-immersive .video-rotate { display: none; }
 .has-video.is-immersive .video-pip { display: none; }
 
@@ -230,6 +232,8 @@ body.video-rotated {
 .video-rotated .app.has-video.is-immersive { width: var(--rotated-width); height: var(--rotated-height); }
 
 .player {
+  position: relative;
+  z-index: 1;
   flex: none;
   margin: 4px 10px calc(10px + var(--safe-b));
   padding: 12px 14px 10px;
@@ -322,7 +326,7 @@ body.video-rotated {
   color: var(--ink-2);
   position: relative;
 }
-.tool::before {
+.tool::before, .blind-control::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -332,7 +336,7 @@ body.video-rotated {
   transform: scale(.9);
   transition: opacity .18s, transform .18s var(--ease);
 }
-.tool:active::before { opacity: .06; transform: scale(1); }
+.tool:active::before, .blind-control:not(:disabled):active::before { opacity: .06; transform: scale(1); }
 .tool[aria-pressed="true"] { color: var(--accent-2); }
 .tool[aria-pressed="true"]::before { opacity: .1; transform: scale(1); background: var(--accent); }
 
@@ -343,6 +347,47 @@ body.video-rotated {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+
+/* 盲读练习：揭晓与遮盖分列两端，播放始终居中。 */
+.blind-controls {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  width: min(300px, calc(100% - 16px));
+  border: 1px solid transparent;
+  border-radius: 20px;
+  background: var(--card);
+  box-shadow: 0 6px 22px color-mix(in srgb, var(--ink) 12%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  pointer-events: auto;
+}
+.blind-controls[hidden] { display: none; }
+.blind-control {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 0;
+  border-radius: 14px;
+  color: var(--ink-2);
+  touch-action: manipulation;
+}
+.blind-control .ic { width: 21px; height: 21px; }
+.blind-control:disabled { opacity: .35; cursor: default; }
+.has-video.is-immersive .blind-controls {
+  bottom: 92px;
+  border-color: color-mix(in srgb, var(--line-2) 62%, transparent);
+  background: color-mix(in srgb, var(--sheet) 70%, transparent);
+}
+.video-immersive.sheet-open .blind-controls { visibility: hidden; opacity: 0; pointer-events: none; }
 
 .ic-pause { display: none; }
 .is-playing .ic-play { display: none; }

@@ -82,7 +82,17 @@ const base = process.argv[3] || 'http://127.0.0.1:5188';
         const dimensions = () => page.locator('#viewport .s[data-i="0"] .w').evaluateAll((nodes) =>
           nodes.map((n) => [n.getBoundingClientRect().width, n.getBoundingClientRect().height]));
         const before = await dimensions();
+        const controls = page.locator('#blindControls');
+        const action = (name) => controls.locator(`[data-blind-action="${name}"]`);
+        const playerHeight = await page.locator('#player').evaluate((n) => n.getBoundingClientRect().height);
+        assert.equal(await controls.isVisible(), false);
         await page.locator('[data-mode="blind"]').click();
+        assert.ok(await controls.isVisible());
+        assert.deepEqual(await controls.locator('button').evaluateAll((buttons) =>
+          buttons.map((button) => button.dataset.blindAction)), ['reveal', 'prev', 'play', 'next', 'hide']);
+        assert.equal(await controls.textContent().then((text) => text.trim()), '');
+        assert.equal(await page.locator('#player').evaluate((n) => n.getBoundingClientRect().height), playerHeight,
+          'floating controls do not increase the original player height');
         await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
         assert.deepEqual(await dimensions(), before, 'mode changes retain grid layout');
         assert.equal(await word(2).getAttribute('data-blind'), 'hidden');
@@ -128,7 +138,8 @@ const base = process.argv[3] || 'http://127.0.0.1:5188';
         assert.equal(await word(1).getAttribute('data-blind'), null);
         await page.locator('[data-mode="blind"]').click();
         assert.equal(await word(2).getAttribute('data-blind'), 'revealed');
-        for (const [width, theme] of [[390, 'light'], [320, 'dark']]) {
+        for (const [width, theme] of (kind === 'video'
+          ? [[390, 'light'], [320, 'dark']] : [[1280, 'light'], [390, 'light'], [320, 'dark']])) {
           await page.setViewportSize({ width, height: 844 });
           await page.evaluate(async (theme) => (await import('/js/settings.js')).setSetting('theme', theme), theme);
           await page.waitForFunction(() => document.querySelector('#viewport').clientWidth > 0);
@@ -136,6 +147,13 @@ const base = process.argv[3] || 'http://127.0.0.1:5188';
           assert.equal(await word(1).getAttribute('data-blind'), 'hidden');
           assert.ok(await word(1).locator('.w-mask').isVisible());
           assert.ok(await page.locator('#scroller').evaluate((n) => n.scrollWidth <= n.clientWidth + 1));
+          assert.ok(await controls.evaluate((n) => {
+            const bar = n.getBoundingClientRect();
+            return n.scrollWidth <= n.clientWidth + 1 && [...n.querySelectorAll('button')].every((button) => {
+              const r = button.getBoundingClientRect();
+              return r.left >= bar.left && r.right <= bar.right && r.height >= 44 && r.width >= 44;
+            }) && bar.bottom + 10 <= document.querySelector('#player').getBoundingClientRect().top;
+          }), 'five icon buttons float separately above the original player with usable touch targets');
         }
         const translationHeight = await translation.evaluate((n) => n.getBoundingClientRect().height);
         const translationTime = await page.evaluate(() => window.LT.engine.audio.currentTime);
@@ -161,7 +179,109 @@ const base = process.argv[3] || 'http://127.0.0.1:5188';
         assert.equal(await word(1).getAttribute('data-blind'), 'hidden');
         await page.waitForFunction(() => document.querySelector('#viewport .s[data-i="0"] .s-tr-text')?.textContent);
         assert.equal(await translation.getAttribute('data-blind'), 'revealed');
-        console.log(`PASS ${name} ${kind}: masks, layers, keyboard, layout, LRU, modes and reload${name === 'webkit' ? ' (DOM; media timing excluded)' : ''}`);
+        await action('reveal').click();
+        assert.equal(await page.locator('#viewport .s[data-i="0"] [data-blind="hidden"]').count(), 0);
+        assert.ok(await page.locator('#viewport .s[data-i="1"] [data-blind="hidden"]').count() > 0);
+        await action('hide').click();
+        assert.equal(await word(0).getAttribute('data-blind'), 'hidden');
+        assert.equal(await word(2).getAttribute('data-blind'), 'hidden');
+        assert.equal(await translation.getAttribute('data-blind'), 'hidden');
+        await page.evaluate(() => {
+          const { reader } = window.LT;
+          reader.unmount(0); reader.cache.delete(0); reader.mount(0, 0);
+        });
+        assert.equal(await word(2).getAttribute('data-blind'), 'hidden', 'recycled sentences stay covered');
+        await page.reload();
+        await page.waitForFunction(() => window.LT?.track);
+        await page.waitForFunction(() => document.querySelector('#viewport .s[data-i="0"] .s-tr-text')?.textContent);
+        assert.equal(await word(2).getAttribute('data-blind'), 'hidden');
+        assert.equal(await translation.getAttribute('data-blind'), 'hidden', 'hide survives reload');
+        if (name === 'chromium') {
+          await page.waitForFunction(() => window.LT.engine.audio.readyState >= 1);
+          await page.evaluate(() => window.LT.engine.seek(7));
+          await action('prev').click();
+          assert.ok(await page.evaluate(() => window.LT.engine.audio.currentTime < .02));
+          await action('prev').click();
+          assert.equal(await page.evaluate(() => window.LT.engine.audio.currentTime), 0);
+          await page.evaluate(() => {
+            document.querySelector('[data-blind-action="next"]').click();
+            document.querySelector('[data-blind-action="next"]').click();
+            document.querySelector('[data-blind-action="reveal"]').click();
+          });
+          assert.ok(Math.abs(await page.evaluate(() => window.LT.engine.audio.currentTime) - 10) < .02);
+          await page.waitForFunction(() => document.querySelector('#viewport .s[data-i="2"] .w[data-blind="revealed"]'));
+          assert.equal(await word(2).getAttribute('data-blind'), 'hidden', 'rapid navigation reveals only the destination');
+          await action('play').click();
+          await page.waitForFunction(() => !window.LT.engine.audio.paused
+            && document.querySelector('#btnBlindPlay').getAttribute('aria-label') === '暂停');
+          assert.equal(await action('play').getAttribute('aria-label'), '暂停');
+          assert.equal(await page.locator('#playText').textContent(), '暂停');
+          assert.ok(await action('play').locator('.ic-pause').isVisible());
+          assert.equal(await action('play').locator('.ic-play').isVisible(), false);
+          await page.locator('#btnPlay').click();
+          await page.waitForFunction(() => document.querySelector('#btnBlindPlay').getAttribute('aria-label') === '播放');
+          assert.equal(await action('play').getAttribute('aria-label'), '播放');
+          await page.locator('#btnPlay').click();
+          await action('play').click();
+          assert.ok(await page.evaluate(() => window.LT.engine.audio.paused));
+          await page.evaluate(() => window.LT.engine.seek(26));
+          await action('next').click();
+          assert.ok(Math.abs(await page.evaluate(() => window.LT.engine.audio.currentTime) - 25) < .02);
+          await page.evaluate(() => window.LT.engine.seek(.2));
+        }
+        await page.locator('[data-mode="read"]').click();
+        assert.equal(await controls.isVisible(), false);
+        await page.locator('[data-mode="blind"]').click();
+        assert.ok(await controls.isVisible());
+        if (kind === 'video') {
+          await page.evaluate(() => {
+            document.documentElement.requestFullscreen = undefined;
+            document.documentElement.webkitRequestFullscreen = undefined;
+          });
+          await page.setViewportSize({ width: 844, height: 390 });
+          await page.waitForFunction(() => document.querySelector('#app').classList.contains('is-immersive'));
+          await page.locator('#videoStage').dispatchEvent('pointerdown');
+          // A toolbar pointerdown uses the same chrome visibility path as touch/keyboard controls.
+          await action('hide').dispatchEvent('pointerdown');
+          await page.waitForFunction(() => document.querySelector('#app').classList.contains('controls-visible'));
+          await action('reveal').click();
+          await action('hide').click();
+          await page.waitForFunction(() => getComputedStyle(document.querySelector('#player')).opacity === '1');
+          assert.ok(await controls.evaluate((n) => {
+            const bar = n.getBoundingClientRect(), tools = document.querySelector('.tools').getBoundingClientRect();
+            return bar.top >= document.querySelector('.topbar').getBoundingClientRect().bottom
+              && bar.bottom <= tools.top && bar.left >= 0 && bar.right <= innerWidth;
+          }), 'immersive controls fit between topbar and original toolbar');
+          await page.screenshot({ path: path.join(output, `${name}-${kind}-landscape-dark.png`) });
+          await page.keyboard.press('Escape');
+          await controls.waitFor({ state: 'hidden' });
+          assert.equal(await controls.isVisible(), false, 'blind controls follow immersive chrome visibility');
+          await page.setViewportSize({ width: 390, height: 844 });
+          await page.waitForFunction(() => !document.querySelector('#app').classList.contains('is-immersive'));
+        }
+        if (name === 'chromium' && kind === 'audio') {
+          // No-subtitle and missing-media states use the same enablement as the existing player.
+          await page.evaluate(async (id) => {
+            const { trackData, saveAnalysis } = await import('/js/library.js');
+            const data = await trackData(id);
+            await saveAnalysis(id, { ...data, sentences: [] });
+          }, id);
+          await page.reload();
+          await page.waitForFunction(() => window.LT?.track?.S === 0);
+          for (const name of ['reveal', 'hide', 'prev', 'next']) assert.ok(await action(name).isDisabled());
+          assert.equal(await action('play').isDisabled(), false);
+          await page.evaluate(async (id) => {
+            const { getTrack, patchTrack } = await import('/js/library.js');
+            const { del } = await import('/js/store.js');
+            const record = await getTrack(id);
+            await del('audio', id);
+            await patchTrack(id, { audio: { ...record.audio, missing: true } });
+          }, id);
+          await page.reload();
+          await page.waitForFunction(() => window.LT?.track && document.querySelector('#btnPlay').disabled);
+          assert.ok(await action('play').isDisabled());
+        }
+        console.log(`PASS ${name} ${kind}: masks, toolbar, navigation, playback, layout, LRU and persistence${name === 'webkit' ? ' (DOM; media timing excluded)' : ''}`);
       }
       assert.deepEqual(errors, []);
     } finally { await browser.close(); }

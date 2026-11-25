@@ -220,6 +220,15 @@ export class Reader {
     return true;
   }
 
+  setSentenceRevealed(i, revealed) {
+    if (!this.blind || !this.blindProgress) return false;
+    const changed = revealed ? this.blindProgress.revealSentence(i) : this.blindProgress.hideSentence(i);
+    if (!changed) return false;
+    const el = this.els.get(i) || this.cache.get(i);
+    if (el) this._applyBlind(el, i);
+    return true;
+  }
+
   // ------------------------------------------------------------ 高亮状态
 
   /** 把当前 (activeS, activeW) 写进某个句子节点; 无变化时立即返回. */
