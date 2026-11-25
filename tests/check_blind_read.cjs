@@ -90,7 +90,7 @@ const base = process.argv[3] || 'http://127.0.0.1:5188';
         await page.locator('[data-mode="blind"]').click();
         assert.ok(await controls.isVisible());
         assert.deepEqual(await controls.locator('button').evaluateAll((buttons) =>
-          buttons.map((button) => button.dataset.blindAction)), ['reveal', 'prev', 'play', 'next', 'hide']);
+          buttons.map((button) => button.dataset.blindAction)), ['hide', 'prev', 'play', 'next', 'reveal']);
         assert.equal(await controls.textContent().then((text) => text.trim()), '');
         assert.equal(await page.locator('#player').evaluate((n) => n.getBoundingClientRect().height), playerHeight,
           'floating controls do not increase the original player height');
