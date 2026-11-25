@@ -14,7 +14,7 @@ const base = process.argv[3] || 'http://127.0.0.1:5188';
   for (const name of ['chromium', 'webkit']) {
     const browser = await engines[name].launch({ headless: true });
     try {
-      const page = await browser.newPage({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
+      const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, reducedMotion: 'reduce' });
       const errors = [];
       page.on('pageerror', (e) => errors.push(e.message));
       page.setDefaultTimeout(10000);
@@ -55,11 +55,12 @@ const base = process.argv[3] || 'http://127.0.0.1:5188';
             { text: 'yesterday', read: 'ˈjestədeɪ', roman: 'yesterday', pos: 'adv' },
             { text: '.', pos: 'punct' },
           ];
-          const sentences = Array.from({ length: 6 }, (_, i) => ({ i, start: i * 5, end: (i + 1) * 5,
+          // Leave a one-second gap to exercise revealing a completed sentence before the next cue.
+          const sentences = Array.from({ length: 6 }, (_, i) => ({ i, start: i * 5, end: i * 5 + 4,
             text: words.map((w) => w.text).join(lang === 'ja' ? '' : ' '), wordTiming: i !== 1,
             translations: { 'zh-CN': lang === 'ja' ? '这次企划的主题是一次拍摄完成。' : '我们昨天跑得很快。' },
             words: words.map((w, j) => ({ ...w, ...(i === 1 || w.pos === 'punct' ? {} : {
-              start: i * 5 + j * 5 / (words.length - 1), end: i * 5 + (j + 1) * 5 / (words.length - 1),
+              start: i * 5 + j * 4 / (words.length - 1), end: i * 5 + (j + 1) * 4 / (words.length - 1),
             }) })),
           }));
           await saveAnalysis(record.id, { schemaVersion: 2, id: record.id, lang: sourceSpec(lang),
@@ -260,6 +261,49 @@ const base = process.argv[3] || 'http://127.0.0.1:5188';
           await page.waitForFunction(() => !document.querySelector('#app').classList.contains('is-immersive'));
         }
         if (name === 'chromium' && kind === 'audio') {
+          await page.setViewportSize({ width: 390, height: 680 });
+          for (const input of ['mouse', 'touch']) for (const target of ['word', 'translation']) {
+            await page.evaluate(() => {
+              const { engine } = window.LT;
+              engine.audio.pause();
+              engine.seekSentence(0, 0);
+            });
+            await page.waitForFunction(() => window.LT.reader.activeS === 0);
+            await page.evaluate(() => window.LT.engine.setFollow(true));
+            await page.waitForFunction(() => document.querySelector('#scroller').scrollTop < 6);
+            await action('play').click();
+            await page.waitForFunction(() => window.LT.engine.audio.currentTime >= 4.6);
+            await action('play').click();
+            assert.ok(await page.evaluate(() => window.LT.engine.audio.paused
+              && window.LT.engine.audio.currentTime >= window.LT.track.sEnd[0]
+              && window.LT.engine.audio.currentTime < window.LT.track.sStart[1]), 'paused between sentences');
+            await action('hide').click();
+            const masked = target === 'word' ? word(2) : translation;
+            assert.equal(await masked.getAttribute('data-blind'), 'hidden');
+            const pausedTime = await page.evaluate(() => window.LT.engine.audio.currentTime);
+            if (input === 'touch') await masked.tap(); else await masked.click();
+            assert.equal(await masked.getAttribute('data-blind'), 'revealed');
+            assert.equal(await page.evaluate(() => window.LT.engine.audio.currentTime), pausedTime);
+            assert.ok(await page.evaluate(() => window.LT.engine.follow));
+            await action('play').click();
+            await page.waitForFunction(() => window.LT.reader.activeS === 1);
+            await page.waitForFunction(() => document.querySelector('#scroller').scrollTop > 20,
+              null, { timeout: 1000 });
+            assert.ok(await page.evaluate(() => window.LT.engine.audio.currentTime < window.LT.track.sStart[2]),
+              `${input} ${target} reveal follows the very next sentence`);
+            await action('play').click();
+          }
+          // Revealing must also respect an intentional manual-scroll opt-out.
+          await page.evaluate(() => window.LT.engine.seekSentence(0, 4.65));
+          await page.waitForFunction(() => document.querySelector('#scroller').scrollTop < 6);
+          await action('hide').click();
+          await word(2).hover();
+          await page.mouse.wheel(0, 40);
+          await page.waitForFunction(() => !window.LT.engine.follow);
+          await word(2).tap();
+          assert.equal(await word(2).getAttribute('data-blind'), 'revealed');
+          assert.equal(await page.locator('#btnPin').getAttribute('aria-pressed'), 'false');
+          await page.evaluate(() => window.LT.engine.setFollow(true));
           // No-subtitle and missing-media states use the same enablement as the existing player.
           await page.evaluate(async (id) => {
             const { trackData, saveAnalysis } = await import('/js/library.js');

@@ -818,7 +818,12 @@ function wireReader() {
   }, { passive: true });
   sc.addEventListener('wheel', cancelPress, { passive: true });
   for (const ev of ['touchstart', 'pointerdown']) {
-    sc.addEventListener(ev, () => engine.noteUserScroll(), { passive: true });
+    sc.addEventListener(ev, (event) => {
+      // A reveal-only tap must not start the manual-scroll hold and skip the next cue.
+      // Actual wheel/touch movement still cancels follow through the handlers below.
+      if (event.target.closest('[data-blind="hidden"]')) return;
+      engine.noteUserScroll();
+    }, { passive: true });
   }
   for (const ev of ['wheel', 'touchmove']) {
     sc.addEventListener(ev, () => engine.noteUserScroll({ unpin: true }), { passive: true });
