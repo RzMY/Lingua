@@ -107,6 +107,7 @@ function validateLocal(key, text) {
       const progress = value.blindRead;
       require(object(progress) && [0, 1, false, true].includes(progress.enabled)
         && object(progress.revealed), '盲读进度格式错误');
+      require(progress.delayed === undefined || [0, 1, false, true].includes(progress.delayed), '延迟揭晓模式格式错误');
       for (const [i, row] of Object.entries(progress.revealed)) {
         require(/^(0|[1-9]\d*)$/.test(i) && Number.isSafeInteger(+i) && object(row)
           && typeof row.signature === 'string' && Array.isArray(row.words)

@@ -66,6 +66,16 @@ test('blind reveal progress survives backup ID remapping and rejects malformed t
   }
 });
 
+test('delayed mode survives backup remapping and rejects malformed mode flags', () => {
+  const backup = fixture(), key = 'linguatrack.track.lesson';
+  const progress = { enabled: false, delayed: true, revealed: {} };
+  backup.localStorage[key] = JSON.stringify({ blindRead: progress });
+  const imported = prepareImport(parseBackup(JSON.stringify(backup)), fixture().stores, {}, {});
+  assert.deepEqual(JSON.parse(imported.changes.get('linguatrack.track.lesson-2')).blindRead, progress);
+  backup.localStorage[key] = JSON.stringify({ blindRead: { ...progress, delayed: 'yes' } });
+  assert.throws(() => parseBackup(JSON.stringify(backup)), /延迟揭晓模式/);
+});
+
 test('export includes every data store and saved configuration, but only source filenames', async () => {
   const original = fixture();
   original.stores.tracks[0].value.audio = { name: 'C:\\audio\\lesson.wav', size: 500, type: 'audio/wav' };

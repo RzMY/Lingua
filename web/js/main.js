@@ -24,6 +24,7 @@ import { Track } from './track.js';
 import { Metrics } from './metrics.js';
 import { Reader } from './reader.js';
 import { BlindReadProgress } from './blind-read.js';
+import { DelayedRevealProgress } from './delayed-reveal.js';
 import { VirtualList } from './virtual.js';
 import { Engine } from './engine.js';
 import { setupPlayer } from './player.js';
@@ -81,6 +82,7 @@ let audio = $('audio');
 const metrics = new Metrics($('probe'));
 let track = null, reader = null, vlist = null;
 let blindProgress = null;
+let delayedProgress = null;
 let player = null;
 let translator = null, sweepTimer = 0;
 let record = null;                 // 当前音频的库记录 (library.js)
@@ -544,6 +546,7 @@ function apply(next) {
   dom.scroller.scrollTop = 0;
   reader = new Reader(dom.viewport, next, metrics);
   blindProgress = new BlindReadProgress(next, trackCfg.blindRead);
+  delayedProgress = new DelayedRevealProgress(next);
   syncBlindRead();
   vlist = new VirtualList(dom.scroller, dom.viewport, reader, metrics);
   vlist.followSingle = dom.app.classList.contains('is-immersive');
@@ -710,6 +713,7 @@ async function editSubtitle(i, { onBack } = {}) {
       document.documentElement.dataset.subtitleMode = original.raw.subtitleMode;
       initTrackCfg(original.id, original.lang, original.features, onTrackCfg);
       blindProgress = new BlindReadProgress(original, trackCfg.blindRead);
+      delayedProgress = new DelayedRevealProgress(original);
       syncBlindRead();
       reader.clearAll();
       reader.cache.clear();
@@ -752,6 +756,7 @@ function onReaderClick(e) {
   const art = e.target.closest('.s');
   if (!art) return;
   const i = +art.dataset.i;
+  if (reader.delayed && e.target.closest('[data-blind="hidden"], .s-tr')) return;
   if (e.target.closest('.s-tr') && reader.revealTranslation(i)) {
     setTrackCfg('blindRead', blindProgress.snapshot(true));
     return;
@@ -1032,19 +1037,26 @@ function onTrackCfg(key, value, layout) {
 // ---------------------------------------------------------------- 启动
 
 function syncBlindRead() {
-  reader?.setBlindRead(trackCfg.blindRead.enabled, blindProgress);
-  dom.blindControls.hidden = !trackCfg.blindRead.enabled;
+  const delayed = !!trackCfg.blindRead.delayed;
+  const enabled = trackCfg.blindRead.enabled || delayed;
+  delayedProgress?.setTime(engine.scrubbing ? engine.scrubTime : audio.currentTime);
+  reader?.setBlindRead(enabled, delayed ? delayedProgress : blindProgress, delayed);
+  dom.blindControls.hidden = !enabled;
+  dom.blindControls.classList.toggle('is-delayed', delayed);
+  dom.blindControls.setAttribute('aria-label', delayed ? '延迟揭晓控制' : '盲读控制');
   syncBlindControls();
   for (const button of dom.modeButtons) {
     button.setAttribute('aria-pressed', String(button.dataset.mode ===
-      (trackCfg.blindRead.enabled ? 'blind' : 'read')));
+      (delayed ? 'delayed' : trackCfg.blindRead.enabled ? 'blind' : 'read')));
   }
+  engine.kick();
 }
 
 function syncBlindControls() {
   for (const button of dom.blindControls.querySelectorAll('button')) {
     const action = button.dataset.blindAction;
     const sentenceOnly = action === 'reveal' || action === 'hide';
+    button.hidden = sentenceOnly && !!trackCfg.blindRead.delayed;
     const needsSentence = sentenceOnly || action === 'prev' || action === 'next';
     button.disabled = (needsSentence && !track?.S) || (!sentenceOnly && !objUrl);
   }
@@ -1052,7 +1064,8 @@ function syncBlindControls() {
 
 function onBlindControl(event) {
   const button = event.target.closest('[data-blind-action]');
-  if (!button || button.disabled || !trackCfg.blindRead.enabled || !track) return;
+  if (!button || button.disabled || button.hidden
+    || !(trackCfg.blindRead.enabled || trackCfg.blindRead.delayed) || !track) return;
   const action = button.dataset.blindAction;
   // Read the media clock so rapid actions also work before the next render frame.
   const i = Math.max(0, locate(track.sStart, track.S, audio.currentTime + .004, reader?.activeS));
@@ -1072,10 +1085,8 @@ async function boot() {
   for (const button of dom.modeButtons) {
     button.addEventListener('click', () => {
       if (!blindProgress || !dom.setup.hidden) return;
-      setTrackCfg('blindRead', blindProgress.snapshot(button.dataset.mode === 'blind'));
-      for (const option of dom.modeButtons) {
-        option.setAttribute('aria-pressed', String(option === button));
-      }
+      setTrackCfg('blindRead', { ...blindProgress.snapshot(button.dataset.mode === 'blind'),
+        ...(button.dataset.mode === 'delayed' ? { delayed: true } : {}) });
     });
   }
   wireReader();

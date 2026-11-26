@@ -76,6 +76,7 @@ export class Reader {
     this.curFill = null;
     this._lastP = -1;
     this.blind = false;
+    this.delayed = false;
     this.blindProgress = null;
   }
 
@@ -154,25 +155,42 @@ export class Reader {
   }
 
   /** Attributes survive the playback loop's className writes and LRU reuse. */
-  setBlindRead(enabled, progress = this.blindProgress) {
-    if (this.blind === !!enabled && this.blindProgress === progress) return;
+  setBlindRead(enabled, progress = this.blindProgress, delayed = false) {
+    if (this.blind === !!enabled && this.blindProgress === progress && this.delayed === delayed) return;
     this.blind = !!enabled;
+    this.delayed = delayed;
     this.blindProgress = progress;
     this.viewport.classList.toggle('is-blind', this.blind);
+    this.viewport.classList.toggle('is-delayed', this.delayed);
     for (const [i, el] of this.els) this._applyBlind(el, i);
     for (const [i, el] of this.cache) this._applyBlind(el, i);
   }
 
+  syncRevealTime(time) {
+    if (!this.delayed) return;
+    this.blindProgress.setTime(time);
+    for (const [i, el] of this.els) {
+      if (el._revealState !== this.blindProgress.state(i)) this._applyBlind(el, i);
+    }
+  }
+
   _applyBlind(el, i) {
+    el._revealState = this.delayed ? this.blindProgress.state(i) : undefined;
     el._chips.forEach((chip, j) => {
       const word = this.track.sentences[i].words[j];
       const on = this.blind && blindWord(word);
       const hidden = on && !this.blindProgress?.has(i, j);
       if (on) {
         chip.dataset.blind = hidden ? 'hidden' : 'revealed';
-        chip.setAttribute('role', 'button');
-        chip.tabIndex = 0;
-        chip.setAttribute('aria-label', hidden ? `显示第 ${j + 1} 个词` : word.text);
+        if (this.delayed) {
+          chip.removeAttribute('role');
+          chip.removeAttribute('tabindex');
+        } else {
+          chip.setAttribute('role', 'button');
+          chip.tabIndex = 0;
+        }
+        chip.setAttribute('aria-label', hidden
+          ? (this.delayed ? `第 ${j + 1} 个词，读完后自动揭晓` : `显示第 ${j + 1} 个词`) : word.text);
       } else {
         delete chip.dataset.blind;
         chip.removeAttribute('role');
@@ -193,9 +211,14 @@ export class Reader {
     const hidden = on && !this.blindProgress?.hasTranslation(i);
     if (on) {
       tr.dataset.blind = hidden ? 'hidden' : 'revealed';
-      tr.setAttribute('role', 'button');
-      tr.tabIndex = 0;
-      tr.setAttribute('aria-label', hidden ? '显示译文' : '译文：' + text);
+      if (this.delayed) {
+        tr.removeAttribute('role');
+        tr.removeAttribute('tabindex');
+      } else {
+        tr.setAttribute('role', 'button');
+        tr.tabIndex = 0;
+      }
+      tr.setAttribute('aria-label', hidden ? (this.delayed ? '译文将在句末自动揭晓' : '显示译文') : '译文：' + text);
     } else {
       delete tr.dataset.blind;
       tr.removeAttribute('role');
@@ -207,21 +230,21 @@ export class Reader {
   }
 
   revealWord(i, j) {
-    if (!this.blind || !this.blindProgress?.reveal(i, j)) return false;
+    if (!this.blind || this.delayed || !this.blindProgress?.reveal(i, j)) return false;
     const el = this.els.get(i) || this.cache.get(i);
     if (el) this._applyBlind(el, i);
     return true;
   }
 
   revealTranslation(i) {
-    if (!this.blind || !this.blindProgress?.revealTranslation(i)) return false;
+    if (!this.blind || this.delayed || !this.blindProgress?.revealTranslation(i)) return false;
     const el = this.els.get(i) || this.cache.get(i);
     if (el) this._applyBlindTranslation(el, i);
     return true;
   }
 
   setSentenceRevealed(i, revealed) {
-    if (!this.blind || !this.blindProgress) return false;
+    if (!this.blind || this.delayed || !this.blindProgress) return false;
     const changed = revealed ? this.blindProgress.revealSentence(i) : this.blindProgress.hideSentence(i);
     if (!changed) return false;
     const el = this.els.get(i) || this.cache.get(i);

@@ -254,6 +254,7 @@ html[data-tr="0"] .s-tr { display: none; }
   background: color-mix(in oklab, var(--ink) 12%, var(--sheet));
 }
 .s-tr[data-blind] { position: relative; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.reader-vp.is-delayed :is(.w[data-blind="hidden"], .s-tr[data-blind]) { cursor: default; }
 .s-tr[data-blind="hidden"]::before {
   content: "";
   position: absolute;

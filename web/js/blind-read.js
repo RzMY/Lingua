@@ -14,6 +14,10 @@ export function normalizeBlindRead(value) {
     if (words.length) revealed[i] = { signature: row.signature, words };
   }
   const out = { enabled: value?.enabled === true || value?.enabled === 1, revealed };
+  if (value?.delayed === true || value?.delayed === 1) {
+    out.delayed = true;
+    out.enabled = false;
+  }
   const translations = {};
   if (object(value?.translations)) for (const [i, row] of Object.entries(value.translations)) {
     if (!/^(0|[1-9]\d*)$/.test(i) || !Number.isSafeInteger(+i)

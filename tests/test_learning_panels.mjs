@@ -163,6 +163,78 @@ for (const favoriteTime of [0, 28]) test(`favorite entry at ${favoriteTime}s ove
 });
 
 for (const kind of ['audio', 'video']) {
+  test(`${kind}: delayed reveals follow playback, seeking, previews and recycling without manual reveals`, async (t) => {
+    const h = await harness(t, kind), { reader, engine } = h.w.LT;
+    const mode = (name) => h.find(`.play-mode[data-mode="${name}"]`).click();
+    const at = (time) => { engine.seek(time); h.frame(); };
+    const first = () => h.find('#viewport .s[data-i="0"] .w[data-j="0"]');
+    const translation = () => h.find('#viewport .s[data-i="0"] .s-tr');
+    const action = (name) => h.find(`[data-blind-action="${name}"]`);
+    // Manual blind reveals are independent of automatic playback progress.
+    mode('blind'); h.word().click(); mode('delayed');
+    reader.setTranslation(0, '你好，世界。', 'zh-CN');
+    assert.equal(h.find('#blindControls').hidden, false);
+    assert.deepEqual([...h.find('#blindControls').querySelectorAll('button:not([hidden])')]
+      .map((b) => b.dataset.blindAction), ['prev', 'play', 'next']);
+    assert.equal(h.word().dataset.blind, 'hidden');
+    assert.equal(h.word().hasAttribute('role'), false);
+    assert.equal(translation().hasAttribute('tabindex'), false);
+    at(3.99);
+    const saved = h.w.localStorage.getItem('linguatrack.track.lesson');
+    for (const target of [h.word(), translation()]) {
+      h.pointer(target, 'pointerdown'); h.advance(500); h.pointer(target, 'pointerup'); target.click();
+      for (const key of ['Enter', ' ']) target.dispatchEvent(new h.w.KeyboardEvent('keydown', {
+        key, bubbles: true, cancelable: true,
+      }));
+      assert.equal(target.dataset.blind, 'hidden');
+    }
+    assert.equal(h.media.currentTime, 3.99);
+    assert.equal(h.api.isCardOpen(), false);
+    assert.equal(h.find('#explainPanel').hidden, true);
+    assert.equal(reader.revealWord(0, 0), false);
+    assert.equal(reader.revealTranslation(0), false);
+    assert.equal(reader.setSentenceRevealed(0, true), false);
+    assert.equal(first().dataset.blind, 'hidden');
+    action('play').click();
+    assert.equal(h.media.paused, false);
+    assert.equal(action('play').getAttribute('aria-label'), '暂停');
+    h.media.currentTime = 4; h.frame();
+    assert.equal(first().dataset.blind, 'revealed');
+    assert.equal(h.word().dataset.blind, 'hidden');
+    action('play').click(); assert.equal(h.media.paused, true);
+    at(9.49); assert.equal(translation().dataset.blind, 'hidden');
+    at(9.5); assert.equal(translation().dataset.blind, 'revealed');
+    assert.equal(h.word().dataset.blind, 'hidden');
+    at(10); assert.equal(h.word().dataset.blind, 'revealed');
+    at(0); assert.equal(first().dataset.blind, 'hidden');
+    assert.equal(translation().dataset.blind, 'hidden');
+    engine.scrubbing = true; engine.scrubTime = 10; engine.kick(); h.frame();
+    assert.equal(h.word().dataset.blind, 'revealed');
+    engine.scrubTime = 0; h.frame();
+    assert.equal(first().dataset.blind, 'hidden');
+    engine.scrubbing = false;
+    action('next').click(); h.frame();
+    assert.equal(h.media.currentTime, 10);
+    assert.equal(h.word().dataset.blind, 'revealed');
+    reader.unmount(0); at(0); reader.mount(0, 0);
+    assert.equal(h.word().dataset.blind, 'hidden', 'cached nodes reflect a backward seek');
+    at(10); reader.unmount(0); reader.cache.delete(0); reader.mount(0, 0);
+    assert.equal(h.word().dataset.blind, 'revealed', 'fresh nodes reflect a forward seek');
+    reader.setTranslation(0, 'Hello, world.', 'en');
+    assert.equal(translation().dataset.blind, 'revealed', 'late translations use the current clock');
+    action('prev').click(); h.frame();
+    assert.equal(h.media.currentTime, 0);
+    assert.equal(translation().dataset.blind, 'hidden');
+    await h.media.play(); engine.setRepeat(1); at(9.995); h.frame();
+    assert.equal(h.media.currentTime, 0);
+    assert.equal(first().dataset.blind, 'hidden', 'sentence loops cover the words again');
+    assert.equal(h.w.localStorage.getItem('linguatrack.track.lesson'), saved, 'automatic reveals never write progress');
+    mode('blind');
+    assert.equal(h.word().dataset.blind, 'revealed');
+    assert.equal(first().dataset.blind, 'hidden');
+    mode('read'); assert.equal(first().hasAttribute('data-blind'), false);
+  });
+
   test(`${kind}: late translations mask immediately and reveal without changing playback`, async (t) => {
     const h = await harness(t, kind), reader = h.w.LT.reader;
     await h.media.play(); h.media.currentTime = 2; h.frame(); h.calls.length = 0;

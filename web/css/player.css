@@ -369,6 +369,11 @@ body.video-rotated {
   pointer-events: auto;
 }
 .blind-controls[hidden] { display: none; }
+.blind-controls.is-delayed {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: min(184px, calc(100% - 16px));
+}
+.blind-control[hidden] { display: none; }
 .blind-control {
   position: relative;
   display: grid;

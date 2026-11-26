@@ -56,6 +56,18 @@ test('blind reading mode and reveals stay with each media across display/font/vi
   assert.deepEqual(readTrackCfg('blind-a').blindRead, { enabled: false, revealed: {} });
 });
 
+test('delayed mode restores per media even without manual reveal records', () => {
+  initTrackCfg('delayed-a', 'en');
+  setTrackCfg('blindRead', { enabled: true, delayed: true, revealed: {} });
+  setTrackFontSize('textSize', 32);
+  initTrackCfg('delayed-b', 'en');
+  assert.equal(trackCfg.blindRead.delayed, undefined);
+  initTrackCfg('delayed-a', 'en');
+  assert.deepEqual(trackCfg.blindRead, { enabled: false, delayed: true, revealed: {} });
+  setTrackCfg('blindRead', { enabled: false, revealed: {} });
+  assert.deepEqual(readTrackCfg('delayed-a').blindRead, { enabled: false, revealed: {} });
+});
+
 test('TTS calibration defaults lower, validates old/corrupt settings and stays global', () => {
   assert.equal(settings.ttsCalibration, .5);
   for (const invalid of [null, true, {}, [], '', 'bad']) {

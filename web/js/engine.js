@@ -159,6 +159,7 @@ export class Engine {
   /** 定位当前句/词并写入高亮. */
   _sync(t) {
     const tr = this.track;
+    this.reader.syncRevealTime?.(t);
     /*  定位用的时间往前借几毫秒: 把 currentTime 设成某个词的起点时, 媒体元素会
         对齐到采样点, 落点可能比目标早几微秒 (23.92 → 1054872/44100 =
         23.919999999999998), 不补这一点点, 点词后高亮会停在上一个词上。       */

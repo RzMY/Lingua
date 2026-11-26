@@ -133,7 +133,7 @@ function save() {
   let previous = {};
   try { previous = JSON.parse(localStorage.getItem(PREFIX + trackCfg.id) || '{}') || {}; } catch { /* ignore */ }
   const out = { lang: trackCfg.lang, pronunciation: trackCfg.pronunciation };
-  if (trackCfg.blindRead.enabled || Object.keys(trackCfg.blindRead.revealed).length
+  if (trackCfg.blindRead.enabled || trackCfg.blindRead.delayed || Object.keys(trackCfg.blindRead.revealed).length
     || Object.keys(trackCfg.blindRead.translations || {}).length) {
     out.blindRead = trackCfg.blindRead;
   }
